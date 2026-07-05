@@ -1,0 +1,49 @@
+spring:
+  application:
+    name: ai-assist
+
+server:
+  port: 8080
+
+ai-assist:
+  output:
+    # When a meeting is ended, its complete notes are saved as a timestamped
+    # Markdown file, e.g. drafts/2026-07-05_14-30-05_weekly-status-meeting.md.
+    # Nothing is written to disk until the meeting is explicitly ended.
+    save-drafts: true
+    dir: drafts
+  auto:
+    # Double-click-and-go: start capturing audio and open the browser UI as
+    # soon as the app launches, then keep re-drafting notes automatically.
+    start-capture: true
+    open-browser: true
+    draft-interval-seconds: 30
+    content-type: MEETING_NOTES
+    tone: PROFESSIONAL
+  transcription:
+    # The Vosk speech model is loaded from ./models or model-dir below.
+    # Get it without the app ever going online: build once with
+    #   mvn package -Pfetch-model
+    # or unzip a model from alphacephei.com/vosk/models into ./models.
+    model-dir: ${user.home}/.ai-assist/models
+    model-name: vosk-model-small-en-us-0.15
+    # Keep false so the app never uses the internet at runtime.
+    allow-download: false
+    sample-rate: 16000
+    # Default capture device for live meeting transcription. Leave empty to use
+    # the OS default input; set to a loopback device (e.g. "Stereo Mix",
+    # "BlackHole", "Monitor") to capture Webex/Teams audio playing on this PC.
+    preferred-device: ""
+  ollama:
+    # Set to true to draft with a local open-source LLM served by Ollama
+    # (https://ollama.com). When false, the built-in template drafter is used.
+    enabled: false
+    base-url: http://localhost:11434
+    model: llama3.2
+    timeout-seconds: 120
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

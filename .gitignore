@@ -1,0 +1,8 @@
+target/
+models/
+drafts/
+*.log
+.idea/
+*.iml
+.vscode/
+.DS_Store
