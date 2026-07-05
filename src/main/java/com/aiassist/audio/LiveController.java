@@ -15,10 +15,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Controls live capture of meeting audio (Webex, MS Teams, …) playing on
- * this computer. Pick a loopback capture device from {@code /api/audio/devices},
- * start capture, and recognized speech accumulates in the listening session
- * ready to be drafted into notes.
+ * Optional local REST control of live capture — everything here is also driven by
+ * the desktop window. Capture defaults to the microphone plus any OS
+ * loopback device so an active Webex/Teams/any-platform meeting is heard.
  */
 @RestController
 @RequestMapping("/api")
@@ -40,14 +39,25 @@ public class LiveController {
         return audioDevices.listCaptureDevices(liveTranscription.captureFormat());
     }
 
-    public record StartLiveRequest(@Size(max = 200) String device, @Size(max = 100) String sessionId) {
+    public record StartLiveRequest(List<@Size(max = 200) String> devices,
+                                   @Size(max = 100) String sessionId) {
     }
 
     @PostMapping("/live/start")
     public LiveTranscriptionService.Status start(@Valid @RequestBody(required = false) StartLiveRequest request) {
-        String device = request == null ? null : request.device();
+        List<String> devices = request == null ? null : request.devices();
         String sessionId = request == null ? null : request.sessionId();
-        return liveTranscription.start(device, sessionId);
+        return liveTranscription.start(devices, sessionId);
+    }
+
+    @PostMapping("/live/pause")
+    public LiveTranscriptionService.Status pause() {
+        return liveTranscription.pause();
+    }
+
+    @PostMapping("/live/resume")
+    public LiveTranscriptionService.Status resume() {
+        return liveTranscription.resume();
     }
 
     @PostMapping("/live/stop")
@@ -60,7 +70,7 @@ public class LiveController {
         return liveTranscription.status();
     }
 
-    /** Latest auto-generated draft of the live meeting notes, if any yet. */
+    /** Latest interim auto-draft (in memory), if any yet. */
     @GetMapping("/live/draft")
     public ResponseEntity<Draft> latestDraft() {
         Draft draft = autoPilot.latestDraft();

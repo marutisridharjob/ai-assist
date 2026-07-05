@@ -1,154 +1,132 @@
-# ai-assist — listen & draft
+# ai-assist — listen & draft meeting notes
 
-A Spring Boot (Java 21) assistant that **listens** to what's happening — an active
-Webex or MS Teams meeting playing on this computer, your dictation, or typed
-notes — and **drafts detailed content** from it: meeting notes, emails,
-documents, blog posts, or summaries.
+A self-contained desktop assistant (Java 21 / Spring Boot) that **listens** to
+a meeting happening on this computer — MS Teams, Webex, or any platform, plus
+the room via the microphone — transcribes the **English** speech locally, and
+when you press **Stop** drafts the complete meeting notes and saves them as a
+timestamped file.
 
-**The app is fully offline.** Audio never leaves the machine, transcription
-and drafting run locally, and the app makes no network requests at runtime —
-runtime model download is disabled by default and the cloud-backed browser
-speech API is deliberately not used. The only internet use is the one-time
-build on your dev machine (Maven dependencies + optionally the speech model).
+**No internet. No browser. No other apps. No third-party drivers.** The app
+uses only the operating system's own resources (audio devices, a window,
+files). Speech recognition runs inside the app with the proven, lightweight
+[Vosk](https://alphacephei.com/vosk/) small English model (~40 MB, Apache-2.0),
+embedded into the jar at build time.
 
-## Double-click and go
+## The window
 
-1. Build once (this also fetches the offline speech model into `./models`):
-   `mvn package -Pfetch-model`
-2. Double-click the launcher next to the jar:
-   - **macOS**: `launch/AI-Assist.command` (first time: `chmod +x AI-Assist.command`)
-   - **Windows**: `launch/AI-Assist.bat`
+Launching the app opens its own window (built on Swing, which ships with the
+JDK — not a browser):
 
-On launch the app automatically:
+- a **scrolling text box** where the running transcript appears live, each
+  line tagged `[mic]` or `[meeting]`,
+- **Pause / Resume** — temporarily stop listening without ending the meeting,
+- **Stop — meeting complete** — ends the meeting: capture stops, the full
+  end-to-end notes are drafted and saved to a timestamped Markdown file
+  (e.g. `drafts/2026-07-05_15-02-41_live-meeting-notes.md`), and the final
+  notes are shown in the window,
+- the **close button in the top corner** — if a meeting is still running you
+  are asked whether to save before closing.
 
-1. starts capturing audio (it prefers a loopback device so it hears the meeting),
-2. opens `http://localhost:8080` in your browser,
-3. transcribes speech locally with [Vosk](https://alphacephei.com/vosk/), and
-4. re-drafts detailed notes every 30 seconds while it listens — the current
-   draft is always on screen (in memory only).
+Nothing is written to disk until Stop (or a confirmed save-on-close).
 
-When the meeting is over, click **End meeting & save notes** (or call
-`POST /api/live/end`). That stops capture, locks the session against further
-input, drafts the complete end-to-end meeting content, and saves it as one
-timestamped Markdown file, e.g. `drafts/2026-07-05_15-02-41_live-meeting-notes.md`.
-Nothing is written to disk before that moment — the file always contains the
-full final meeting, never a partial snapshot.
+## What it hears
 
-Close the terminal window (or `Ctrl+C`) to stop.
+The app captures **several sources at once**, each transcribed independently:
 
-To run on a machine with no internet at all: build elsewhere, then copy the
-jar, the launcher, and the `models/` folder together. (Alternatively, unzip
-any model from [alphacephei.com/vosk/models](https://alphacephei.com/vosk/models)
-into `models/` yourself.)
+1. **The microphone** (always) — you and everyone audible in the room.
+2. **The meeting audio** — any OS capture device that carries what the
+   computer is playing:
+   - **Windows 11**: many built-in sound drivers expose **Stereo Mix** — it's
+     already installed, just enable it: *Settings → System → Sound → More
+     sound settings → Recording → right-click → Show Disabled Devices →
+     enable "Stereo Mix"*. The app auto-detects and uses it.
+   - **macOS**: the OS provides no built-in loopback capture device, so use
+     the zero-setup route below.
+   - **Zero-setup route (any OS)**: play the meeting through the **speakers**
+     instead of headphones — the microphone hears both the room and the
+     remote participants. Nothing to install or enable.
 
-## Hearing Webex / MS Teams audio
+## Getting the app
 
-Meeting apps don't expose their audio streams directly; the assistant captures
-from an audio **device**. To capture what the meeting is playing, give the OS a
-loopback device and pick it in the UI (devices marked 🔁 are auto-preferred):
+Build once on any machine with internet (the only time internet is ever used;
+it fetches Maven dependencies and embeds the speech model into the jar):
 
-| OS | Loopback option |
-|---|---|
-| Windows | Enable **Stereo Mix** (Sound settings → Recording), or install [VB-Cable](https://vb-audio.com/Cable/) |
-| macOS | Install [BlackHole](https://github.com/ExistentialAudio/BlackHole) and route/mirror output to it (e.g. a Multi-Output Device) |
-| Linux | Select the PulseAudio/PipeWire **Monitor** source |
+```bash
+mvn package -Pfetch-model
+```
 
-Without a loopback device the app falls back to the default microphone — which
-also works for meetings if your speakers are audible to the mic, and for
-dictating your own notes.
+The result, `target/ai-assist-<version>.jar`, is **one file containing
+everything** — code and speech model. Copy it to the target computer (needs
+Java 21+, e.g. from [adoptium.net](https://adoptium.net)) and start it by
+double-clicking the launcher next to it (`launch/AI-Assist.command` on macOS
+after `chmod +x`, `launch/AI-Assist.bat` on Windows) or with
+`java -jar ai-assist-<version>.jar`. On first run the model is unpacked to
+`~/.ai-assist/models`; after that, startup is instant. The app makes **zero
+network requests at runtime** — verified by socket inspection in testing.
 
-> Heads-up: recording a meeting may require the consent of participants
-> depending on your jurisdiction and company policy.
+> Recording a meeting may require participants' consent depending on your
+> jurisdiction and company policy.
 
 ## How it works
 
 ```
-Webex/Teams audio ─┐
-Microphone ────────┼─► Java Sound capture ─► Vosk (offline STT) ─┬─► Listening session ─► Drafting engine ─► Detailed draft
-Typed notes ─────────────────────────────────────────────────────┘        (transcript)      (template or local Ollama)
+Teams/Webex audio (OS loopback device) ─► Vosk recognizer ─┐
+Microphone ────────────────────────────► Vosk recognizer ─┼─► listening session ─► drafting engine ─► window + timestamped .md on Stop
+                                                           │      (transcript)       (summary, sections,
+                                          [mic]/[meeting] ─┘                          key points, action items)
 ```
 
-- **Listening sessions** accumulate utterances (from live capture or typing)
-  with ordering and timestamps.
-- The **template drafting engine** (default, zero dependencies) segments the
-  transcript, promotes the most informative sentences to key points, extracts
-  commitments ("we need to…", "John will…") as action items, and assembles a
-  structured document with a summary and sections shaped by content type
-  (document, email, meeting notes, blog post, summary) and tone.
-- Optionally, set `ai-assist.ollama.enabled=true` to draft with a local
-  open-source LLM served by [Ollama](https://ollama.com) on `localhost`
-  (e.g. `llama3.2`) — still no internet involved; if Ollama is unreachable
-  the template engine takes over, so a draft is always produced.
+- Every recognized phrase lands in one **listening session**, labelled with
+  its source and sequence.
+- Every 30 s an **interim draft** is refreshed in memory (never on disk).
+- **Stop** locks the session, drafts the complete transcript — title,
+  summary, discussion, key points, action items — and saves the one final
+  timestamped file.
 
-## REST API
+## Optional REST API (localhost)
 
-| Method | Path | Purpose |
-|---|---|---|
-| `POST` | `/api/sessions` | Start a listening session (`{"topic": "..."}`) |
-| `POST` | `/api/sessions/{id}/utterances` | Add heard/typed text |
-| `GET` | `/api/sessions/{id}` | Session with all utterances |
-| `GET` | `/api/sessions/{id}/transcript` | Joined transcript |
-| `POST` | `/api/sessions/{id}/draft` | Preview a draft from the session (`contentType`, `tone`) — not saved |
-| `POST` | `/api/sessions/{id}/end` | End the meeting: stop capture, lock input, save the final timestamped notes file |
-| `POST` | `/api/draft` | Ad-hoc draft from supplied notes — not saved |
-| `GET` | `/api/audio/devices` | List capture devices (loopback flagged) |
-| `POST` | `/api/live/start` | Start live meeting capture (`device`, `sessionId` optional) |
-| `POST` | `/api/live/stop` | Pause live capture (session stays open) |
-| `POST` | `/api/live/end` | End the current live meeting and save the notes file |
-| `GET` | `/api/live/status` | Capture state (`IDLE/PREPARING/LISTENING/ERROR`) |
-| `GET` | `/api/live/draft` | Latest interim auto-draft (in memory) |
-
-Example:
-
-```bash
-curl -X POST localhost:8080/api/sessions -H 'Content-Type: application/json' \
-     -d '{"topic":"Weekly status"}'
-curl -X POST localhost:8080/api/sessions/{id}/utterances -H 'Content-Type: application/json' \
-     -d '{"text":"We need to schedule the security audit."}'
-curl -X POST localhost:8080/api/sessions/{id}/draft -H 'Content-Type: application/json' \
-     -d '{"contentType":"MEETING_NOTES","tone":"PROFESSIONAL"}'
-```
-
-## Platforms
-
-| Platform | Support |
-|---|---|
-| Windows / macOS / Linux | Full: runs the app, captures audio, drafts, saves files |
-| iPhone / Android | As a remote screen: open `http://<computer-ip>:8080` in the phone browser to watch live notes and copy drafts (the app itself runs on a computer — there is no JVM on iOS) |
+The window drives everything, but the same controls exist as a local API:
+sessions (`/api/sessions…`), capture (`/api/live/start|pause|resume|stop|status`),
+meeting end (`/api/live/end`, `/api/sessions/{id}/end` — the only calls that
+write the notes file), previews (`/api/draft`, `/api/sessions/{id}/draft`),
+and device listing (`/api/audio/devices`).
 
 ## Configuration (`application.yml`)
 
 ```yaml
 ai-assist:
   output:
-    save-drafts: true          # save final notes at meeting end (timestamped .md)
-    dir: drafts                # where the files go
+    save-drafts: true          # save final notes at meeting Stop
+    dir: drafts
   auto:
     start-capture: true        # listen immediately on launch
-    open-browser: true         # open the UI on launch
-    draft-interval-seconds: 30 # rolling auto-draft cadence
+    draft-interval-seconds: 30 # interim in-memory draft cadence
     content-type: MEETING_NOTES
     tone: PROFESSIONAL
   transcription:
-    model-name: vosk-model-small-en-us-0.15   # any model from alphacephei.com/vosk/models
-    preferred-device: ""       # e.g. "Stereo Mix" / "BlackHole"
+    model-name: vosk-model-small-en-us-0.15  # English; embedded in the jar
     allow-download: false      # keep false: no runtime network access
-  ollama:
-    enabled: false             # true = draft with a local LLM via Ollama
-    model: llama3.2
+    preferred-device: ""       # optional explicit meeting-audio device
 ```
+
+## Platforms
+
+| Platform | Support |
+|---|---|
+| Windows 11 | Full — mic always; meeting audio via built-in Stereo Mix (when the driver provides it) or the speakers route |
+| macOS | Full — mic always; meeting audio via the speakers route (macOS has no built-in loopback device) |
+| Linux | Full — mic always; meeting audio via the PulseAudio/PipeWire Monitor source (built into the OS) |
 
 ## Build & test
 
 ```bash
-mvn test                    # tests, no audio hardware or network needed
-mvn package -Pfetch-model   # executable jar in target/ + speech model in models/
-java -jar target/ai-assist-0.1.0-SNAPSHOT.jar
+mvn test                    # 43 tests, no audio hardware or network needed
+mvn package -Pfetch-model   # self-contained jar with the embedded model
 ```
 
 ## Stack
 
-Java 21 · Spring Boot 3.5 · [Vosk](https://alphacephei.com/vosk/) (Apache-2.0
-offline speech recognition) · Java Sound API · Apache Commons Lang ·
-optional local [Ollama](https://ollama.com) for LLM drafting · vanilla
-HTML/JS UI served by the app itself.
+Java 21 · Spring Boot 3.5 · Swing (JDK-built-in window) · Java Sound API ·
+[Vosk](https://alphacephei.com/vosk/) small English model (Apache-2.0,
+embedded) · Apache Commons Lang · optional local
+[Ollama](https://ollama.com) drafting (off by default).

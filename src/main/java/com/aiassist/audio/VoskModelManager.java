@@ -19,17 +19,18 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * Locates the Vosk speech model on local disk. The app is offline by
- * default: the model must already be present (unzipped from
- * https://alphacephei.com/vosk/models, fetched once at build time via
- * {@code mvn package -Pfetch-model}, or copied from another machine).
- * Runtime download only happens when explicitly enabled with
- * {@code ai-assist.transcription.allow-download=true}.
+ * Locates the offline English speech model. Resolution order, all local:
+ * an unpacked model on disk ({@code ./models} or the configured directory),
+ * then the copy embedded inside the application jar at build time
+ * ({@code mvn package -Pfetch-model}), which is extracted once to the model
+ * directory. The app never touches the network unless
+ * {@code ai-assist.transcription.allow-download=true} is explicitly set.
  */
 @Service
 public class VoskModelManager {
 
     private static final Logger log = LoggerFactory.getLogger(VoskModelManager.class);
+    private static final String EMBEDDED_MODEL_RESOURCE = "/vosk-model.zip";
 
     private final TranscriptionProperties properties;
 
@@ -39,7 +40,6 @@ public class VoskModelManager {
 
     /** Returns the model directory, never touching the network unless allowed. */
     public synchronized Path ensureModel() throws IOException, InterruptedException {
-        // Search local locations: a models/ folder next to the app, then the configured dir.
         Path bundled = Path.of("models", properties.modelName());
         if (isModelPresent(bundled)) {
             return bundled;
@@ -48,11 +48,26 @@ public class VoskModelManager {
         if (isModelPresent(modelPath)) {
             return modelPath;
         }
+
+        // First run of a self-contained build: extract the model shipped
+        // inside the jar to the model directory.
+        try (InputStream embedded = embeddedModelZip()) {
+            if (embedded != null) {
+                log.info("Extracting embedded speech model to {}", modelPath);
+                Files.createDirectories(modelPath.getParent());
+                unzip(embedded, modelPath.getParent());
+                if (isModelPresent(modelPath)) {
+                    return modelPath;
+                }
+                log.warn("Embedded model archive did not contain {}", properties.modelName());
+            }
+        }
+
         if (!properties.allowDownload()) {
-            throw new IOException(("Speech model \"%s\" not found (looked in %s and %s) and runtime "
-                    + "download is disabled so the app stays offline. Either build with "
-                    + "`mvn package -Pfetch-model`, or download %s on another machine, unzip it, and "
-                    + "place the folder in one of those locations.")
+            throw new IOException(("Speech model \"%s\" not found (looked in %s, %s, and inside the app) "
+                    + "and runtime download is disabled so the app stays offline. Rebuild with "
+                    + "`mvn package -Pfetch-model` to embed the model, or download %s on another machine, "
+                    + "unzip it, and place the folder in one of those locations.")
                     .formatted(properties.modelName(), bundled.toAbsolutePath(), modelPath.toAbsolutePath(),
                             properties.modelUrl()));
         }
@@ -61,7 +76,9 @@ public class VoskModelManager {
         Path zip = Files.createTempFile("vosk-model", ".zip");
         try {
             download(properties.modelUrl(), zip);
-            unzip(zip, modelPath.getParent());
+            try (InputStream in = Files.newInputStream(zip)) {
+                unzip(in, modelPath.getParent());
+            }
         } finally {
             Files.deleteIfExists(zip);
         }
@@ -70,6 +87,11 @@ public class VoskModelManager {
         }
         log.info("Vosk model ready at {}", modelPath);
         return modelPath;
+    }
+
+    /** Overridable for tests; returns null when no model is embedded in the jar. */
+    protected InputStream embeddedModelZip() {
+        return getClass().getResourceAsStream(EMBEDDED_MODEL_RESOURCE);
     }
 
     private boolean isModelPresent(Path modelPath) {
@@ -90,8 +112,8 @@ public class VoskModelManager {
         }
     }
 
-    private void unzip(Path zip, Path targetDir) throws IOException {
-        try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(zip))) {
+    private void unzip(InputStream zipStream, Path targetDir) throws IOException {
+        try (ZipInputStream zis = new ZipInputStream(zipStream)) {
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
                 Path resolved = targetDir.resolve(entry.getName()).normalize();

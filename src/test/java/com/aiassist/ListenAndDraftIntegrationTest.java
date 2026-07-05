@@ -18,9 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
-                // keep tests hands-off: no audio capture, no browser, no scheduling side effects
+                // keep tests hands-off: no audio capture, no window, no scheduling side effects
                 "ai-assist.auto.start-capture=false",
-                "ai-assist.auto.open-browser=false",
                 "ai-assist.output.dir=target/test-drafts"
         })
 class ListenAndDraftIntegrationTest {
@@ -220,6 +219,16 @@ class ListenAndDraftIntegrationTest {
     void liveDraftIsEmptyBeforeAnyMeeting() {
         ResponseEntity<String> response = rest.getForEntity("/api/live/draft", String.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+    }
+
+    @Test
+    void pausingWhenIdleIsSafeAndResumingWithoutAPauseIsRejected() {
+        ResponseEntity<Map> paused = rest.postForEntity("/api/live/pause", null, Map.class);
+        assertThat(paused.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(paused.getBody().get("state")).isEqualTo("IDLE");
+
+        ResponseEntity<String> resumed = rest.postForEntity("/api/live/resume", null, String.class);
+        assertThat(resumed.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     }
 
     @Test

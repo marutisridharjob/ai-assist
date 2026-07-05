@@ -5,13 +5,12 @@ import com.aiassist.draft.DraftOptions;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * "Double-click and go" behaviour: when the app starts it can immediately
- * begin capturing audio, open the browser UI, and keep re-drafting notes
- * from whatever it has heard so far.
+ * "Double-click and go" behaviour: when the app starts it immediately begins
+ * capturing audio and keeps re-drafting interim notes in memory from
+ * whatever it has heard so far.
  */
 @ConfigurationProperties(prefix = "ai-assist.auto")
 public record AutoPilotProperties(boolean startCapture,
-                                  boolean openBrowser,
                                   int draftIntervalSeconds,
                                   DraftOptions.ContentType contentType,
                                   DraftOptions.Tone tone) {

@@ -63,8 +63,10 @@
 
     <profiles>
         <!--
-          One-time, build-machine-only fetch of the offline speech model into
-          ./models so the application itself never needs the internet:
+          One-time, build-machine-only fetch of the proven lightweight English
+          speech model (vosk-model-small-en-us, ~40 MB), embedded INTO the jar
+          so the shipped app is one self-contained file that never needs the
+          internet, a browser, or any other application:
               mvn package -Pfetch-model
         -->
         <profile>
@@ -77,15 +79,16 @@
                         <version>1.9.0</version>
                         <executions>
                             <execution>
-                                <id>fetch-vosk-model</id>
+                                <id>embed-vosk-model</id>
                                 <phase>generate-resources</phase>
                                 <goals>
                                     <goal>wget</goal>
                                 </goals>
                                 <configuration>
                                     <url>https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip</url>
-                                    <unpack>true</unpack>
-                                    <outputDirectory>${project.basedir}/models</outputDirectory>
+                                    <unpack>false</unpack>
+                                    <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+                                    <outputFileName>vosk-model.zip</outputFileName>
                                     <skipCache>false</skipCache>
                                 </configuration>
                             </execution>
