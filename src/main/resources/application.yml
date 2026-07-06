@@ -7,11 +7,11 @@ server:
 
 ai-assist:
   output:
-    # When a meeting is ended, its complete notes are saved as a timestamped
-    # Markdown file, e.g. drafts/2026-07-05_14-30-05_weekly-status-meeting.md.
-    # Nothing is written to disk until the meeting is explicitly ended.
+    # When Stop is pressed, the complete notes are saved as a timestamped
+    # Markdown file in Documents/ai-assist-notes (created at that moment).
+    # Nothing else is ever written where the user can see it.
     save-drafts: true
-    dir: drafts
+    dir: ${user.home}/Documents/ai-assist-notes
   auto:
     # Double-click-and-go: start capturing (microphone + any OS loopback
     # device) as soon as the app launches, and keep re-drafting interim
@@ -23,8 +23,9 @@ ai-assist:
   transcription:
     # English speech model (proven, lightweight vosk-small-en-us). It is
     # embedded inside the jar when built with `mvn package -Pfetch-model`
-    # and extracted to model-dir on first run — no internet at runtime.
-    model-dir: ${user.home}/.ai-assist/models
+    # and unpacked invisibly to OS temp space at runtime — the user only
+    # ever handles the single jar file. No internet at runtime.
+    model-dir: ${java.io.tmpdir}/ai-assist/models
     model-name: vosk-model-small-en-us-0.15
     # Keep false so the app never uses the internet at runtime.
     allow-download: false

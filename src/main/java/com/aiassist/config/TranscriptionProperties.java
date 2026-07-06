@@ -17,7 +17,10 @@ public record TranscriptionProperties(String modelDir, String modelUrl, String m
 
     public TranscriptionProperties {
         if (modelDir == null || modelDir.isBlank()) {
-            modelDir = Path.of(System.getProperty("user.home"), ".ai-assist", "models").toString();
+            // OS-managed temp space: the user ships and sees ONE file (the jar);
+            // the embedded model is unpacked here invisibly and re-extracted
+            // automatically if the OS ever cleans it up.
+            modelDir = Path.of(System.getProperty("java.io.tmpdir"), "ai-assist", "models").toString();
         }
         if (modelName == null || modelName.isBlank()) {
             modelName = "vosk-model-small-en-us-0.15";

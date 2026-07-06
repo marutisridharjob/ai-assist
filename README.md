@@ -23,9 +23,9 @@ JDK — not a browser):
   launch, so this is mainly for starting the next meeting after a Stop,
 - **Pause / Resume** — temporarily stop listening without ending the meeting,
 - **Stop — meeting complete** — ends the meeting: capture stops, the full
-  end-to-end notes are drafted and saved to a timestamped Markdown file
-  (e.g. `drafts/2026-07-05_15-02-41_live-meeting-notes.md`), and the final
-  notes are shown in the window,
+  end-to-end notes are drafted and saved to a timestamped Markdown file in
+  `Documents/ai-assist-notes` (e.g. `2026-07-05_15-02-41_live-meeting-notes.md`),
+  and the final notes are shown in the window,
 - the **close button in the top corner** — if a meeting is still running you
   are asked whether to save before closing.
 
@@ -58,13 +58,13 @@ mvn package -Pfetch-model
 ```
 
 The result, `target/ai-assist-<version>.jar`, is **one file containing
-everything** — code and speech model. Copy it to the target computer (needs
-Java 21+, e.g. from [adoptium.net](https://adoptium.net)) and start it by
-double-clicking the launcher next to it (`launch/AI-Assist.command` on macOS
-after `chmod +x`, `launch/AI-Assist.bat` on Windows) or with
-`java -jar ai-assist-<version>.jar`. On first run the model is unpacked to
-`~/.ai-assist/models`; after that, startup is instant. The app makes **zero
-network requests at runtime** — verified by socket inspection in testing.
+everything** — code and speech model. That single jar is all you ever copy,
+ship, or click: **double-click it** to start (needs Java 21+, e.g. from
+[adoptium.net](https://adoptium.net)), or run `java -jar ai-assist-<version>.jar`.
+The embedded model is unpacked invisibly into OS temp space at startup; the
+only visible output the app ever creates is the notes file in
+`Documents/ai-assist-notes` when you press Stop. The app makes **zero network
+requests at runtime** — verified by socket inspection in testing.
 
 > Recording a meeting may require participants' consent depending on your
 > jurisdiction and company policy.
@@ -99,7 +99,7 @@ and device listing (`/api/audio/devices`).
 ai-assist:
   output:
     save-drafts: true          # save final notes at meeting Stop
-    dir: drafts
+    dir: ${user.home}/Documents/ai-assist-notes
   auto:
     start-capture: true        # listen immediately on launch
     draft-interval-seconds: 30 # interim in-memory draft cadence
