@@ -47,9 +47,15 @@ public class AudioDeviceService {
         }
     }
 
-    /** Names that suggest a device carries system output (meeting audio). */
+    /**
+     * Names that suggest a device carries system output (meeting audio):
+     * built-in options (Windows Stereo Mix, PulseAudio monitors) plus the
+     * open-source virtual drivers users may install (BlackHole on macOS,
+     * VB-Cable on Windows).
+     */
     private static final List<String> LOOPBACK_HINTS = List.of(
-            "stereo mix", "monitor", "loopback", "wave out", "what u hear");
+            "stereo mix", "monitor", "loopback", "wave out", "what u hear",
+            "blackhole", "vb-audio", "cable output");
 
     public List<AudioDevice> listCaptureDevices() {
         List<AudioDevice> devices = new ArrayList<>();

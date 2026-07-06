@@ -79,10 +79,30 @@ participants. Set it up like this:
 Notes: meeting apps cancel their own echo, so the remote side will not hear
 themselves back; transcription quality is best in a quiet room.
 
-### If you must use headphones
+### Best option on macOS: BlackHole (open source, one-time install)
+
+If you're allowed to install open-source software, this is the clean answer
+for macOS — it captures the meeting directly, silently, and works with
+headphones. [BlackHole](https://github.com/ExistentialAudio/BlackHole) is a
+free, GPL-3.0 virtual audio driver:
+
+1. **Install** it: `brew install blackhole-2ch`, or download the installer
+   from the [BlackHole GitHub page](https://github.com/ExistentialAudio/BlackHole)
+   (choose the 2ch variant).
+2. Open **Audio MIDI Setup** (Applications → Utilities) → **+** →
+   **Create Multi-Output Device** → tick **your headphones (or speakers)**
+   and **BlackHole 2ch**.
+3. Select that **Multi-Output Device** as the speaker in Teams/Webex (or as
+   the system output). You hear the meeting normally; BlackHole carries a
+   copy of it.
+4. Restart ai-assist. It **auto-detects BlackHole** as the meeting source —
+   the status line lists it and remote speech appears tagged `[meeting]`,
+   while your own voice still arrives via the microphone as `[mic]`.
+
+### If you must use headphones (without installing anything)
 
 The zero-setup route needs the meeting to be audible in the room. With
-headphones, your options — still without installing anything — are:
+headphones, your options without installing anything are:
 
 - **Windows, headphones in the analog jack**: enable **Stereo Mix** (see
   above). It captures the output mix of the built-in sound card, so it keeps
@@ -97,11 +117,10 @@ headphones, your options — still without installing anything — are:
   volume low — the mic sits right next to them. Caveat: the meeting is
   quietly audible in the room, so this isn't for confidential calls in
   shared spaces.
-- **Fully silent capture with headphones on macOS is not possible without
-  third-party software** on the OS features this app can use today. macOS
-  14.2+ has a native "audio process tap" API that could enable it in a
-  future version of ai-assist; until then the choices above are what the
-  OS offers.
+- **Fully silent capture with headphones on macOS needs BlackHole** (the
+  open-source driver above) — the OS itself offers no app-accessible
+  loopback today. macOS 14.2+ has a native "audio process tap" API that
+  could remove even that install in a future version of ai-assist.
 
 ## Getting the app
 
@@ -212,7 +231,7 @@ ai-assist:
 | Platform | Support |
 |---|---|
 | Windows 11 | Full — mic always; meeting audio via built-in Stereo Mix (when the driver provides it) or the speakers route |
-| macOS | Full — mic always; meeting audio via the speakers route (macOS has no built-in loopback device) |
+| macOS | Full — mic always; meeting audio via open-source [BlackHole](https://github.com/ExistentialAudio/BlackHole) (recommended, auto-detected) or the speakers route (macOS has no built-in loopback device) |
 | Linux | Full — mic always; meeting audio via the PulseAudio/PipeWire Monitor source (built into the OS) |
 
 ## Build & test
