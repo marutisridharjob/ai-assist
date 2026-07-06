@@ -50,8 +50,13 @@ The app captures **several sources at once**, each transcribed independently:
 
 ## Getting the app
 
-Build once on any machine with internet (the only time internet is ever used;
-it fetches Maven dependencies and embeds the speech model into the jar):
+**Ready-built**: `dist/ai-assist-<version>.jar` in this repository is the
+complete self-contained app, speech model included — copy that one file and
+run it.
+
+To rebuild it yourself, build once on any machine with internet (the only
+time internet is ever used; it fetches Maven dependencies and embeds the
+speech model into the jar):
 
 ```bash
 mvn package -Pfetch-model
