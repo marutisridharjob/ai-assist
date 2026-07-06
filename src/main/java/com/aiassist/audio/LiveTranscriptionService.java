@@ -96,17 +96,29 @@ public class LiveTranscriptionService {
         Thread starter = new Thread(() -> {
             try {
                 if (model == null) {
+                    long t0 = System.currentTimeMillis();
                     model = new Model(modelManager.ensureModel().toString());
+                    log.info("Speech model ready in {} ms", System.currentTimeMillis() - t0);
                 }
-            } catch (Exception e) {
+            } catch (Throwable e) {
+                // Throwable, not Exception: native-library loading failures are
+                // Errors, and swallowing them would leave the status stuck on
+                // PREPARING forever with no explanation.
                 log.error("Speech model unavailable", e);
                 running = false;
-                status.set(new Status(State.ERROR, session.id(), deviceLabels, e.getMessage()));
+                status.set(new Status(State.ERROR, session.id(), deviceLabels,
+                        e.getClass().getSimpleName() + ": " + e.getMessage()));
                 return;
             }
             if (!running) {
                 return;
             }
+            status.updateAndGet(s -> s.state() == State.PREPARING
+                    ? new Status(State.PREPARING, session.id(), deviceLabels,
+                            "Opening audio devices — first time, the OS may ask for microphone "
+                            + "permission (macOS: System Settings > Privacy & Security > Microphone); "
+                            + "approve it to continue")
+                    : s);
             for (AudioDeviceService.DeviceSelection selection : selections) {
                 CaptureWorker worker = new CaptureWorker(session, selection, deviceLabels);
                 workers.add(worker);
@@ -203,10 +215,10 @@ public class LiveTranscriptionService {
                     }
                     appendResult(recognizer.getFinalResult());
                 }
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 if (running) {
                     log.warn("Capture on '{}' failed: {}", selection.displayName(), e.getMessage());
-                    markFailed(e.getMessage());
+                    markFailed(e.getClass().getSimpleName() + ": " + e.getMessage());
                 }
             } finally {
                 closeLine();

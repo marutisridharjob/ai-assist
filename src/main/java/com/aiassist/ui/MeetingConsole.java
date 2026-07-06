@@ -137,7 +137,7 @@ public class MeetingConsole {
         LiveTranscriptionService.Status status = liveTranscription.status();
         if (!meetingCompleted) {
             setStatus(switch (status.state()) {
-                case PREPARING -> "Preparing speech model…";
+                case PREPARING -> status.detail() != null ? status.detail() : "Preparing speech model…";
                 case LISTENING -> "Listening (" + String.join(", ", status.devices()) + ")";
                 case PAUSED -> "Paused — press Resume to continue";
                 case ERROR -> "Audio problem: " + status.detail();
