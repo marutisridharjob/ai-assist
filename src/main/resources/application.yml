@@ -21,10 +21,10 @@ ai-assist:
     content-type: MEETING_NOTES
     tone: PROFESSIONAL
   transcription:
-    # English speech model (proven, lightweight vosk-small-en-us). It is
-    # embedded inside the jar when built with `mvn package -Pfetch-model`
-    # and unpacked invisibly to OS temp space at runtime — the user only
-    # ever handles the single jar file. No internet at runtime.
+    # English speech model (proven, lightweight vosk-small-en-us). It ships
+    # in src/main/resources/vosk-model.zip, so every jar built with plain
+    # `mvn package` embeds it; at runtime it is unpacked invisibly to OS
+    # temp space — the user only ever handles the single jar file.
     model-dir: ${java.io.tmpdir}/ai-assist/models
     model-name: vosk-model-small-en-us-0.15
     # Keep false so the app never uses the internet at runtime.

@@ -146,14 +146,15 @@ public class MeetingConsole {
             pauseButton.setText(status.state() == LiveTranscriptionService.State.PAUSED ? "Resume" : "Pause");
             pauseButton.setEnabled(status.state() == LiveTranscriptionService.State.LISTENING
                     || status.state() == LiveTranscriptionService.State.PAUSED);
-            stopButton.setEnabled(status.sessionId() != null
-                    && status.state() != LiveTranscriptionService.State.IDLE);
         }
         startButton.setEnabled(meetingCompleted
                 || status.state() == LiveTranscriptionService.State.IDLE
                 || status.state() == LiveTranscriptionService.State.ERROR);
         String sessionId = status.sessionId();
         if (sessionId == null) {
+            if (!meetingCompleted) {
+                stopButton.setEnabled(false);
+            }
             return;
         }
         if (!sessionId.equals(renderedSessionId)) {
@@ -164,9 +165,17 @@ public class MeetingConsole {
         try {
             session = sessions.get(sessionId);
         } catch (Exception e) {
+            if (!meetingCompleted) {
+                stopButton.setEnabled(false);
+            }
             return;
         }
         List<Utterance> utterances = session.utterances();
+        // Stop only makes sense once something has actually been recorded —
+        // there is nothing to draft or save from an empty meeting.
+        if (!meetingCompleted) {
+            stopButton.setEnabled(!utterances.isEmpty());
+        }
         for (int i = renderedUtterances; i < utterances.size(); i++) {
             Utterance u = utterances.get(i);
             transcript.append("[" + u.speaker() + "] " + u.text() + "\n");

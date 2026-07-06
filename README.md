@@ -54,13 +54,14 @@ The app captures **several sources at once**, each transcribed independently:
 complete self-contained app, speech model included — copy that one file and
 run it.
 
-To rebuild it yourself, build once on any machine with internet (the only
-time internet is ever used; it fetches Maven dependencies and embeds the
-speech model into the jar):
+To rebuild it yourself (the model ships in `src/main/resources/vosk-model.zip`,
+so a plain build embeds it — internet is only needed for Maven dependencies):
 
 ```bash
-mvn package -Pfetch-model
+mvn package
 ```
+
+To refresh the model archive from upstream, build with `-Pfetch-model`.
 
 The result, `target/ai-assist-<version>.jar`, is **one file containing
 everything** — code and speech model. That single jar is all you ever copy,
@@ -129,7 +130,7 @@ ai-assist:
 
 ```bash
 mvn test                    # 43 tests, no audio hardware or network needed
-mvn package -Pfetch-model   # self-contained jar with the embedded model
+mvn package                 # self-contained jar (model ships in resources)
 ```
 
 ## Stack
