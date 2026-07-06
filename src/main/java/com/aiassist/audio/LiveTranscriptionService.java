@@ -19,8 +19,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
-import org.vosk.Model;
-import org.vosk.Recognizer;
 
 /**
  * Captures audio from several devices at once — the microphone and any OS
@@ -51,7 +49,7 @@ public class LiveTranscriptionService {
             new AtomicReference<>(new Status(State.IDLE, null, List.of(), null));
     private final List<CaptureWorker> workers = new CopyOnWriteArrayList<>();
     private volatile boolean running;
-    private volatile Model model;
+    private volatile SpeechModel model;
 
     public LiveTranscriptionService(AudioDeviceService audioDevices, VoskModelManager modelManager,
                                     SessionStore sessions, TranscriptionProperties properties) {
@@ -97,7 +95,7 @@ public class LiveTranscriptionService {
             try {
                 if (model == null) {
                     long t0 = System.currentTimeMillis();
-                    model = new Model(modelManager.ensureModel().toString());
+                    model = new SpeechModel(modelManager.ensureModel().toString());
                     log.info("Speech model ready in {} ms", System.currentTimeMillis() - t0);
                 }
             } catch (Throwable e) {
@@ -202,18 +200,18 @@ public class LiveTranscriptionService {
                 markListening();
                 log.info("Capturing '{}' as [{}] into session {}",
                         selection.displayName(), selection.label(), session.id());
-                try (Recognizer recognizer = new Recognizer(model, format.getSampleRate())) {
+                try (SpeechRecognizer recognizer = new SpeechRecognizer(model, format.getSampleRate())) {
                     byte[] buffer = new byte[BUFFER_BYTES];
                     while (running) {
                         int n = line.read(buffer, 0, buffer.length);
                         if (n <= 0) {
                             continue;
                         }
-                        if (recognizer.acceptWaveForm(buffer, n)) {
-                            appendResult(recognizer.getResult());
+                        if (recognizer.acceptWaveform(buffer, n)) {
+                            appendResult(recognizer.result());
                         }
                     }
-                    appendResult(recognizer.getFinalResult());
+                    appendResult(recognizer.finalResult());
                 }
             } catch (Throwable e) {
                 if (running) {

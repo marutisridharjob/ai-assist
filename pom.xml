@@ -38,11 +38,23 @@
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
         </dependency>
-        <!-- Offline speech-to-text (Apache-2.0) used to transcribe live meeting audio -->
+        <!--
+          Offline speech-to-text (Apache-2.0). Used ONLY for the native
+          libraries it bundles (libvosk for Linux/macOS/Windows on the
+          classpath); its Java classes are bypassed because their eager JNA
+          registration crashes on macOS where the bundled dylib lacks
+          symbols they declare. See VoskNative for our own lazy binding.
+        -->
         <dependency>
             <groupId>com.alphacephei</groupId>
             <artifactId>vosk</artifactId>
             <version>0.3.45</version>
+        </dependency>
+        <!-- Pinned to the version whose macOS resource lookup matches the vosk jar layout -->
+        <dependency>
+            <groupId>net.java.dev.jna</groupId>
+            <artifactId>jna</artifactId>
+            <version>5.7.0</version>
         </dependency>
 
         <dependency>
