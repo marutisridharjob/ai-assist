@@ -204,6 +204,13 @@ public class MeetingConsole {
         silentCycles = loudest < 3 ? silentCycles + 1 : 0;
         String message = "Listening (" + String.join(", ", status.devices()) + ")"
                 + (levelText.isEmpty() ? "" : " — audio level: " + levelText);
+        boolean hasMeetingSource = status.devices().stream().anyMatch(d -> d.contains("[meeting]"));
+        if (!hasMeetingSource) {
+            message += " — NO meeting-audio device detected: only the microphone is being captured. "
+                    + "Remote participants will only be heard if the meeting plays on speakers. For direct "
+                    + "capture (works with headphones) install BlackHole and route the meeting through it "
+                    + "(see README), then press Pause and Resume to rescan devices.";
+        }
         if (silentCycles >= 8) {
             message += " — hearing only silence: if a meeting is playing, raise the speaker volume, "
                     + "and on macOS set Control Center > Mic Mode to \"Standard\" (Voice Isolation "
