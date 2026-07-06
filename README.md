@@ -23,9 +23,9 @@ JDK — not a browser):
   launch, so this is mainly for starting the next meeting after a Stop,
 - **Pause / Resume** — temporarily stop listening without ending the meeting,
 - **Stop — meeting complete** — ends the meeting: capture stops, the full
-  end-to-end notes are drafted and saved to a timestamped Markdown file in
-  `Documents/ai-assist-notes` (e.g. `2026-07-05_15-02-41_live-meeting-notes.md`),
-  and the final notes are shown in the window,
+  end-to-end notes are drafted and saved as a timestamped Markdown file on
+  your **Desktop** (e.g. `2026-07-05_15-02-41_live-meeting-notes.md`), and
+  the final notes are shown in the window,
 - the **close button in the top corner** — if a meeting is still running you
   are asked whether to save before closing.
 
@@ -62,9 +62,10 @@ everything** — code and speech model. That single jar is all you ever copy,
 ship, or click: **double-click it** to start (needs Java 21+, e.g. from
 [adoptium.net](https://adoptium.net)), or run `java -jar ai-assist-<version>.jar`.
 The embedded model is unpacked invisibly into OS temp space at startup; the
-only visible output the app ever creates is the notes file in
-`Documents/ai-assist-notes` when you press Stop. The app makes **zero network
-requests at runtime** — verified by socket inspection in testing.
+only visible output the app ever creates is the notes file that appears on
+your Desktop when you press Stop — never anything in the folder it was
+launched from. The app makes **zero network requests at runtime** — verified
+by socket inspection in testing.
 
 > Recording a meeting may require participants' consent depending on your
 > jurisdiction and company policy.
@@ -99,7 +100,7 @@ and device listing (`/api/audio/devices`).
 ai-assist:
   output:
     save-drafts: true          # save final notes at meeting Stop
-    dir: ${user.home}/Documents/ai-assist-notes
+    dir: ${user.home}/Desktop   # where the notes file appears on Stop
   auto:
     start-capture: true        # listen immediately on launch
     draft-interval-seconds: 30 # interim in-memory draft cadence

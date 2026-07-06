@@ -8,10 +8,10 @@ server:
 ai-assist:
   output:
     # When Stop is pressed, the complete notes are saved as a timestamped
-    # Markdown file in Documents/ai-assist-notes (created at that moment).
-    # Nothing else is ever written where the user can see it.
+    # Markdown file on the Desktop, immediately visible. Nothing is ever
+    # written into the folder the app was launched from.
     save-drafts: true
-    dir: ${user.home}/Documents/ai-assist-notes
+    dir: ${user.home}/Desktop
   auto:
     # Double-click-and-go: start capturing (microphone + any OS loopback
     # device) as soon as the app launches, and keep re-drafting interim
