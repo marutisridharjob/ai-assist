@@ -102,7 +102,7 @@ public class MeetingConsole {
         JScrollPane scroll = new JScrollPane(transcript,
                 JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
 
-        statusLabel = new JLabel("Starting…");
+        statusLabel = new JLabel(" ");
         startButton = new JButton("Start meeting");
         startButton.addActionListener(e -> startMeeting());
         pauseButton = new JButton("Pause");
@@ -114,9 +114,11 @@ public class MeetingConsole {
         buttons.add(startButton);
         buttons.add(pauseButton);
         buttons.add(stopButton);
+        // Status and errors get their own full-width line ABOVE the buttons,
+        // wrapping long messages instead of crowding into the button row.
         JPanel bottom = new JPanel(new BorderLayout());
-        bottom.add(statusLabel, BorderLayout.WEST);
-        bottom.add(buttons, BorderLayout.EAST);
+        bottom.add(statusLabel, BorderLayout.NORTH);
+        bottom.add(buttons, BorderLayout.SOUTH);
         bottom.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 8, 4, 8));
 
         frame.setLayout(new BorderLayout());
@@ -134,13 +136,13 @@ public class MeetingConsole {
     private void refresh() {
         LiveTranscriptionService.Status status = liveTranscription.status();
         if (!meetingCompleted) {
-            statusLabel.setText(switch (status.state()) {
+            setStatus(switch (status.state()) {
                 case PREPARING -> "Preparing speech model…";
                 case LISTENING -> "Listening (" + String.join(", ", status.devices()) + ")";
                 case PAUSED -> "Paused — press Resume to continue";
                 case ERROR -> "Audio problem: " + status.detail();
                 case IDLE -> "Idle — press Start meeting to begin";
-            });
+            }, status.state() == LiveTranscriptionService.State.ERROR);
             pauseButton.setText(status.state() == LiveTranscriptionService.State.PAUSED ? "Resume" : "Pause");
             pauseButton.setEnabled(status.state() == LiveTranscriptionService.State.LISTENING
                     || status.state() == LiveTranscriptionService.State.PAUSED);
@@ -175,6 +177,19 @@ public class MeetingConsole {
         }
     }
 
+    /**
+     * Shows status on its own line above the buttons; errors appear in red.
+     * HTML rendering makes long messages wrap across lines instead of
+     * pushing into or under the buttons.
+     */
+    private void setStatus(String message, boolean error) {
+        String escaped = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+        statusLabel.setText("<html><body style='width: 640px'>" + escaped + "</body></html>");
+        statusLabel.setForeground(error ? new java.awt.Color(0xB00020) : java.awt.Color.DARK_GRAY);
+        // The bottom panel re-lays out on setText, taking the height the
+        // wrapped message needs — the buttons keep their own row below.
+    }
+
     /** Begins a fresh meeting (a new session), e.g. after Stop or a startup error. */
     private void startMeeting() {
         try {
@@ -183,9 +198,9 @@ public class MeetingConsole {
             transcript.setText("");
             renderedUtterances = 0;
             renderedSessionId = null;
-            statusLabel.setText("Starting a new meeting…");
+            setStatus("Starting a new meeting…", false);
         } catch (Exception e) {
-            statusLabel.setText("Could not start: " + e.getMessage());
+            setStatus("Could not start: " + e.getMessage(), true);
         }
     }
 
@@ -211,7 +226,7 @@ public class MeetingConsole {
         meetingCompleted = true;
         pauseButton.setEnabled(false);
         stopButton.setEnabled(false);
-        statusLabel.setText("Drafting final notes…");
+        setStatus("Drafting final notes…", false);
         new SwingWorker<Draft, Void>() {
             @Override
             protected Draft doInBackground() {
@@ -224,15 +239,15 @@ public class MeetingConsole {
                     Draft draft = get();
                     transcript.append("\n" + "=".repeat(60) + "\nMEETING COMPLETE — FINAL NOTES\n"
                             + "=".repeat(60) + "\n\n" + draft.fullText() + "\n");
-                    statusLabel.setText(draft.savedTo() != null
+                    setStatus(draft.savedTo() != null
                             ? "Notes saved to " + draft.savedTo()
-                            : "Meeting ended (file saving is disabled in configuration)");
+                            : "Meeting ended (file saving is disabled in configuration)", false);
                 } catch (Exception e) {
                     meetingCompleted = false;
                     pauseButton.setEnabled(true);
                     stopButton.setEnabled(true);
                     String message = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
-                    statusLabel.setText("Could not end the meeting: " + message);
+                    setStatus("Could not end the meeting: " + message, true);
                 }
                 transcript.setCaretPosition(transcript.getDocument().getLength());
             }
