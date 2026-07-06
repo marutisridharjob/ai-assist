@@ -59,11 +59,6 @@ public class LiveTranscriptionService {
         this.properties = properties;
     }
 
-    public AudioFormat captureFormat() {
-        // 16 kHz, 16-bit, mono, signed, little-endian: what the English Vosk model expects.
-        return new AudioFormat(properties.sampleRate(), 16, 1, true, false);
-    }
-
     /**
      * Starts capture on the given devices (auto-resolved to microphone +
      * loopback devices when null/empty) into the given session (created when
@@ -81,7 +76,7 @@ public class LiveTranscriptionService {
                 : sessions.get(sessionId);
 
         List<AudioDeviceService.DeviceSelection> selections = deviceNames == null || deviceNames.isEmpty()
-                ? audioDevices.resolveAutoDevices(captureFormat(), properties.preferredDevice())
+                ? audioDevices.resolveAutoDevices(properties.preferredDevice())
                 : deviceNames.stream().map(n -> new AudioDeviceService.DeviceSelection(n, "meeting")).toList();
         List<String> deviceLabels = selections.stream()
                 .map(s -> s.displayName() + " [" + s.label() + "]")
@@ -193,21 +188,27 @@ public class LiveTranscriptionService {
 
         @Override
         public void run() {
-            AudioFormat format = captureFormat();
             try {
-                line = audioDevices.openCaptureLine(selection.deviceName(), format);
+                // The device chooses the format (macOS often refuses 16 kHz);
+                // the recognizer is created with whatever rate was granted and
+                // stereo input is downmixed to mono before recognition.
+                line = audioDevices.openBestCaptureLine(selection.deviceName());
+                AudioFormat format = line.getFormat();
+                boolean stereo = format.getChannels() == 2;
                 line.start();
                 markListening();
-                log.info("Capturing '{}' as [{}] into session {}",
-                        selection.displayName(), selection.label(), session.id());
+                log.info("Capturing '{}' as [{}] at {} Hz {} into session {}",
+                        selection.displayName(), selection.label(),
+                        (int) format.getSampleRate(), stereo ? "stereo" : "mono", session.id());
                 try (SpeechRecognizer recognizer = new SpeechRecognizer(model, format.getSampleRate())) {
-                    byte[] buffer = new byte[BUFFER_BYTES];
+                    byte[] buffer = new byte[BUFFER_BYTES * format.getFrameSize()];
                     while (running) {
                         int n = line.read(buffer, 0, buffer.length);
                         if (n <= 0) {
                             continue;
                         }
-                        if (recognizer.acceptWaveform(buffer, n)) {
+                        int length = stereo ? downmixToMono(buffer, n) : n;
+                        if (recognizer.acceptWaveform(buffer, length)) {
                             appendResult(recognizer.result());
                         }
                     }
@@ -221,6 +222,19 @@ public class LiveTranscriptionService {
             } finally {
                 closeLine();
             }
+        }
+
+        /** Averages 16-bit little-endian stereo frames into mono, in place. */
+        private int downmixToMono(byte[] buffer, int length) {
+            int frames = length / 4;
+            for (int i = 0; i < frames; i++) {
+                int left = (short) ((buffer[4 * i + 1] << 8) | (buffer[4 * i] & 0xFF));
+                int right = (short) ((buffer[4 * i + 3] << 8) | (buffer[4 * i + 2] & 0xFF));
+                int mono = (left + right) / 2;
+                buffer[2 * i] = (byte) mono;
+                buffer[2 * i + 1] = (byte) (mono >> 8);
+            }
+            return frames * 2;
         }
 
         private void markListening() {

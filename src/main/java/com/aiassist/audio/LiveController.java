@@ -36,7 +36,7 @@ public class LiveController {
 
     @GetMapping("/audio/devices")
     public List<AudioDeviceService.AudioDevice> listDevices() {
-        return audioDevices.listCaptureDevices(liveTranscription.captureFormat());
+        return audioDevices.listCaptureDevices();
     }
 
     public record StartLiveRequest(List<@Size(max = 200) String> devices,

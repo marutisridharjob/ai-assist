@@ -102,6 +102,40 @@ by socket inspection in testing.
 > Recording a meeting may require participants' consent depending on your
 > jurisdiction and company policy.
 
+## Running on macOS — complete setup
+
+Works on both Intel and Apple Silicon Macs (the speech engine ships as a
+universal binary; no Rosetta needed).
+
+1. **Install Java 21+** if not present: download the `.pkg` from
+   [adoptium.net](https://adoptium.net) and install. Verify with
+   `java -version` in Terminal.
+2. **Start the app**: `java -jar /Applications/ai-assist-<version>.jar`
+   (from Terminal), or double-click the jar if your Java installation
+   registered the `.jar` file association. The jar can live anywhere —
+   `/Applications`, `~/Downloads`, a USB stick — it never writes next to
+   itself.
+3. **Approve microphone access** the first time: macOS shows a permission
+   prompt attributed to whatever launched Java — *Terminal* if you started
+   from a terminal, *Java* if you double-clicked. Click **Allow**. The app's
+   status line tells you while it is waiting on this.
+4. The window opens, listening starts automatically, and after the meeting
+   you press **Stop — meeting complete**: the notes file appears on your
+   Desktop.
+
+### macOS troubleshooting
+
+| Symptom | Cause & fix |
+|---|---|
+| Status stuck on *"Opening audio devices…"* | macOS is waiting for microphone approval. Look for the permission prompt (it can hide behind windows). If it never appears: System Settings → Privacy & Security → **Microphone** → enable **Terminal** (or **Java**), then restart the app. To force a fresh prompt: `tccutil reset Microphone` in Terminal. |
+| `Audio problem: UnsatisfiedLinkError … vosk_recognizer_set_grm` | You are running a build older than 2026-07-06. The vosk-java wrapper eagerly binds symbols its own macOS library doesn't export; current builds bypass it with a lazy binding. `git pull && mvn package` and use the new jar. |
+| `Audio problem: … accepted none of the candidate formats` | The capture device refused every format (16/48/44.1 kHz, mono/stereo). Usually means microphone permission is denied (see above) or the selected input device is unavailable — check System Settings → Sound → **Input**. |
+| "ai-assist-…jar cannot be opened because it is from an unidentified developer" | Gatekeeper quarantines browser-downloaded files. Right-click the jar → **Open**, or clear the flag: `xattr -d com.apple.quarantine ai-assist-<version>.jar`. Jars pulled via `git` are not quarantined. |
+| Double-click does nothing / opens Archive Utility | Your Java install didn't claim the `.jar` association. Right-click → Open With → select the Java launcher, or just run `java -jar ai-assist-<version>.jar` from Terminal. |
+| *"Preparing speech model…"* for more than ~30 s | First run unpacks + loads the model (5–20 s is normal). Longer means a hidden failure — current builds surface it in red in the status line; run from Terminal to also see the full log. |
+| Remote participants aren't transcribed | macOS has no built-in loopback device, so the meeting must be audible: follow the **Zero-setup route** above (speakers, not headphones). |
+| Where are my notes / the model? | Notes: on the **Desktop**, named `<date>_<time>_live-meeting-notes.md`. Model cache: `$TMPDIR/ai-assist/models` (managed by the OS; safe to ignore). |
+
 ## How it works
 
 ```

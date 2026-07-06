@@ -17,14 +17,24 @@ import org.springframework.stereotype.Service;
 /**
  * Enumerates audio capture devices and opens capture lines, using only what
  * the operating system provides — no third-party drivers or applications.
- * The meeting side of a Webex/Teams call is heard either through an OS
- * loopback-style capture device when the sound driver provides one (e.g.
- * "Stereo Mix" on many Windows machines — enabled in Sound settings, not
- * installed), or simply through the microphone when the meeting plays over
- * the speakers.
+ * Devices differ in which formats they accept (macOS in particular often
+ * refuses 16 kHz directly), so opening negotiates through a list of
+ * candidate formats and the recognizer adapts to whatever was granted.
  */
 @Service
 public class AudioDeviceService {
+
+    /**
+     * Formats to try in order: the recognizer's preferred 16 kHz mono first,
+     * then the rates sound hardware actually ships with. Stereo variants are
+     * last — the capture worker downmixes them to mono.
+     */
+    static final List<AudioFormat> CANDIDATE_FORMATS = List.of(
+            pcm(16000, 1), pcm(48000, 1), pcm(44100, 1), pcm(48000, 2), pcm(44100, 2));
+
+    private static AudioFormat pcm(float sampleRate, int channels) {
+        return new AudioFormat(sampleRate, 16, channels, true, false);
+    }
 
     public record AudioDevice(String name, String description, boolean likelyLoopback) {
     }
@@ -41,12 +51,10 @@ public class AudioDeviceService {
     private static final List<String> LOOPBACK_HINTS = List.of(
             "stereo mix", "monitor", "loopback", "wave out", "what u hear");
 
-    public List<AudioDevice> listCaptureDevices(AudioFormat format) {
+    public List<AudioDevice> listCaptureDevices() {
         List<AudioDevice> devices = new ArrayList<>();
-        DataLine.Info info = new DataLine.Info(TargetDataLine.class, format);
         for (Mixer.Info mixerInfo : AudioSystem.getMixerInfo()) {
-            Mixer mixer = AudioSystem.getMixer(mixerInfo);
-            if (mixer.isLineSupported(info)) {
+            if (supportsAnyCandidate(AudioSystem.getMixer(mixerInfo))) {
                 String lower = (mixerInfo.getName() + " " + mixerInfo.getDescription()).toLowerCase(Locale.ROOT);
                 boolean loopback = LOOPBACK_HINTS.stream().anyMatch(lower::contains);
                 devices.add(new AudioDevice(mixerInfo.getName(), mixerInfo.getDescription(), loopback));
@@ -61,12 +69,12 @@ public class AudioDeviceService {
      * computer is playing (labelled "meeting"). A configured preferred device
      * is used as the meeting source instead of auto-detection.
      */
-    public List<DeviceSelection> resolveAutoDevices(AudioFormat format, String preferredDevice) {
+    public List<DeviceSelection> resolveAutoDevices(String preferredDevice) {
         List<DeviceSelection> selections = new ArrayList<>();
         if (preferredDevice != null && !preferredDevice.isBlank()) {
             selections.add(new DeviceSelection(preferredDevice.strip(), "meeting"));
         } else {
-            for (AudioDevice device : listCaptureDevices(format)) {
+            for (AudioDevice device : listCaptureDevices()) {
                 if (device.likelyLoopback()) {
                     selections.add(new DeviceSelection(device.name(), "meeting"));
                 }
@@ -77,32 +85,57 @@ public class AudioDeviceService {
     }
 
     /**
-     * Opens a capture line on the named device, or on the default device when
-     * {@code deviceName} is blank. Matching is case-insensitive on substring
-     * so UI values and config values are forgiving.
+     * Opens a capture line on the named device (or the OS default when
+     * {@code deviceName} is blank), negotiating the first format the device
+     * accepts. Callers must read the granted format from the returned line.
      */
-    public TargetDataLine openCaptureLine(String deviceName, AudioFormat format) throws LineUnavailableException {
-        DataLine.Info info = new DataLine.Info(TargetDataLine.class, format);
+    public TargetDataLine openBestCaptureLine(String deviceName) throws LineUnavailableException {
+        Mixer mixer = null;
         if (deviceName != null && !deviceName.isBlank()) {
-            Optional<Mixer.Info> match = findMixer(deviceName, info);
+            Optional<Mixer.Info> match = findMixer(deviceName);
             if (match.isEmpty()) {
                 throw new IllegalArgumentException("No capture device matching \"" + deviceName
-                        + "\". Available: " + listCaptureDevices(format).stream().map(AudioDevice::name).toList());
+                        + "\". Available: " + listCaptureDevices().stream().map(AudioDevice::name).toList());
             }
-            TargetDataLine line = (TargetDataLine) AudioSystem.getMixer(match.get()).getLine(info);
-            line.open(format);
-            return line;
+            mixer = AudioSystem.getMixer(match.get());
         }
-        TargetDataLine line = (TargetDataLine) AudioSystem.getLine(info);
-        line.open(format);
-        return line;
+        Exception last = null;
+        for (AudioFormat format : CANDIDATE_FORMATS) {
+            try {
+                DataLine.Info info = new DataLine.Info(TargetDataLine.class, format);
+                TargetDataLine line = mixer != null
+                        ? (TargetDataLine) mixer.getLine(info)
+                        : (TargetDataLine) AudioSystem.getLine(info);
+                line.open(format);
+                return line;
+            } catch (Exception e) {
+                last = e;
+            }
+        }
+        LineUnavailableException failure = new LineUnavailableException(
+                "Device \"" + (deviceName == null || deviceName.isBlank() ? "default microphone" : deviceName)
+                + "\" accepted none of the candidate formats (16/48/44.1 kHz, mono/stereo, 16-bit)."
+                + (last == null ? "" : " Last error: " + last.getMessage()));
+        if (last != null) {
+            failure.initCause(last);
+        }
+        throw failure;
     }
 
-    private Optional<Mixer.Info> findMixer(String deviceName, DataLine.Info info) {
+    private boolean supportsAnyCandidate(Mixer mixer) {
+        for (AudioFormat format : CANDIDATE_FORMATS) {
+            if (mixer.isLineSupported(new DataLine.Info(TargetDataLine.class, format))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Optional<Mixer.Info> findMixer(String deviceName) {
         String wanted = deviceName.toLowerCase(Locale.ROOT);
         for (Mixer.Info mixerInfo : AudioSystem.getMixerInfo()) {
             if (mixerInfo.getName().toLowerCase(Locale.ROOT).contains(wanted)
-                    && AudioSystem.getMixer(mixerInfo).isLineSupported(info)) {
+                    && supportsAnyCandidate(AudioSystem.getMixer(mixerInfo))) {
                 return Optional.of(mixerInfo);
             }
         }
