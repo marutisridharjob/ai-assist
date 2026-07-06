@@ -44,9 +44,35 @@ The app captures **several sources at once**, each transcribed independently:
      enable "Stereo Mix"*. The app auto-detects and uses it.
    - **macOS**: the OS provides no built-in loopback capture device, so use
      the zero-setup route below.
-   - **Zero-setup route (any OS)**: play the meeting through the **speakers**
-     instead of headphones — the microphone hears both the room and the
-     remote participants. Nothing to install or enable.
+
+### Zero-setup route — meeting audio through the speakers
+
+Works on every OS with nothing to install, enable, or configure: let the
+meeting play out loud and the microphone hears both you **and** the remote
+participants. Set it up like this:
+
+1. **Unplug/disconnect headphones** — if the meeting plays into your ears,
+   the microphone can't hear it. AirPods or a headset must be disconnected
+   (or at least not selected as the meeting's speaker).
+2. **Point the meeting app at the speakers**:
+   - *MS Teams*: Settings → Devices → **Speaker** → choose the built-in
+     speakers (e.g. "MacBook Pro Speakers").
+   - *Webex*: Settings → Audio → **Speaker** → choose the built-in speakers.
+   - Or simply set the system default output to the speakers (macOS:
+     System Settings → Sound → Output; Windows: Settings → System → Sound).
+3. **Raise the volume** to a normal conversational level (roughly 50 % or
+   more) — if you can hear the meeting comfortably, so can the microphone.
+4. **Leave the microphone unobstructed** (don't cover the laptop keyboard
+   area with papers or a phone).
+5. Check the ai-assist window: remote speakers' words should appear in the
+   scrolling transcript within a couple of seconds of being spoken. In this
+   route everything arrives through the microphone, so lines are tagged
+   `[mic]` — that's expected.
+
+Notes: meeting apps cancel their own echo, so the remote side will not hear
+themselves back; transcription quality is best in a quiet room. If you must
+use headphones, this route can't work — use a loopback device (Windows
+Stereo Mix above) instead.
 
 ## Getting the app
 
