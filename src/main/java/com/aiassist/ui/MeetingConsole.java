@@ -60,6 +60,7 @@ public class MeetingConsole {
     private int renderedUtterances;
     private String renderedSessionId;
     private boolean meetingCompleted;
+    private int silentCycles;
 
     public MeetingConsole(LiveTranscriptionService liveTranscription,
                           MeetingEndService meetingEndService, SessionStore sessions) {
@@ -138,7 +139,7 @@ public class MeetingConsole {
         if (!meetingCompleted) {
             setStatus(switch (status.state()) {
                 case PREPARING -> status.detail() != null ? status.detail() : "Preparing speech model…";
-                case LISTENING -> "Listening (" + String.join(", ", status.devices()) + ")";
+                case LISTENING -> listeningMessage(status);
                 case PAUSED -> "Paused — press Resume to continue";
                 case ERROR -> "Audio problem: " + status.detail();
                 case IDLE -> "Idle — press Start meeting to begin";
@@ -184,6 +185,31 @@ public class MeetingConsole {
             renderedUtterances = utterances.size();
             transcript.setCaretPosition(transcript.getDocument().getLength());
         }
+    }
+
+    /**
+     * Live status while listening: which sources are open and how loud each
+     * one currently is, plus a warning when the app has heard only silence
+     * for a while — the usual macOS causes being speaker volume and the
+     * Control Center Mic Mode set to "Voice Isolation", which strips the
+     * meeting audio out of the microphone signal.
+     */
+    private String listeningMessage(LiveTranscriptionService.Status status) {
+        var levels = liveTranscription.levels();
+        String levelText = levels.entrySet().stream()
+                .map(e -> e.getKey() + " " + e.getValue() + "%")
+                .reduce((a, b) -> a + ", " + b)
+                .orElse("");
+        int loudest = levels.values().stream().mapToInt(Integer::intValue).max().orElse(0);
+        silentCycles = loudest < 3 ? silentCycles + 1 : 0;
+        String message = "Listening (" + String.join(", ", status.devices()) + ")"
+                + (levelText.isEmpty() ? "" : " — audio level: " + levelText);
+        if (silentCycles >= 8) {
+            message += " — hearing only silence: if a meeting is playing, raise the speaker volume, "
+                    + "and on macOS set Control Center > Mic Mode to \"Standard\" (Voice Isolation "
+                    + "removes the meeting audio)";
+        }
+        return message;
     }
 
     /**

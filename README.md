@@ -64,15 +64,44 @@ participants. Set it up like this:
    more) — if you can hear the meeting comfortably, so can the microphone.
 4. **Leave the microphone unobstructed** (don't cover the laptop keyboard
    area with papers or a phone).
-5. Check the ai-assist window: remote speakers' words should appear in the
-   scrolling transcript within a couple of seconds of being spoken. In this
+5. **macOS: set Mic Mode to "Standard"** — open Control Center (menu bar)
+   while the app is listening, click **Mic Mode**, choose **Standard**.
+   *Voice Isolation* actively removes everything that isn't your own voice —
+   including the meeting audio — and is the most common reason remote
+   participants don't get transcribed.
+6. Check the ai-assist window: the status line shows a live **audio level**
+   per source. Play any video with speech — the level should jump and the
+   words should appear in the transcript within a couple of seconds. In this
    route everything arrives through the microphone, so lines are tagged
-   `[mic]` — that's expected.
+   `[mic]` — that's expected. If the level stays near 0 % while audio is
+   playing, the window tells you and points at the usual causes.
 
 Notes: meeting apps cancel their own echo, so the remote side will not hear
-themselves back; transcription quality is best in a quiet room. If you must
-use headphones, this route can't work — use a loopback device (Windows
-Stereo Mix above) instead.
+themselves back; transcription quality is best in a quiet room.
+
+### If you must use headphones
+
+The zero-setup route needs the meeting to be audible in the room. With
+headphones, your options — still without installing anything — are:
+
+- **Windows, headphones in the analog jack**: enable **Stereo Mix** (see
+  above). It captures the output mix of the built-in sound card, so it keeps
+  working with jack-connected headphones. (Bluetooth/USB headsets bypass the
+  sound card, so Stereo Mix won't carry them.)
+- **macOS: Multi-Output Device** (built-in, no install): open
+  **Audio MIDI Setup** (Applications → Utilities), click **+** →
+  **Create Multi-Output Device**, tick both your headphones and
+  **Built-in Speakers** — then select that Multi-Output Device as the
+  meeting's speaker. You hear the meeting in your headphones while the
+  built-in speakers also play it for the microphone; keep the speaker
+  volume low — the mic sits right next to them. Caveat: the meeting is
+  quietly audible in the room, so this isn't for confidential calls in
+  shared spaces.
+- **Fully silent capture with headphones on macOS is not possible without
+  third-party software** on the OS features this app can use today. macOS
+  14.2+ has a native "audio process tap" API that could enable it in a
+  future version of ai-assist; until then the choices above are what the
+  OS offers.
 
 ## Getting the app
 
@@ -133,7 +162,7 @@ universal binary; no Rosetta needed).
 | "ai-assist-…jar cannot be opened because it is from an unidentified developer" | Gatekeeper quarantines browser-downloaded files. Right-click the jar → **Open**, or clear the flag: `xattr -d com.apple.quarantine ai-assist-<version>.jar`. Jars pulled via `git` are not quarantined. |
 | Double-click does nothing / opens Archive Utility | Your Java install didn't claim the `.jar` association. Right-click → Open With → select the Java launcher, or just run `java -jar ai-assist-<version>.jar` from Terminal. |
 | *"Preparing speech model…"* for more than ~30 s | First run unpacks + loads the model (5–20 s is normal). Longer means a hidden failure — current builds surface it in red in the status line; run from Terminal to also see the full log. |
-| Remote participants aren't transcribed | macOS has no built-in loopback device, so the meeting must be audible: follow the **Zero-setup route** above (speakers, not headphones). |
+| Remote participants aren't transcribed (only your own speech appears) | macOS has no built-in loopback device, so the meeting must be audible: follow the **Zero-setup route** above (speakers, not headphones). Then check, in this order: ① Control Center → **Mic Mode** must be **Standard** — *Voice Isolation strips the meeting audio out of the mic signal*; ② speaker volume ≥ 50 %; ③ watch the **audio level** in the app's status line while a video with speech plays — it should jump well above 0 %. With headphones, see **If you must use headphones** above. |
 | Where are my notes / the model? | Notes: on the **Desktop**, named `<date>_<time>_live-meeting-notes.md`. Model cache: `$TMPDIR/ai-assist/models` (managed by the OS; safe to ignore). |
 
 ## How it works

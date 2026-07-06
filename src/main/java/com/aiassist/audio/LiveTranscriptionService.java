@@ -160,6 +160,15 @@ public class LiveTranscriptionService {
         return status.get();
     }
 
+    /** Live input level (0–100) per source label, e.g. {mic=42, meeting=0}. */
+    public java.util.Map<String, Integer> levels() {
+        java.util.Map<String, Integer> levels = new java.util.LinkedHashMap<>();
+        for (CaptureWorker worker : workers) {
+            levels.merge(worker.selection.label(), worker.level, Integer::max);
+        }
+        return levels;
+    }
+
     private void stopWorkers() {
         running = false;
         for (CaptureWorker worker : workers) {
@@ -177,6 +186,7 @@ public class LiveTranscriptionService {
         private final AudioDeviceService.DeviceSelection selection;
         private final List<String> deviceLabels;
         private volatile TargetDataLine line;
+        private volatile int level;
         private Thread thread;
 
         private CaptureWorker(ListeningSession session, AudioDeviceService.DeviceSelection selection,
@@ -208,6 +218,7 @@ public class LiveTranscriptionService {
                             continue;
                         }
                         int length = stereo ? downmixToMono(buffer, n) : n;
+                        level = peakPercent(buffer, length);
                         if (recognizer.acceptWaveform(buffer, length)) {
                             appendResult(recognizer.result());
                         }
@@ -222,6 +233,18 @@ public class LiveTranscriptionService {
             } finally {
                 closeLine();
             }
+        }
+
+        /** Loudest sample in the buffer as 0–100, so the UI can show what this source hears. */
+        private static int peakPercent(byte[] buffer, int length) {
+            int peak = 0;
+            for (int i = 0; i + 1 < length; i += 2) {
+                int sample = Math.abs((short) ((buffer[i + 1] << 8) | (buffer[i] & 0xFF)));
+                if (sample > peak) {
+                    peak = sample;
+                }
+            }
+            return peak * 100 / 32767;
         }
 
         /** Averages 16-bit little-endian stereo frames into mono, in place. */
