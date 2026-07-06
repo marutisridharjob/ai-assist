@@ -53,6 +53,7 @@ public class MeetingConsole {
     private JFrame frame;
     private JTextArea transcript;
     private JLabel statusLabel;
+    private JButton startButton;
     private JButton pauseButton;
     private JButton stopButton;
     private Timer refreshTimer;
@@ -102,12 +103,15 @@ public class MeetingConsole {
                 JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
 
         statusLabel = new JLabel("Starting…");
+        startButton = new JButton("Start meeting");
+        startButton.addActionListener(e -> startMeeting());
         pauseButton = new JButton("Pause");
         pauseButton.addActionListener(e -> togglePause());
         stopButton = new JButton("Stop — meeting complete");
         stopButton.addActionListener(e -> stopMeeting());
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        buttons.add(startButton);
         buttons.add(pauseButton);
         buttons.add(stopButton);
         JPanel bottom = new JPanel(new BorderLayout());
@@ -135,13 +139,17 @@ public class MeetingConsole {
                 case LISTENING -> "Listening (" + String.join(", ", status.devices()) + ")";
                 case PAUSED -> "Paused — press Resume to continue";
                 case ERROR -> "Audio problem: " + status.detail();
-                case IDLE -> "Idle";
+                case IDLE -> "Idle — press Start meeting to begin";
             });
             pauseButton.setText(status.state() == LiveTranscriptionService.State.PAUSED ? "Resume" : "Pause");
             pauseButton.setEnabled(status.state() == LiveTranscriptionService.State.LISTENING
                     || status.state() == LiveTranscriptionService.State.PAUSED);
-            stopButton.setEnabled(status.sessionId() != null);
+            stopButton.setEnabled(status.sessionId() != null
+                    && status.state() != LiveTranscriptionService.State.IDLE);
         }
+        startButton.setEnabled(meetingCompleted
+                || status.state() == LiveTranscriptionService.State.IDLE
+                || status.state() == LiveTranscriptionService.State.ERROR);
         String sessionId = status.sessionId();
         if (sessionId == null) {
             return;
@@ -164,6 +172,20 @@ public class MeetingConsole {
         if (utterances.size() > renderedUtterances) {
             renderedUtterances = utterances.size();
             transcript.setCaretPosition(transcript.getDocument().getLength());
+        }
+    }
+
+    /** Begins a fresh meeting (a new session), e.g. after Stop or a startup error. */
+    private void startMeeting() {
+        try {
+            liveTranscription.start(null, null);
+            meetingCompleted = false;
+            transcript.setText("");
+            renderedUtterances = 0;
+            renderedSessionId = null;
+            statusLabel.setText("Starting a new meeting…");
+        } catch (Exception e) {
+            statusLabel.setText("Could not start: " + e.getMessage());
         }
     }
 

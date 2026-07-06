@@ -19,6 +19,8 @@ JDK — not a browser):
 
 - a **scrolling text box** where the running transcript appears live, each
   line tagged `[mic]` or `[meeting]`,
+- **Start meeting** — begins a fresh meeting; listening also auto-starts on
+  launch, so this is mainly for starting the next meeting after a Stop,
 - **Pause / Resume** — temporarily stop listening without ending the meeting,
 - **Stop — meeting complete** — ends the meeting: capture stops, the full
   end-to-end notes are drafted and saved to a timestamped Markdown file
