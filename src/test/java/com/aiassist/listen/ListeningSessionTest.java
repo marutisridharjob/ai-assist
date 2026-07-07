@@ -63,6 +63,22 @@ class ListeningSessionTest {
     }
 
     @Test
+    void renameChangesTopicUntilTheMeetingEnds() {
+        ListeningSession session = new ListeningSession("s5", "Live meeting notes");
+
+        session.rename("  Quarterly sync  ");
+        assertThat(session.topic()).isEqualTo("Quarterly sync");
+        session.rename("   ");
+        assertThat(session.topic()).isEqualTo("Quarterly sync");
+
+        session.addUtterance("something", "mic");
+        session.end();
+        assertThatThrownBy(() -> session.rename("Too late"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("ended");
+    }
+
+    @Test
     void endingLocksTheSessionAndCannotHappenTwice() {
         ListeningSession session = new ListeningSession("s4", "t");
         session.addUtterance("before end", "user");

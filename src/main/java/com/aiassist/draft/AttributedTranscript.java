@@ -21,10 +21,15 @@ public final class AttributedTranscript {
     private AttributedTranscript() {
     }
 
+    private static final java.time.format.DateTimeFormatter TIME =
+            java.time.format.DateTimeFormatter.ofPattern("HH:mm")
+                    .withZone(java.time.ZoneId.systemDefault());
+
     public static Draft appendTo(Draft draft, List<Utterance> utterances) {
         StringBuilder lines = new StringBuilder(LEGEND).append("\n");
         for (Utterance utterance : utterances) {
-            lines.append("\n[").append(utterance.speaker()).append("] ").append(utterance.text());
+            lines.append("\n[").append(TIME.format(utterance.capturedAt())).append("] [")
+                    .append(utterance.speaker()).append("] ").append(utterance.text());
         }
         List<Draft.Section> sections = new ArrayList<>(draft.sections());
         sections.add(new Draft.Section(HEADING, lines.toString()));

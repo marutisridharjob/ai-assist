@@ -190,6 +190,18 @@ public class LiveTranscriptionService {
         return levels;
     }
 
+    /** In-progress (not yet final) words per source label — live captions. */
+    public java.util.Map<String, String> partials() {
+        java.util.Map<String, String> partials = new java.util.LinkedHashMap<>();
+        for (CaptureWorker worker : workers) {
+            String partial = worker.partialText;
+            if (partial != null && !partial.isBlank()) {
+                partials.put(worker.selection.label(), partial);
+            }
+        }
+        return partials;
+    }
+
     private void stopWorkers() {
         running = false;
         for (CaptureWorker worker : workers) {
@@ -209,6 +221,7 @@ public class LiveTranscriptionService {
         private volatile TargetDataLine line;
         private volatile Process tapProcess;
         private volatile int level;
+        private volatile String partialText;
         private Thread thread;
 
         private CaptureWorker(ListeningSession session, AudioDeviceService.DeviceSelection selection,
@@ -260,9 +273,13 @@ public class LiveTranscriptionService {
                     level = peakPercent(buffer, length);
                     if (recognizer.acceptWaveform(buffer, length)) {
                         appendResult(recognizer.result());
+                        partialText = "";
+                    } else {
+                        updatePartial(recognizer.partialResult());
                     }
                 }
                 appendResult(recognizer.finalResult());
+                partialText = "";
             }
         }
 
@@ -305,9 +322,13 @@ public class LiveTranscriptionService {
                     level = peakPercent(buffer, n);
                     if (recognizer.acceptWaveform(buffer, n)) {
                         appendResult(recognizer.result());
+                        partialText = "";
+                    } else {
+                        updatePartial(recognizer.partialResult());
                     }
                 }
                 appendResult(recognizer.finalResult());
+                partialText = "";
             }
             if (running && !process.isAlive() && process.exitValue() != 0) {
                 throw new java.io.IOException("system-audio helper exited with code "
@@ -365,6 +386,14 @@ public class LiveTranscriptionService {
                 }
             } catch (Exception e) {
                 log.warn("Could not parse recognizer result: {}", resultJson, e);
+            }
+        }
+
+        private void updatePartial(String partialJson) {
+            try {
+                partialText = objectMapper.readTree(partialJson).path("partial").asText("");
+            } catch (Exception e) {
+                partialText = "";
             }
         }
 

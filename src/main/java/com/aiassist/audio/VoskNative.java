@@ -28,5 +28,7 @@ interface VoskNative extends Library {
 
     String vosk_recognizer_result(Pointer recognizer);
 
+    String vosk_recognizer_partial_result(Pointer recognizer);
+
     String vosk_recognizer_final_result(Pointer recognizer);
 }

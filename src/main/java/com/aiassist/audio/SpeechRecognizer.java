@@ -24,6 +24,11 @@ public final class SpeechRecognizer implements AutoCloseable {
         return VoskNative.INSTANCE.vosk_recognizer_result(handle);
     }
 
+    /** JSON with the in-progress hypothesis, e.g. {@code {"partial": "hello wor"}}. */
+    public String partialResult() {
+        return VoskNative.INSTANCE.vosk_recognizer_partial_result(handle);
+    }
+
     /** JSON with whatever remains buffered; call once when capture ends. */
     public String finalResult() {
         return VoskNative.INSTANCE.vosk_recognizer_final_result(handle);

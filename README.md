@@ -12,13 +12,37 @@ files). Speech recognition runs inside the app with the proven, lightweight
 [Vosk](https://alphacephei.com/vosk/) small English model (~40 MB, Apache-2.0),
 embedded into the jar at build time.
 
+## 100 % open source
+
+Every component in and around this app is open source; there are no
+proprietary libraries, models, or cloud services anywhere:
+
+| Component | License |
+|---|---|
+| ai-assist code and its native helper sources | this repository |
+| Spring Boot, Jackson, Apache Commons Lang | Apache-2.0 |
+| Vosk speech engine + `vosk-model-small-en-us` | Apache-2.0 |
+| JNA (native access) | Apache-2.0 / LGPL-2.1 dual |
+| Java runtime (use e.g. Eclipse Temurin) | GPLv2 + Classpath Exception |
+| BlackHole (optional macOS fallback) | GPL-3.0 |
+| Ollama + models (optional drafting) | MIT / open-weight |
+
+The only closed-source code involved is the operating system itself
+(Windows/macOS APIs and their bundled compilers), which no application can
+avoid.
+
 ## The window
 
 Launching the app opens its own window (built on Swing, which ships with the
 JDK — not a browser):
 
+- an editable **meeting title** at the top — it becomes the notes file name;
+  when a meeting app (Teams, Webex, Zoom, Slack) is detected running, the
+  title is pre-filled and the status line notes the detection,
 - a **scrolling text box** where the running transcript appears live, each
-  line tagged `[mic]` or `[meeting]`,
+  line time-stamped and tagged `[mic]` or `[meeting]`,
+- a **live caption line** showing words as they are being recognized,
+  before the phrase is final — like the captions in commercial apps,
 - **Start meeting** — begins a fresh meeting; listening also auto-starts on
   launch, so this is mainly for starting the next meeting after a Stop,
 - **Pause / Resume** — temporarily stop listening without ending the meeting,

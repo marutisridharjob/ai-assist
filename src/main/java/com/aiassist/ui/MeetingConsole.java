@@ -53,6 +53,8 @@ public class MeetingConsole {
     private JFrame frame;
     private JTextArea transcript;
     private JLabel statusLabel;
+    private JLabel captionLabel;
+    private javax.swing.JTextField titleField;
     private JButton startButton;
     private JButton pauseButton;
     private JButton stopButton;
@@ -61,6 +63,8 @@ public class MeetingConsole {
     private String renderedSessionId;
     private boolean meetingCompleted;
     private int silentCycles;
+    private int detectorCountdown;
+    private String detectedMeetingApp;
 
     public MeetingConsole(LiveTranscriptionService liveTranscription,
                           MeetingEndService meetingEndService, SessionStore sessions) {
@@ -103,7 +107,26 @@ public class MeetingConsole {
         JScrollPane scroll = new JScrollPane(transcript,
                 JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
 
+        // Editable meeting title — becomes the notes file name.
+        titleField = new javax.swing.JTextField();
+        titleField.setToolTipText("Meeting title — used for the notes file name");
+        titleField.addActionListener(e -> applyTitle());
+        titleField.addFocusListener(new java.awt.event.FocusAdapter() {
+            @Override
+            public void focusLost(java.awt.event.FocusEvent e) {
+                applyTitle();
+            }
+        });
+        JPanel top = new JPanel(new BorderLayout(6, 0));
+        top.add(new JLabel("Title:"), BorderLayout.WEST);
+        top.add(titleField, BorderLayout.CENTER);
+        top.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 8, 4, 8));
+
         statusLabel = new JLabel(" ");
+        // Live caption: in-progress words before the recognizer finalizes them.
+        captionLabel = new JLabel(" ");
+        captionLabel.setForeground(java.awt.Color.GRAY);
+        captionLabel.setFont(captionLabel.getFont().deriveFont(Font.ITALIC));
         startButton = new JButton("Start meeting");
         startButton.addActionListener(e -> startMeeting());
         pauseButton = new JButton("Pause");
@@ -115,14 +138,16 @@ public class MeetingConsole {
         buttons.add(startButton);
         buttons.add(pauseButton);
         buttons.add(stopButton);
-        // Status and errors get their own full-width line ABOVE the buttons,
-        // wrapping long messages instead of crowding into the button row.
+        // Caption, then status/errors, each on their own full-width line ABOVE
+        // the buttons, wrapping instead of crowding into the button row.
         JPanel bottom = new JPanel(new BorderLayout());
-        bottom.add(statusLabel, BorderLayout.NORTH);
+        bottom.add(captionLabel, BorderLayout.NORTH);
+        bottom.add(statusLabel, BorderLayout.CENTER);
         bottom.add(buttons, BorderLayout.SOUTH);
         bottom.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 8, 4, 8));
 
         frame.setLayout(new BorderLayout());
+        frame.add(top, BorderLayout.NORTH);
         frame.add(scroll, BorderLayout.CENTER);
         frame.add(bottom, BorderLayout.SOUTH);
         frame.setSize(760, 540);
@@ -133,8 +158,37 @@ public class MeetingConsole {
         refreshTimer.start();
     }
 
+    private static final java.time.format.DateTimeFormatter LINE_TIME =
+            java.time.format.DateTimeFormatter.ofPattern("HH:mm")
+                    .withZone(java.time.ZoneId.systemDefault());
+
+    /** Applies the title field to the current meeting (drives the file name). */
+    private void applyTitle() {
+        String sessionId = liveTranscription.status().sessionId();
+        String title = titleField.getText();
+        if (sessionId == null || title == null || title.isBlank()) {
+            return;
+        }
+        try {
+            sessions.get(sessionId).rename(title);
+        } catch (Exception e) {
+            // ended or unknown session; nothing to rename
+        }
+    }
+
     /** Pulls new utterances and capture state into the window once a second. */
     private void refresh() {
+        // Scan for a running meeting app every ~5 s (cheap, best-effort).
+        if (detectorCountdown-- <= 0) {
+            detectorCountdown = 5;
+            detectedMeetingApp = MeetingAppDetector.detectRunningMeetingApp().orElse(null);
+        }
+        var partials = liveTranscription.partials();
+        captionLabel.setText(partials.isEmpty() ? " "
+                : partials.entrySet().stream()
+                        .map(e -> e.getKey() + " ▸ " + e.getValue())
+                        .reduce((a, b) -> a + "   " + b)
+                        .orElse(" "));
         LiveTranscriptionService.Status status = liveTranscription.status();
         if (!meetingCompleted) {
             setStatus(switch (status.state()) {
@@ -158,10 +212,6 @@ public class MeetingConsole {
             }
             return;
         }
-        if (!sessionId.equals(renderedSessionId)) {
-            renderedSessionId = sessionId;
-            renderedUtterances = 0;
-        }
         ListeningSession session;
         try {
             session = sessions.get(sessionId);
@@ -171,6 +221,15 @@ public class MeetingConsole {
             }
             return;
         }
+        if (!sessionId.equals(renderedSessionId)) {
+            renderedSessionId = sessionId;
+            renderedUtterances = 0;
+            // New meeting: seed the title field, preferring the detected app.
+            if (detectedMeetingApp != null && "Live meeting notes".equals(session.topic())) {
+                session.rename(detectedMeetingApp + " meeting");
+            }
+            titleField.setText(session.topic());
+        }
         List<Utterance> utterances = session.utterances();
         // Stop only makes sense once something has actually been recorded —
         // there is nothing to draft or save from an empty meeting.
@@ -179,7 +238,8 @@ public class MeetingConsole {
         }
         for (int i = renderedUtterances; i < utterances.size(); i++) {
             Utterance u = utterances.get(i);
-            transcript.append("[" + u.speaker() + "] " + u.text() + "\n");
+            transcript.append("[" + LINE_TIME.format(u.capturedAt()) + "] ["
+                    + u.speaker() + "] " + u.text() + "\n");
         }
         if (utterances.size() > renderedUtterances) {
             renderedUtterances = utterances.size();
@@ -202,7 +262,8 @@ public class MeetingConsole {
                 .orElse("");
         int loudest = levels.values().stream().mapToInt(Integer::intValue).max().orElse(0);
         silentCycles = loudest < 3 ? silentCycles + 1 : 0;
-        String message = "Listening (" + String.join(", ", status.devices()) + ")"
+        String message = (detectedMeetingApp != null ? detectedMeetingApp + " detected · " : "")
+                + "Listening (" + String.join(", ", status.devices()) + ")"
                 + (levelText.isEmpty() ? "" : " — audio level: " + levelText);
         boolean hasMeetingSource = status.devices().stream().anyMatch(d -> d.contains("[meeting]"));
         if (!hasMeetingSource) {

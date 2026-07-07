@@ -16,7 +16,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class ListeningSession {
 
     private final String id;
-    private final String topic;
+    private String topic;
     private final Instant startedAt;
     private final List<Utterance> utterances = new ArrayList<>();
     private int nextSequence = 1;
@@ -75,8 +75,19 @@ public class ListeningSession {
         return id;
     }
 
-    public String topic() {
+    public synchronized String topic() {
         return topic;
+    }
+
+    /** Renames the meeting; the title drives the notes file name. */
+    public synchronized void rename(String newTopic) {
+        if (endedAt != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Meeting " + id + " has ended; the title can no longer change");
+        }
+        if (newTopic != null && !newTopic.isBlank()) {
+            this.topic = newTopic.strip();
+        }
     }
 
     public Instant startedAt() {
