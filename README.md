@@ -45,6 +45,9 @@ JDK — not a browser):
   line time-stamped and tagged `[mic]` or `[meeting]`,
 - a **live caption line** showing words as they are being recognized,
   before the phrase is final — like the captions in commercial apps,
+- **Start / Pause / Stop** buttons each carry a state dot in their top-right
+  corner — **green** means the action is available right now, **red** means
+  it is not (e.g. Stop stays red until something has been recorded),
 - **Start** — begins a fresh meeting; listening also auto-starts on
   launch, so this is mainly for starting the next meeting after a Stop,
 - **Pause / Resume** — temporarily stop listening without ending the meeting,

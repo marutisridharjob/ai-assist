@@ -148,13 +148,13 @@ public class MeetingConsole {
         captionLabel = new JLabel(" ");
         captionLabel.setForeground(java.awt.Color.GRAY);
         captionLabel.setFont(captionLabel.getFont().deriveFont(Font.ITALIC));
-        startButton = new JButton("Start");
+        startButton = new IndicatorButton("Start");
         startButton.setToolTipText("Begin a new meeting");
         startButton.addActionListener(e -> startMeeting());
-        pauseButton = new JButton("Pause");
+        pauseButton = new IndicatorButton("Pause");
         pauseButton.setToolTipText("Temporarily stop listening without ending the meeting");
         pauseButton.addActionListener(e -> togglePause());
-        stopButton = new JButton("Stop");
+        stopButton = new IndicatorButton("Stop");
         stopButton.setToolTipText("Meeting complete — draft the notes and save the file");
         stopButton.addActionListener(e -> stopMeeting());
 
@@ -324,6 +324,47 @@ public class MeetingConsole {
                 : (darkMode ? new java.awt.Color(0xC8C8C8) : java.awt.Color.DARK_GRAY));
         // The bottom panel re-lays out on setText, taking the height the
         // wrapped message needs — the buttons keep their own row below.
+    }
+
+    /**
+     * Button with a state dot in its top-right corner: green when the action
+     * is currently available, red when it is not — visible at a glance which
+     * of Start/Pause/Stop applies right now.
+     */
+    private static final class IndicatorButton extends JButton {
+
+        private static final java.awt.Color ACTIVE = new java.awt.Color(0x2ECC71);
+        private static final java.awt.Color INACTIVE = new java.awt.Color(0xE74C3C);
+
+        private IndicatorButton(String text) {
+            super(text);
+            setMargin(new java.awt.Insets(4, 14, 4, 18));
+        }
+
+        @Override
+        public void setEnabled(boolean enabled) {
+            boolean changed = enabled != isEnabled();
+            super.setEnabled(enabled);
+            if (changed) {
+                repaint();
+            }
+        }
+
+        @Override
+        protected void paintComponent(java.awt.Graphics g) {
+            super.paintComponent(g);
+            java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+            g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
+                    java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+            int diameter = 8;
+            int x = getWidth() - diameter - 5;
+            int y = 5;
+            g2.setColor(isEnabled() ? ACTIVE : INACTIVE);
+            g2.fillOval(x, y, diameter, diameter);
+            g2.setColor(g2.getColor().darker());
+            g2.drawOval(x, y, diameter, diameter);
+            g2.dispose();
+        }
     }
 
     /** Light/dark palette applied to every part of the window. */
