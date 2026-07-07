@@ -39,14 +39,16 @@ JDK — not a browser):
 - an editable **meeting title** at the top — it becomes the notes file name;
   when a meeting app (Teams, Webex, Zoom, Slack) is detected running, the
   title is pre-filled and the status line notes the detection,
+- a **Dark** toggle (top-right) switching the whole window between light and
+  dark mode; the choice is remembered across launches,
 - a **scrolling text box** where the running transcript appears live, each
   line time-stamped and tagged `[mic]` or `[meeting]`,
 - a **live caption line** showing words as they are being recognized,
   before the phrase is final — like the captions in commercial apps,
-- **Start meeting** — begins a fresh meeting; listening also auto-starts on
+- **Start** — begins a fresh meeting; listening also auto-starts on
   launch, so this is mainly for starting the next meeting after a Stop,
 - **Pause / Resume** — temporarily stop listening without ending the meeting,
-- **Stop — meeting complete** — ends the meeting: capture stops, the full
+- **Stop** — the meeting is complete: capture stops, the full
   end-to-end notes are drafted and saved as a timestamped Markdown file on
   your **Desktop** (e.g. `2026-07-05_15-02-41_live-meeting-notes.md`), and
   the final notes are shown in the window,
@@ -217,7 +219,7 @@ universal binary; no Rosetta needed).
    from a terminal, *Java* if you double-clicked. Click **Allow**. The app's
    status line tells you while it is waiting on this.
 4. The window opens, listening starts automatically, and after the meeting
-   you press **Stop — meeting complete**: the notes file appears on your
+   you press **Stop**: the notes file appears on your
    Desktop.
 
 ### macOS troubleshooting

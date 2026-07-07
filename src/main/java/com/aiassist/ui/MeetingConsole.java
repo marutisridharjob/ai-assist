@@ -50,11 +50,19 @@ public class MeetingConsole {
     private final MeetingEndService meetingEndService;
     private final SessionStore sessions;
 
+    private final java.util.prefs.Preferences prefs =
+            java.util.prefs.Preferences.userNodeForPackage(MeetingConsole.class);
+
     private JFrame frame;
     private JTextArea transcript;
     private JLabel statusLabel;
     private JLabel captionLabel;
+    private JLabel titleLabel;
     private javax.swing.JTextField titleField;
+    private javax.swing.JCheckBox darkModeToggle;
+    private JPanel topPanel;
+    private JPanel bottomPanel;
+    private JPanel buttonsPanel;
     private JButton startButton;
     private JButton pauseButton;
     private JButton stopButton;
@@ -65,6 +73,9 @@ public class MeetingConsole {
     private int silentCycles;
     private int detectorCountdown;
     private String detectedMeetingApp;
+    private boolean darkMode;
+    private String lastStatusMessage = " ";
+    private boolean lastStatusWasError;
 
     public MeetingConsole(LiveTranscriptionService liveTranscription,
                           MeetingEndService meetingEndService, SessionStore sessions) {
@@ -117,27 +128,41 @@ public class MeetingConsole {
                 applyTitle();
             }
         });
+        darkModeToggle = new javax.swing.JCheckBox("Dark");
+        darkModeToggle.setToolTipText("Switch between light and dark mode");
+        darkModeToggle.addActionListener(e -> {
+            applyTheme(darkModeToggle.isSelected());
+            prefs.putBoolean("darkMode", darkModeToggle.isSelected());
+        });
+
+        titleLabel = new JLabel("Title:");
         JPanel top = new JPanel(new BorderLayout(6, 0));
-        top.add(new JLabel("Title:"), BorderLayout.WEST);
+        top.add(titleLabel, BorderLayout.WEST);
         top.add(titleField, BorderLayout.CENTER);
+        top.add(darkModeToggle, BorderLayout.EAST);
         top.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 8, 4, 8));
+        topPanel = top;
 
         statusLabel = new JLabel(" ");
         // Live caption: in-progress words before the recognizer finalizes them.
         captionLabel = new JLabel(" ");
         captionLabel.setForeground(java.awt.Color.GRAY);
         captionLabel.setFont(captionLabel.getFont().deriveFont(Font.ITALIC));
-        startButton = new JButton("Start meeting");
+        startButton = new JButton("Start");
+        startButton.setToolTipText("Begin a new meeting");
         startButton.addActionListener(e -> startMeeting());
         pauseButton = new JButton("Pause");
+        pauseButton.setToolTipText("Temporarily stop listening without ending the meeting");
         pauseButton.addActionListener(e -> togglePause());
-        stopButton = new JButton("Stop — meeting complete");
+        stopButton = new JButton("Stop");
+        stopButton.setToolTipText("Meeting complete — draft the notes and save the file");
         stopButton.addActionListener(e -> stopMeeting());
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         buttons.add(startButton);
         buttons.add(pauseButton);
         buttons.add(stopButton);
+        buttonsPanel = buttons;
         // Caption, then status/errors, each on their own full-width line ABOVE
         // the buttons, wrapping instead of crowding into the button row.
         JPanel bottom = new JPanel(new BorderLayout());
@@ -145,6 +170,7 @@ public class MeetingConsole {
         bottom.add(statusLabel, BorderLayout.CENTER);
         bottom.add(buttons, BorderLayout.SOUTH);
         bottom.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 8, 4, 8));
+        bottomPanel = bottom;
 
         frame.setLayout(new BorderLayout());
         frame.add(top, BorderLayout.NORTH);
@@ -152,6 +178,9 @@ public class MeetingConsole {
         frame.add(bottom, BorderLayout.SOUTH);
         frame.setSize(760, 540);
         frame.setLocationByPlatform(true);
+
+        darkModeToggle.setSelected(prefs.getBoolean("darkMode", false));
+        applyTheme(darkModeToggle.isSelected());
         frame.setVisible(true);
 
         refreshTimer = new Timer(1000, e -> refresh());
@@ -196,7 +225,7 @@ public class MeetingConsole {
                 case LISTENING -> listeningMessage(status);
                 case PAUSED -> "Paused — press Resume to continue";
                 case ERROR -> "Audio problem: " + status.detail();
-                case IDLE -> "Idle — press Start meeting to begin";
+                case IDLE -> "Idle — press Start to begin";
             }, status.state() == LiveTranscriptionService.State.ERROR);
             pauseButton.setText(status.state() == LiveTranscriptionService.State.PAUSED ? "Resume" : "Pause");
             pauseButton.setEnabled(status.state() == LiveTranscriptionService.State.LISTENING
@@ -286,11 +315,45 @@ public class MeetingConsole {
      * pushing into or under the buttons.
      */
     private void setStatus(String message, boolean error) {
+        lastStatusMessage = message;
+        lastStatusWasError = error;
         String escaped = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
         statusLabel.setText("<html><body style='width: 640px'>" + escaped + "</body></html>");
-        statusLabel.setForeground(error ? new java.awt.Color(0xB00020) : java.awt.Color.DARK_GRAY);
+        statusLabel.setForeground(error
+                ? (darkMode ? new java.awt.Color(0xFF6B6B) : new java.awt.Color(0xB00020))
+                : (darkMode ? new java.awt.Color(0xC8C8C8) : java.awt.Color.DARK_GRAY));
         // The bottom panel re-lays out on setText, taking the height the
         // wrapped message needs — the buttons keep their own row below.
+    }
+
+    /** Light/dark palette applied to every part of the window. */
+    private void applyTheme(boolean dark) {
+        darkMode = dark;
+        java.awt.Color textBg = dark ? new java.awt.Color(0x1E1E1E) : java.awt.Color.WHITE;
+        java.awt.Color textFg = dark ? new java.awt.Color(0xE6E6E6) : java.awt.Color.BLACK;
+        java.awt.Color panelBg = dark ? new java.awt.Color(0x2B2B2B) : new java.awt.Color(0xF2F2F2);
+        java.awt.Color muted = dark ? new java.awt.Color(0x9A9A9A) : java.awt.Color.GRAY;
+
+        transcript.setBackground(textBg);
+        transcript.setForeground(textFg);
+        transcript.setCaretColor(textFg);
+        titleField.setBackground(textBg);
+        titleField.setForeground(textFg);
+        titleField.setCaretColor(textFg);
+        for (JPanel panel : java.util.List.of(topPanel, bottomPanel, buttonsPanel)) {
+            panel.setBackground(panelBg);
+        }
+        frame.getContentPane().setBackground(panelBg);
+        titleLabel.setForeground(textFg);
+        captionLabel.setForeground(muted);
+        darkModeToggle.setBackground(panelBg);
+        darkModeToggle.setForeground(textFg);
+        for (JButton button : java.util.List.of(startButton, pauseButton, stopButton)) {
+            button.setBackground(dark ? new java.awt.Color(0x3C3C3C) : null);
+            button.setForeground(dark ? textFg : null);
+        }
+        setStatus(lastStatusMessage, lastStatusWasError);
+        frame.repaint();
     }
 
     /** Begins a fresh meeting (a new session), e.g. after Stop or a startup error. */
