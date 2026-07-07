@@ -39,8 +39,16 @@ public class AudioDeviceService {
     public record AudioDevice(String name, String description, boolean likelyLoopback) {
     }
 
-    /** A device chosen for capture; a null deviceName means the OS default microphone. */
-    public record DeviceSelection(String deviceName, String label) {
+    /**
+     * A source chosen for capture: a Java Sound device (null deviceName =
+     * the OS default microphone) or, when {@code systemTap} is set, the
+     * native system-audio tap helper.
+     */
+    public record DeviceSelection(String deviceName, String label, boolean systemTap) {
+
+        public DeviceSelection(String deviceName, String label) {
+            this(deviceName, label, false);
+        }
 
         public String displayName() {
             return deviceName == null ? "default microphone" : deviceName;

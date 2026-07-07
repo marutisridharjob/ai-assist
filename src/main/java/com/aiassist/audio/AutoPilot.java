@@ -76,8 +76,12 @@ public class AutoPilot {
         if (count == 0 || count == draftedUtteranceCount.get()) {
             return;
         }
-        Draft draft = drafter.draft(session.topic(), session.transcript(),
-                new DraftOptions(properties.contentType(), properties.tone()));
+        // The attributed transcript rides along so the running draft also
+        // shows which source ([mic] you / [meeting] others) said what.
+        Draft draft = com.aiassist.draft.AttributedTranscript.appendTo(
+                drafter.draft(session.topic(), session.transcript(),
+                        new DraftOptions(properties.contentType(), properties.tone())),
+                session.utterances());
         latestDraft.set(draft);
         draftedUtteranceCount.set(count);
         log.info("Auto-drafted interim notes from {} captured utterances", count);

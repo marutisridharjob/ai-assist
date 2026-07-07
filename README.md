@@ -26,6 +26,11 @@ JDK — not a browser):
   end-to-end notes are drafted and saved as a timestamped Markdown file on
   your **Desktop** (e.g. `2026-07-05_15-02-41_live-meeting-notes.md`), and
   the final notes are shown in the window,
+- **who said what**: every transcript line is tagged with its source —
+  `[mic]` is you / your side of the room, `[meeting]` is the other
+  participants captured from the system audio. The tags appear live in the
+  window, in the running interim draft, and in a "Full transcript (who said
+  what)" section at the end of the saved notes,
 - the **close button in the top corner** — if a meeting is still running you
   are asked whether to save before closing.
 
@@ -33,19 +38,39 @@ Nothing is written to disk until Stop (or a confirmed save-on-close).
 
 ## What it hears
 
-The app captures **several sources at once**, each transcribed independently:
+The app captures **two streams at once**, each transcribed independently:
+**the microphone** (you and the room, tagged `[mic]`) and **the meeting
+audio** (the other participants, tagged `[meeting]`).
 
-1. **The microphone** (always) — you and everyone audible in the room.
-2. **The meeting audio** — any OS capture device that carries what the
-   computer is playing:
+### How the meeting audio is captured — same technique as the commercial apps
+
+Commercial meeting-notes tools get system audio one of three ways: a cloud
+bot that joins the call (Otter/Fireflies), a bundled virtual audio driver,
+or — the modern way — the OS's own audio-capture API. **ai-assist uses the
+OS API**, via a tiny helper it builds once on your machine from source
+shipped inside the jar, using compilers the OS already has:
+
+| OS | Mechanism | One-time requirement |
+|---|---|---|
+| **Windows (Vista…11)** | **WASAPI loopback** on the default output — captures whatever the PC plays, works with any headphones, no Stereo Mix needed | none: the helper is compiled with the C# compiler included in Windows' .NET Framework |
+| **macOS 14.2+** | **Core Audio system-audio tap** — Apple's API for exactly this (what Granola-style apps use) | Xcode Command Line Tools (`xcode-select --install`; already present if you use Homebrew), and approving the one-time **"System Audio Recording"** permission prompt |
+
+When the app starts (or when you press Pause → Resume), it prepares the
+helper and lists **`system audio (native tap) [meeting]`** in the status
+line, with its own live level. If the helper can't be built on your machine,
+the app falls back automatically to the routes below.
+
+### Fallback 1 — loopback capture devices
+
+Any OS capture device that carries what the computer is playing:
    - **Windows 11**: many built-in sound drivers expose **Stereo Mix** — it's
      already installed, just enable it: *Settings → System → Sound → More
      sound settings → Recording → right-click → Show Disabled Devices →
      enable "Stereo Mix"*. The app auto-detects and uses it.
-   - **macOS**: the OS provides no built-in loopback capture device, so use
-     the zero-setup route below.
+   - **macOS**: no built-in loopback exists; the open-source
+     **BlackHole** driver (section below) provides one.
 
-### Zero-setup route — meeting audio through the speakers
+### Fallback 2 — meeting audio through the speakers
 
 Works on every OS with nothing to install, enable, or configure: let the
 meeting play out loud and the microphone hears both you **and** the remote
@@ -182,6 +207,8 @@ universal binary; no Rosetta needed).
 | Double-click does nothing / opens Archive Utility | Your Java install didn't claim the `.jar` association. Right-click → Open With → select the Java launcher, or just run `java -jar ai-assist-<version>.jar` from Terminal. |
 | *"Preparing speech model…"* for more than ~30 s | First run unpacks + loads the model (5–20 s is normal). Longer means a hidden failure — current builds surface it in red in the status line; run from Terminal to also see the full log. |
 | Remote participants aren't transcribed (only your own speech appears) | macOS has no built-in loopback device, so the meeting must be audible: follow the **Zero-setup route** above (speakers, not headphones). Then check, in this order: ① Control Center → **Mic Mode** must be **Standard** — *Voice Isolation strips the meeting audio out of the mic signal*; ② speaker volume ≥ 50 %; ③ watch the **audio level** in the app's status line while a video with speech plays — it should jump well above 0 %. With headphones, see **If you must use headphones** above. |
+| Status line never shows `system audio (native tap)` | The helper couldn't be built. macOS: install the Command Line Tools once — `xcode-select --install` — then press Pause → Resume. Windows: the .NET Framework compiler should always exist; check the log (run from a terminal) for the `Native system-audio tap unavailable:` line, which states the exact reason. |
+| Native tap listed but `[meeting]` level stays 0 % / helper exits (macOS) | The "System Audio Recording" permission was denied or never shown. System Settings → Privacy & Security → **Screen & System Audio Recording** → **System Audio Recording Only** tab → enable Terminal (or Java), then press Pause → Resume. The `[system-tap]` log lines show the exact error. |
 | BlackHole installed but missing from Audio MIDI Setup / Multi-Output list | CoreAudio only loads new drivers when it restarts. ① Verify the install: `ls /Library/Audio/Plug-Ins/HAL/` must show `BlackHole2ch.driver` — if not, the installer didn't finish (it asks for an admin password); `brew reinstall blackhole-2ch` or rerun the `.pkg`. ② Restart the audio daemon: `sudo killall coreaudiod` (it relaunches itself) — or reboot. ③ Fully quit Audio MIDI Setup (⌘Q) and reopen; **BlackHole 2ch** now appears in the device list and the Multi-Output tick-list. |
 | Where are my notes / the model? | Notes: on the **Desktop**, named `<date>_<time>_live-meeting-notes.md`. Model cache: `$TMPDIR/ai-assist/models` (managed by the OS; safe to ignore). |
 

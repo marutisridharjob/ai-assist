@@ -75,16 +75,9 @@ public class LiveTranscriptionService {
                 ? sessions.create("Live meeting notes")
                 : sessions.get(sessionId);
 
-        List<AudioDeviceService.DeviceSelection> selections = deviceNames == null || deviceNames.isEmpty()
-                ? audioDevices.resolveAutoDevices(properties.preferredDevice())
-                : deviceNames.stream().map(n -> new AudioDeviceService.DeviceSelection(n, "meeting")).toList();
-        List<String> deviceLabels = selections.stream()
-                .map(s -> s.displayName() + " [" + s.label() + "]")
-                .toList();
-
         running = true;
-        status.set(new Status(State.PREPARING, session.id(), deviceLabels,
-                "Loading speech model and opening audio devices"));
+        status.set(new Status(State.PREPARING, session.id(), List.of("detecting audio sources…"),
+                "Loading speech model and preparing audio capture"));
 
         Thread starter = new Thread(() -> {
             try {
@@ -99,18 +92,24 @@ public class LiveTranscriptionService {
                 // PREPARING forever with no explanation.
                 log.error("Speech model unavailable", e);
                 running = false;
-                status.set(new Status(State.ERROR, session.id(), deviceLabels,
+                status.set(new Status(State.ERROR, session.id(), List.of(),
                         e.getClass().getSimpleName() + ": " + e.getMessage()));
                 return;
             }
             if (!running) {
                 return;
             }
+            // Resolved here, off the caller's thread: the native tap helper may
+            // need a one-time compile on first use.
+            List<AudioDeviceService.DeviceSelection> selections = resolveSelections(deviceNames);
+            List<String> deviceLabels = selections.stream()
+                    .map(s -> s.displayName() + " [" + s.label() + "]")
+                    .toList();
             status.updateAndGet(s -> s.state() == State.PREPARING
                     ? new Status(State.PREPARING, session.id(), deviceLabels,
-                            "Opening audio devices — first time, the OS may ask for microphone "
-                            + "permission (macOS: System Settings > Privacy & Security > Microphone); "
-                            + "approve it to continue")
+                            "Opening audio sources — first time, the OS asks for permission "
+                            + "(microphone, and 'System Audio Recording' for the native tap); "
+                            + "approve to continue")
                     : s);
             for (AudioDeviceService.DeviceSelection selection : selections) {
                 CaptureWorker worker = new CaptureWorker(session, selection, deviceLabels);
@@ -124,6 +123,28 @@ public class LiveTranscriptionService {
         starter.setDaemon(true);
         starter.start();
         return status.get();
+    }
+
+    /**
+     * The meeting source, best first: the native system-audio tap (direct
+     * capture of what the computer plays — macOS 14.2+ / Windows) when its
+     * helper is available, otherwise any loopback devices (Stereo Mix,
+     * BlackHole, PulseAudio monitors). The microphone is always included.
+     */
+    private List<AudioDeviceService.DeviceSelection> resolveSelections(List<String> requested) {
+        if (requested != null && !requested.isEmpty()) {
+            return requested.stream()
+                    .map(n -> new AudioDeviceService.DeviceSelection(n, "meeting"))
+                    .toList();
+        }
+        List<AudioDeviceService.DeviceSelection> auto =
+                new ArrayList<>(audioDevices.resolveAutoDevices(properties.preferredDevice()));
+        if (NativeSystemAudioTap.isSupported()) {
+            auto.removeIf(s -> "meeting".equals(s.label()));
+            auto.add(0, new AudioDeviceService.DeviceSelection(
+                    NativeSystemAudioTap.SOURCE_NAME, "meeting", true));
+        }
+        return auto;
     }
 
     /** Pauses capture; the session stays open and {@link #resume()} continues it. */
@@ -186,6 +207,7 @@ public class LiveTranscriptionService {
         private final AudioDeviceService.DeviceSelection selection;
         private final List<String> deviceLabels;
         private volatile TargetDataLine line;
+        private volatile Process tapProcess;
         private volatile int level;
         private Thread thread;
 
@@ -199,31 +221,10 @@ public class LiveTranscriptionService {
         @Override
         public void run() {
             try {
-                // The device chooses the format (macOS often refuses 16 kHz);
-                // the recognizer is created with whatever rate was granted and
-                // stereo input is downmixed to mono before recognition.
-                line = audioDevices.openBestCaptureLine(selection.deviceName());
-                AudioFormat format = line.getFormat();
-                boolean stereo = format.getChannels() == 2;
-                line.start();
-                markListening();
-                log.info("Capturing '{}' as [{}] at {} Hz {} into session {}",
-                        selection.displayName(), selection.label(),
-                        (int) format.getSampleRate(), stereo ? "stereo" : "mono", session.id());
-                try (SpeechRecognizer recognizer = new SpeechRecognizer(model, format.getSampleRate())) {
-                    byte[] buffer = new byte[BUFFER_BYTES * format.getFrameSize()];
-                    while (running) {
-                        int n = line.read(buffer, 0, buffer.length);
-                        if (n <= 0) {
-                            continue;
-                        }
-                        int length = stereo ? downmixToMono(buffer, n) : n;
-                        level = peakPercent(buffer, length);
-                        if (recognizer.acceptWaveform(buffer, length)) {
-                            appendResult(recognizer.result());
-                        }
-                    }
-                    appendResult(recognizer.finalResult());
+                if (selection.systemTap()) {
+                    captureFromSystemTap();
+                } else {
+                    captureFromDevice();
                 }
             } catch (Throwable e) {
                 if (running) {
@@ -232,6 +233,85 @@ public class LiveTranscriptionService {
                 }
             } finally {
                 closeLine();
+            }
+        }
+
+        /** Java Sound path: microphone or a loopback device. */
+        private void captureFromDevice() throws Exception {
+            // The device chooses the format (macOS often refuses 16 kHz);
+            // the recognizer is created with whatever rate was granted and
+            // stereo input is downmixed to mono before recognition.
+            line = audioDevices.openBestCaptureLine(selection.deviceName());
+            AudioFormat format = line.getFormat();
+            boolean stereo = format.getChannels() == 2;
+            line.start();
+            markListening();
+            log.info("Capturing '{}' as [{}] at {} Hz {} into session {}",
+                    selection.displayName(), selection.label(),
+                    (int) format.getSampleRate(), stereo ? "stereo" : "mono", session.id());
+            try (SpeechRecognizer recognizer = new SpeechRecognizer(model, format.getSampleRate())) {
+                byte[] buffer = new byte[BUFFER_BYTES * format.getFrameSize()];
+                while (running) {
+                    int n = line.read(buffer, 0, buffer.length);
+                    if (n <= 0) {
+                        continue;
+                    }
+                    int length = stereo ? downmixToMono(buffer, n) : n;
+                    level = peakPercent(buffer, length);
+                    if (recognizer.acceptWaveform(buffer, length)) {
+                        appendResult(recognizer.result());
+                    }
+                }
+                appendResult(recognizer.finalResult());
+            }
+        }
+
+        /**
+         * Native-helper path: reads what the computer is playing straight
+         * from the OS (Core Audio tap on macOS, WASAPI loopback on Windows).
+         */
+        private void captureFromSystemTap() throws Exception {
+            Process process = NativeSystemAudioTap.startHelper();
+            tapProcess = process;
+            Thread stderrDrain = new Thread(() -> {
+                try (var reader = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(process.getErrorStream()))) {
+                    String errorLine;
+                    while ((errorLine = reader.readLine()) != null) {
+                        log.warn("[system-tap] {}", errorLine);
+                    }
+                } catch (java.io.IOException ignored) {
+                    // stream closes with the process
+                }
+            }, "system-tap-stderr");
+            stderrDrain.setDaemon(true);
+            stderrDrain.start();
+
+            java.io.InputStream pcm = new java.io.BufferedInputStream(process.getInputStream());
+            float sampleRate = NativeSystemAudioTap.readHeader(pcm);
+            markListening();
+            log.info("Capturing system audio via native tap at {} Hz into session {}",
+                    (int) sampleRate, session.id());
+            try (SpeechRecognizer recognizer = new SpeechRecognizer(model, sampleRate)) {
+                byte[] buffer = new byte[BUFFER_BYTES];
+                while (running) {
+                    int n = pcm.read(buffer, 0, buffer.length);
+                    if (n < 0) {
+                        break;
+                    }
+                    if (n == 0) {
+                        continue;
+                    }
+                    level = peakPercent(buffer, n);
+                    if (recognizer.acceptWaveform(buffer, n)) {
+                        appendResult(recognizer.result());
+                    }
+                }
+                appendResult(recognizer.finalResult());
+            }
+            if (running && !process.isAlive() && process.exitValue() != 0) {
+                throw new java.io.IOException("system-audio helper exited with code "
+                        + process.exitValue() + " (see [system-tap] log lines for the reason)");
             }
         }
 
@@ -293,6 +373,11 @@ public class LiveTranscriptionService {
             if (current != null) {
                 current.close();
                 line = null;
+            }
+            Process process = tapProcess;
+            if (process != null) {
+                process.destroy();
+                tapProcess = null;
             }
         }
 

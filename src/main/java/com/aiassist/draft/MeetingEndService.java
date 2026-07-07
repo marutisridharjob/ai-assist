@@ -59,7 +59,8 @@ public class MeetingEndService {
         if (options == null) {
             options = new DraftOptions(autoPilotProperties.contentType(), autoPilotProperties.tone());
         }
-        Draft draft = drafter.draft(session.topic(), transcript, options);
+        Draft draft = AttributedTranscript.appendTo(
+                drafter.draft(session.topic(), transcript, options), session.utterances());
         Path saved = fileWriter.save(draft);
         log.info("Meeting {} ended with {} utterances; notes saved to {}",
                 sessionId, session.utterances().size(), saved);
