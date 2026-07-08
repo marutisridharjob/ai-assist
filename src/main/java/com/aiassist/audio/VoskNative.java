@@ -14,7 +14,10 @@ import com.sun.jna.Pointer;
  */
 interface VoskNative extends Library {
 
-    VoskNative INSTANCE = Native.load("vosk", VoskNative.class);
+    // Loaded via VoskLoader by absolute path: on Windows, libvosk.dll's MinGW
+    // runtime dependencies must be pre-loaded from the same directory first,
+    // which JNA's by-name lookup doesn't do.
+    VoskNative INSTANCE = Native.load(VoskLoader.ensureLoaded(), VoskNative.class);
 
     Pointer vosk_model_new(String path);
 
