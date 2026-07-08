@@ -23,9 +23,10 @@ import org.slf4j.LoggerFactory;
  *       Xcode Command Line Tools' {@code swiftc}); asks once for the
  *       "System Audio Recording" permission.</li>
  *   <li><b>Windows Vista..11</b>: WASAPI loopback on the default output
- *       device (C#, compiled with the .NET Framework's built-in
- *       {@code csc.exe}); no Stereo Mix or virtual cable needed and it works
- *       with any headphones.</li>
+ *       device — a prebuilt executable embedded in the jar, produced from
+ *       the proven open-source {@code wasapi} Rust crate (MIT); nothing to
+ *       compile or install, no Stereo Mix or virtual cable, and it works
+ *       with any headphones. Source ships in {@code native/windows-tap}.</li>
  * </ul>
  *
  * The helper streams one ASCII header line {@code AI_ASSIST_TAP <rate>}
@@ -67,6 +68,18 @@ public final class NativeSystemAudioTap {
     /** Why {@link #isSupported()} returned false, for logs and status lines. */
     public static synchronized String unavailableReason() {
         return reason;
+    }
+
+    /**
+     * Called when the helper failed at runtime (e.g. permission denied,
+     * device error): the tap is disabled for the rest of this app run so the
+     * next start/resume automatically falls back to loopback devices or the
+     * microphone instead of failing the same way again.
+     */
+    public static synchronized void disableAfterRuntimeFailure(String message) {
+        supported = false;
+        reason = "disabled after a runtime failure: " + message;
+        log.warn("Native system-audio tap {}", reason);
     }
 
     public static Process startHelper() throws IOException {
@@ -112,15 +125,26 @@ public final class NativeSystemAudioTap {
                             "-o", workDir.resolve("system-audio-tap").toString(), source.toString()));
         }
         if (os.contains("win")) {
-            Path csc = findWindowsCsc();
-            if (csc == null) {
-                reason = ".NET Framework C# compiler (csc.exe) not found under " + System.getenv("WINDIR");
-                return false;
+            // Prebuilt at project build time; just unpack it from the jar.
+            Files.createDirectories(workDir);
+            Path exe = workDir.resolve("system-audio-tap.exe");
+            try (InputStream in = NativeSystemAudioTap.class
+                    .getResourceAsStream("/windows/system-audio-tap.exe")) {
+                if (in == null) {
+                    reason = "embedded Windows helper missing from the jar";
+                    return false;
+                }
+                try {
+                    Files.copy(in, exe, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                } catch (IOException overwriteFailure) {
+                    if (!Files.exists(exe)) {
+                        throw overwriteFailure;
+                    }
+                    // a running copy has the file locked; reuse it
+                }
             }
-            return compile(workDir, "/windows/SystemAudioTap.cs", "SystemAudioTap.cs",
-                    "system-audio-tap.exe",
-                    source -> List.of(csc.toString(), "/nologo", "/optimize",
-                            "/out:" + workDir.resolve("system-audio-tap.exe"), source.toString()));
+            helperBinary = exe;
+            return true;
         }
         reason = "no native tap for " + os + " (Linux uses the PulseAudio/PipeWire Monitor device instead)";
         return false;
@@ -198,30 +222,4 @@ public final class NativeSystemAudioTap {
         return null;
     }
 
-    private static Path findWindowsCsc() {
-        String winDir = System.getenv("WINDIR");
-        if (winDir == null) {
-            winDir = "C:\\Windows";
-        }
-        for (String frameworkDir : List.of("Framework64", "Framework")) {
-            Path base = Path.of(winDir, "Microsoft.NET", frameworkDir);
-            if (!Files.isDirectory(base)) {
-                continue;
-            }
-            try (var versions = Files.list(base)) {
-                Path csc = versions
-                        .filter(p -> p.getFileName().toString().startsWith("v4."))
-                        .map(p -> p.resolve("csc.exe"))
-                        .filter(Files::isRegularFile)
-                        .findFirst()
-                        .orElse(null);
-                if (csc != null) {
-                    return csc;
-                }
-            } catch (IOException ignored) {
-                // fall through to the next framework directory
-            }
-        }
-        return null;
-    }
 }

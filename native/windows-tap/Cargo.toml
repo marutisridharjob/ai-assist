@@ -1,0 +1,15 @@
+[package]
+name = "system-audio-tap"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wasapi = "0.15"
+
+[profile.release]
+opt-level = "s"
+strip = true
+
+[[bin]]
+name = "system-audio-tap"
+path = "src/main.rs"

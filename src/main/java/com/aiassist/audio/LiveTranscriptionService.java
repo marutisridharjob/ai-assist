@@ -242,7 +242,14 @@ public class LiveTranscriptionService {
             } catch (Throwable e) {
                 if (running) {
                     log.warn("Capture on '{}' failed: {}", selection.displayName(), e.getMessage());
-                    markFailed(e.getClass().getSimpleName() + ": " + e.getMessage());
+                    String message = e.getClass().getSimpleName() + ": " + e.getMessage();
+                    if (selection.systemTap()) {
+                        // Don't fail the same way twice: the next start/resume
+                        // uses loopback devices or the microphone instead.
+                        NativeSystemAudioTap.disableAfterRuntimeFailure(message);
+                        message += " — press Pause then Resume to switch to the fallback capture";
+                    }
+                    markFailed(message);
                 }
             } finally {
                 closeLine();
