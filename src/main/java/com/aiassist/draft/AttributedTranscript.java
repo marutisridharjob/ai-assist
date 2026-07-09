@@ -22,7 +22,7 @@ public final class AttributedTranscript {
     }
 
     private static final java.time.format.DateTimeFormatter TIME =
-            java.time.format.DateTimeFormatter.ofPattern("HH:mm")
+            java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
                     .withZone(java.time.ZoneId.systemDefault());
 
     public static Draft appendTo(Draft draft, List<Utterance> utterances) {

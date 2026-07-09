@@ -158,7 +158,12 @@ public class MeetingConsole {
         stopButton.setToolTipText("Meeting complete — draft the notes and save the file");
         stopButton.addActionListener(e -> stopMeeting());
 
+        JButton clearButton = new JButton("Clear");
+        clearButton.setToolTipText("Clear the transcript display (captured content is kept for the notes)");
+        clearButton.addActionListener(e -> transcript.setText(""));
+
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        buttons.add(clearButton);
         buttons.add(startButton);
         buttons.add(pauseButton);
         buttons.add(stopButton);
@@ -177,6 +182,8 @@ public class MeetingConsole {
         frame.add(scroll, BorderLayout.CENTER);
         frame.add(bottom, BorderLayout.SOUTH);
         frame.setSize(760, 540);
+        frame.setMinimumSize(new java.awt.Dimension(520, 380));
+        frame.setResizable(true);
         frame.setLocationByPlatform(true);
 
         darkModeToggle.setSelected(prefs.getBoolean("darkMode", false));
@@ -188,7 +195,7 @@ public class MeetingConsole {
     }
 
     private static final java.time.format.DateTimeFormatter LINE_TIME =
-            java.time.format.DateTimeFormatter.ofPattern("HH:mm")
+            java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
                     .withZone(java.time.ZoneId.systemDefault());
 
     /** Applies the title field to the current meeting (drives the file name). */
