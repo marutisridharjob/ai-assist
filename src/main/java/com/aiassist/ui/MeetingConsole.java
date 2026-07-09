@@ -60,6 +60,9 @@ public class MeetingConsole {
     private JLabel titleLabel;
     private javax.swing.JTextField titleField;
     private javax.swing.JCheckBox darkModeToggle;
+    private javax.swing.JComboBox<String> modelCombo;
+    private boolean updatingModels;
+    private JPanel controlsPanel;
     private JPanel topPanel;
     private JPanel bottomPanel;
     private JPanel buttonsPanel;
@@ -135,13 +138,49 @@ public class MeetingConsole {
             prefs.putBoolean("darkMode", darkModeToggle.isSelected());
         });
 
+        // Model picker: built-in default plus any Vosk model unpacked into
+        // the ./models folder next to the app. Reloaded each time it opens.
+        modelCombo = new javax.swing.JComboBox<>();
+        modelCombo.setToolTipText("<html>Speech model. Built-in: small English (fast, 40 MB).<br>"
+                + "For better accuracy in noise, download from alphacephei.com/vosk/models and unzip into ./models:<br>"
+                + "· vosk-model-en-us-0.22-lgraph (128 MB, compact + notably more accurate)<br>"
+                + "· vosk-model-en-us-0.22 (1.8 GB, most accurate)</html>");
+        populateModels();
+        modelCombo.addPopupMenuListener(new javax.swing.event.PopupMenuListener() {
+            @Override
+            public void popupMenuWillBecomeVisible(javax.swing.event.PopupMenuEvent e) {
+                populateModels();
+            }
+
+            @Override
+            public void popupMenuWillBecomeInvisible(javax.swing.event.PopupMenuEvent e) {
+            }
+
+            @Override
+            public void popupMenuCanceled(javax.swing.event.PopupMenuEvent e) {
+            }
+        });
+        modelCombo.addActionListener(e -> {
+            if (updatingModels) {
+                return;
+            }
+            String selected = (String) modelCombo.getSelectedItem();
+            if (selected != null && !selected.equals(liveTranscription.activeModelName())) {
+                new Thread(() -> liveTranscription.selectModel(selected), "model-switch").start();
+            }
+        });
+
         titleLabel = new JLabel("Title:");
+        JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        controls.add(modelCombo);
+        controls.add(darkModeToggle);
         JPanel top = new JPanel(new BorderLayout(6, 0));
         top.add(titleLabel, BorderLayout.WEST);
         top.add(titleField, BorderLayout.CENTER);
-        top.add(darkModeToggle, BorderLayout.EAST);
+        top.add(controls, BorderLayout.EAST);
         top.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 8, 4, 8));
         topPanel = top;
+        controlsPanel = controls;
 
         statusLabel = new JLabel(" ");
         // Live caption: in-progress words before the recognizer finalizes them.
@@ -197,6 +236,20 @@ public class MeetingConsole {
     private static final java.time.format.DateTimeFormatter LINE_TIME =
             java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
                     .withZone(java.time.ZoneId.systemDefault());
+
+    /** Fills the model dropdown from the built-in default plus ./models. */
+    private void populateModels() {
+        updatingModels = true;
+        try {
+            modelCombo.removeAllItems();
+            for (String name : liveTranscription.availableModels()) {
+                modelCombo.addItem(name);
+            }
+            modelCombo.setSelectedItem(liveTranscription.activeModelName());
+        } finally {
+            updatingModels = false;
+        }
+    }
 
     /** Applies the title field to the current meeting (drives the file name). */
     private void applyTitle() {
@@ -388,9 +441,11 @@ public class MeetingConsole {
         titleField.setBackground(textBg);
         titleField.setForeground(textFg);
         titleField.setCaretColor(textFg);
-        for (JPanel panel : java.util.List.of(topPanel, bottomPanel, buttonsPanel)) {
+        for (JPanel panel : java.util.List.of(topPanel, bottomPanel, buttonsPanel, controlsPanel)) {
             panel.setBackground(panelBg);
         }
+        modelCombo.setBackground(textBg);
+        modelCombo.setForeground(textFg);
         frame.getContentPane().setBackground(panelBg);
         titleLabel.setForeground(textFg);
         captionLabel.setForeground(muted);

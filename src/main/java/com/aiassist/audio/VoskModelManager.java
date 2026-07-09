@@ -38,6 +38,44 @@ public class VoskModelManager {
         this.properties = properties;
     }
 
+    /**
+     * Models the user can pick from: the built-in default plus any unpacked
+     * Vosk model folder found in ./models next to the app.
+     */
+    public java.util.List<String> listAvailableModels() {
+        var names = new java.util.LinkedHashSet<String>();
+        names.add(properties.modelName());
+        Path local = Path.of("models");
+        if (Files.isDirectory(local)) {
+            try (var dirs = Files.list(local)) {
+                dirs.filter(this::isModelPresent)
+                        .map(p -> p.getFileName().toString())
+                        .sorted()
+                        .forEach(names::add);
+            } catch (IOException ignored) {
+                // listing is best-effort
+            }
+        }
+        return java.util.List.copyOf(names);
+    }
+
+    /** Resolves a user-picked alternative model from local folders only. */
+    public synchronized Path ensureModel(String name) throws IOException, InterruptedException {
+        if (name == null || name.isBlank() || name.equals(properties.modelName())) {
+            return ensureModel();
+        }
+        Path bundled = Path.of("models", name);
+        if (isModelPresent(bundled)) {
+            return bundled;
+        }
+        Path configured = Path.of(properties.modelDir(), name);
+        if (isModelPresent(configured)) {
+            return configured;
+        }
+        throw new IOException("Model \"" + name + "\" not found. Unzip it into "
+                + bundled.toAbsolutePath().getParent() + " and pick it again.");
+    }
+
     /** Returns the model directory, never touching the network unless allowed. */
     public synchronized Path ensureModel() throws IOException, InterruptedException {
         Path bundled = Path.of("models", properties.modelName());

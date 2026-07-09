@@ -39,6 +39,13 @@ JDK — not a browser):
 - an editable **meeting title** at the top — it becomes the notes file name;
   when a meeting app (Teams, Webex, Zoom, Slack) is detected running, the
   title is pre-filled and the status line notes the detection,
+- a **model dropdown** (top-right): the built-in small English model by
+  default, plus any Vosk model you unzip into a `models/` folder next to the
+  jar — switching mid-meeting pauses briefly and resumes with the new model.
+  Recommended for noisy rooms (from
+  [alphacephei.com/vosk/models](https://alphacephei.com/vosk/models)):
+  `vosk-model-en-us-0.22-lgraph` (128 MB, compact and notably more accurate)
+  or `vosk-model-en-us-0.22` (1.8 GB, most accurate),
 - a **Dark** toggle (top-right) switching the whole window between light and
   dark mode; the choice is remembered across launches,
 - a **scrolling text box** where the running transcript appears live, each

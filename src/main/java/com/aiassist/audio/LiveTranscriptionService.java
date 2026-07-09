@@ -50,6 +50,8 @@ public class LiveTranscriptionService {
     private final List<CaptureWorker> workers = new CopyOnWriteArrayList<>();
     private volatile boolean running;
     private volatile SpeechModel model;
+    private volatile String loadedModelName;
+    private volatile String requestedModelName;
 
     public LiveTranscriptionService(AudioDeviceService audioDevices, VoskModelManager modelManager,
                                     SessionStore sessions, TranscriptionProperties properties) {
@@ -81,10 +83,16 @@ public class LiveTranscriptionService {
 
         Thread starter = new Thread(() -> {
             try {
-                if (model == null) {
+                String wanted = activeModelName();
+                if (model == null || !wanted.equals(loadedModelName)) {
                     long t0 = System.currentTimeMillis();
-                    model = new SpeechModel(modelManager.ensureModel().toString());
-                    log.info("Speech model ready in {} ms", System.currentTimeMillis() - t0);
+                    if (model != null) {
+                        model.close();
+                        model = null;
+                    }
+                    model = new SpeechModel(modelManager.ensureModel(wanted).toString());
+                    loadedModelName = wanted;
+                    log.info("Speech model '{}' ready in {} ms", wanted, System.currentTimeMillis() - t0);
                 }
             } catch (Throwable e) {
                 // Throwable, not Exception: native-library loading failures are
@@ -178,6 +186,41 @@ public class LiveTranscriptionService {
     }
 
     public Status status() {
+        return status.get();
+    }
+
+    /** Models the user can pick from (built-in default + ./models folder). */
+    public List<String> availableModels() {
+        return modelManager.listAvailableModels();
+    }
+
+    public String activeModelName() {
+        String requested = requestedModelName;
+        return requested != null ? requested : properties.modelName();
+    }
+
+    /**
+     * Switches the recognition model; a running meeting is briefly paused
+     * and resumed on the same session with the new model loaded.
+     */
+    public synchronized Status selectModel(String name) {
+        if (name == null || name.isBlank() || name.equals(activeModelName())) {
+            return status.get();
+        }
+        Status before = status.get();
+        boolean wasActive = before.state() == State.LISTENING || before.state() == State.PREPARING;
+        stopWorkers();
+        requestedModelName = name;
+        log.info("Speech model switched to '{}'", name);
+        if (wasActive && before.sessionId() != null) {
+            status.set(new Status(State.PAUSED, before.sessionId(), before.devices(),
+                    "Switching model to " + name));
+            return start(null, before.sessionId());
+        }
+        if (before.state() != State.PAUSED) {
+            status.set(new Status(before.state() == State.ERROR ? State.ERROR : State.IDLE,
+                    before.sessionId(), before.devices(), "Model set to " + name));
+        }
         return status.get();
     }
 
