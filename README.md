@@ -75,6 +75,23 @@ JDK — not a browser):
 - the **close button in the top corner** — if a meeting is still running you
   are asked whether to save before closing.
 
+### Editor tab
+
+A second tab next to the meeting view: paste any text (or type a file's full
+path and press **Load**), then apply an offline transformation — all
+deterministic and identical on Windows and macOS:
+
+- **Fix grammar** — light-touch tidying: sentence capitalization, spacing
+  around punctuation, duplicate words, standalone "i", a/an, repeated
+  punctuation. Never rewrites your meaning.
+- **Make compact** — removes filler words (basically, really, very, …) and
+  shortens wordy phrases (in order to → to, due to the fact that → because, …).
+- **Make detailed** — expands the text into a structured document with a
+  summary, sections, key points, and next steps.
+
+**Save** writes the result back to the file path, keeping the previous
+version as `<name>.bak`.
+
 Nothing is written to disk until Stop (or a confirmed save-on-close).
 
 ## What it hears

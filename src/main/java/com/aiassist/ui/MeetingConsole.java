@@ -49,6 +49,7 @@ public class MeetingConsole {
     private final LiveTranscriptionService liveTranscription;
     private final MeetingEndService meetingEndService;
     private final SessionStore sessions;
+    private final com.aiassist.draft.TextRewriteService rewriteService;
 
     private final java.util.prefs.Preferences prefs =
             java.util.prefs.Preferences.userNodeForPackage(MeetingConsole.class);
@@ -64,6 +65,14 @@ public class MeetingConsole {
     private boolean updatingModels;
     private JPanel controlsPanel;
     private JPanel topPanel;
+    private javax.swing.JTabbedPane tabs;
+    private JTextArea editorArea;
+    private javax.swing.JTextField filePathField;
+    private JLabel editorStatus;
+    private JPanel editorPanel;
+    private JPanel editorFileRow;
+    private JPanel editorActionsRow;
+    private JPanel editorSouthRow;
     private JPanel bottomPanel;
     private JPanel buttonsPanel;
     private JButton startButton;
@@ -81,10 +90,12 @@ public class MeetingConsole {
     private boolean lastStatusWasError;
 
     public MeetingConsole(LiveTranscriptionService liveTranscription,
-                          MeetingEndService meetingEndService, SessionStore sessions) {
+                          MeetingEndService meetingEndService, SessionStore sessions,
+                          com.aiassist.draft.TextRewriteService rewriteService) {
         this.liveTranscription = liveTranscription;
         this.meetingEndService = meetingEndService;
         this.sessions = sessions;
+        this.rewriteService = rewriteService;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -259,7 +270,10 @@ public class MeetingConsole {
 
         frame.setLayout(new BorderLayout());
         frame.add(top, BorderLayout.NORTH);
-        frame.add(scroll, BorderLayout.CENTER);
+        tabs = new javax.swing.JTabbedPane();
+        tabs.addTab("Meeting", scroll);
+        tabs.addTab("Editor", buildEditorTab());
+        frame.add(tabs, BorderLayout.CENTER);
         frame.add(bottom, BorderLayout.SOUTH);
         frame.setSize(760, 540);
         frame.setMinimumSize(new java.awt.Dimension(520, 380));
@@ -277,6 +291,123 @@ public class MeetingConsole {
     private static final java.time.format.DateTimeFormatter LINE_TIME =
             java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
                     .withZone(java.time.ZoneId.systemDefault());
+
+    /**
+     * Editor tab: paste content (or load a file by path), then apply an
+     * offline transformation — grammar tidy, compact, or detailed rewrite.
+     * Save writes back to the given path, keeping a .bak of the original.
+     */
+    private JPanel buildEditorTab() {
+        editorArea = new JTextArea();
+        editorArea.setLineWrap(true);
+        editorArea.setWrapStyleWord(true);
+        editorArea.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+        editorArea.setMargin(new java.awt.Insets(8, 8, 8, 8));
+
+        filePathField = new javax.swing.JTextField();
+        filePathField.setToolTipText("Optional: full path of a text file to load and save (e.g. C:\\notes.txt or /Users/me/notes.txt)");
+        JButton loadButton = new JButton("Load");
+        loadButton.addActionListener(e -> loadEditorFile());
+        JButton saveButton = new JButton("Save");
+        saveButton.addActionListener(e -> saveEditorFile());
+        JPanel fileRow = new JPanel(new BorderLayout(6, 0));
+        fileRow.add(new JLabel("File:"), BorderLayout.WEST);
+        fileRow.add(filePathField, BorderLayout.CENTER);
+        JPanel fileButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        fileButtons.add(loadButton);
+        fileButtons.add(saveButton);
+        fileRow.add(fileButtons, BorderLayout.EAST);
+        fileRow.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 8, 4, 8));
+
+        editorStatus = new JLabel(" ");
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        actions.add(rewriteButton("Fix grammar", com.aiassist.draft.TextRewriteService.Mode.GRAMMAR));
+        actions.add(rewriteButton("Make compact", com.aiassist.draft.TextRewriteService.Mode.COMPACT));
+        actions.add(rewriteButton("Make detailed", com.aiassist.draft.TextRewriteService.Mode.DETAILED));
+        JPanel south = new JPanel(new BorderLayout());
+        south.add(editorStatus, BorderLayout.CENTER);
+        south.add(actions, BorderLayout.SOUTH);
+        south.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 8, 4, 8));
+
+        editorPanel = new JPanel(new BorderLayout());
+        editorPanel.add(fileRow, BorderLayout.NORTH);
+        editorPanel.add(new JScrollPane(editorArea,
+                JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER),
+                BorderLayout.CENTER);
+        editorPanel.add(south, BorderLayout.SOUTH);
+        editorFileRow = fileRow;
+        editorActionsRow = actions;
+        editorSouthRow = south;
+        return editorPanel;
+    }
+
+    private JButton rewriteButton(String label, com.aiassist.draft.TextRewriteService.Mode mode) {
+        JButton button = new JButton(label);
+        button.addActionListener(e -> {
+            String text = editorArea.getText();
+            if (text == null || text.isBlank()) {
+                setEditorStatus("Paste some text (or Load a file) first.", true);
+                return;
+            }
+            setEditorStatus("Working…", false);
+            new Thread(() -> {
+                try {
+                    String result = rewriteService.rewrite(text, mode);
+                    SwingUtilities.invokeLater(() -> {
+                        editorArea.setText(result);
+                        editorArea.setCaretPosition(0);
+                        setEditorStatus(label + " applied. Use Save to write it to the file.", false);
+                    });
+                } catch (Exception ex) {
+                    SwingUtilities.invokeLater(() ->
+                            setEditorStatus("Could not rewrite: " + ex.getMessage(), true));
+                }
+            }, "rewrite").start();
+        });
+        return button;
+    }
+
+    private void loadEditorFile() {
+        String path = filePathField.getText();
+        if (path == null || path.isBlank()) {
+            setEditorStatus("Enter the full path of a text file, then press Load.", true);
+            return;
+        }
+        try {
+            editorArea.setText(java.nio.file.Files.readString(java.nio.file.Path.of(path.strip())));
+            editorArea.setCaretPosition(0);
+            setEditorStatus("Loaded " + path.strip(), false);
+        } catch (Exception e) {
+            setEditorStatus("Could not load: " + e.getMessage(), true);
+        }
+    }
+
+    private void saveEditorFile() {
+        String path = filePathField.getText();
+        if (path == null || path.isBlank()) {
+            setEditorStatus("Enter the file path to save to, then press Save.", true);
+            return;
+        }
+        try {
+            java.nio.file.Path target = java.nio.file.Path.of(path.strip());
+            if (java.nio.file.Files.exists(target)) {
+                java.nio.file.Files.copy(target,
+                        java.nio.file.Path.of(target + ".bak"),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+            java.nio.file.Files.writeString(target, editorArea.getText());
+            setEditorStatus("Saved to " + target + " (previous version kept as .bak)", false);
+        } catch (Exception e) {
+            setEditorStatus("Could not save: " + e.getMessage(), true);
+        }
+    }
+
+    private void setEditorStatus(String message, boolean error) {
+        editorStatus.setText(message);
+        editorStatus.setForeground(error
+                ? (darkMode ? new java.awt.Color(0xFF6B6B) : new java.awt.Color(0xB00020))
+                : (darkMode ? new java.awt.Color(0xC8C8C8) : java.awt.Color.DARK_GRAY));
+    }
 
     private static final String UNPACKING_SUFFIX = " (unpacking — wait)";
 
@@ -490,11 +621,21 @@ public class MeetingConsole {
         titleField.setBackground(textBg);
         titleField.setForeground(textFg);
         titleField.setCaretColor(textFg);
-        for (JPanel panel : java.util.List.of(topPanel, bottomPanel, buttonsPanel, controlsPanel)) {
+        for (JPanel panel : java.util.List.of(topPanel, bottomPanel, buttonsPanel, controlsPanel,
+                editorPanel, editorFileRow, editorActionsRow, editorSouthRow)) {
             panel.setBackground(panelBg);
         }
         modelCombo.setBackground(textBg);
         modelCombo.setForeground(textFg);
+        tabs.setBackground(panelBg);
+        tabs.setForeground(textFg);
+        editorArea.setBackground(textBg);
+        editorArea.setForeground(textFg);
+        editorArea.setCaretColor(textFg);
+        filePathField.setBackground(textBg);
+        filePathField.setForeground(textFg);
+        filePathField.setCaretColor(textFg);
+        setEditorStatus(editorStatus.getText(), false);
         frame.getContentPane().setBackground(panelBg);
         titleLabel.setForeground(textFg);
         captionLabel.setForeground(muted);
