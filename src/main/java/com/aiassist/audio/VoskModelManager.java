@@ -36,6 +36,66 @@ public class VoskModelManager {
 
     public VoskModelManager(TranscriptionProperties properties) {
         this.properties = properties;
+        // Users drop downloaded model .zips next to the jar; unpack them
+        // into ./models in the background so they appear in the dropdown.
+        Thread unzipper = new Thread(this::unpackDroppedZips, "model-unzip");
+        unzipper.setDaemon(true);
+        unzipper.start();
+    }
+
+    /** Directory containing the running jar (falls back to the working dir). */
+    private static Path appHome() {
+        String classPath = System.getProperty("java.class.path", "");
+        if (!classPath.contains(java.io.File.pathSeparator) && classPath.endsWith(".jar")) {
+            Path parent = Path.of(classPath).toAbsolutePath().getParent();
+            if (parent != null) {
+                return parent;
+            }
+        }
+        return Path.of("").toAbsolutePath();
+    }
+
+    /** Everywhere a user might reasonably put a model folder. */
+    private static java.util.List<Path> modelRoots() {
+        return java.util.List.copyOf(new java.util.LinkedHashSet<>(java.util.List.of(
+                appHome().resolve("models"), appHome(),
+                Path.of("models").toAbsolutePath(), Path.of("").toAbsolutePath())));
+    }
+
+    private void unpackDroppedZips() {
+        Path target = appHome().resolve("models");
+        for (Path root : modelRoots()) {
+            if (!Files.isDirectory(root)) {
+                continue;
+            }
+            try (var files = Files.list(root)) {
+                for (Path zip : files.filter(p -> {
+                    String n = p.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+                    return n.startsWith("vosk-model") && n.endsWith(".zip");
+                }).toList()) {
+                    String dirName = zip.getFileName().toString();
+                    dirName = dirName.substring(0, dirName.length() - 4);
+                    boolean alreadyUnpacked = false;
+                    for (Path candidate : modelRoots()) {
+                        if (isModelPresent(candidate.resolve(dirName))) {
+                            alreadyUnpacked = true;
+                            break;
+                        }
+                    }
+                    if (alreadyUnpacked) {
+                        continue;
+                    }
+                    log.info("Unpacking dropped model {} into {} (large models take a minute)...", zip, target);
+                    Files.createDirectories(target);
+                    try (InputStream in = Files.newInputStream(zip)) {
+                        unzip(in, target);
+                    }
+                    log.info("Model {} ready; reopen the model dropdown to pick it", dirName);
+                }
+            } catch (IOException e) {
+                log.warn("Could not unpack dropped model zips in {}: {}", root, e.getMessage());
+            }
+        }
     }
 
     /**
@@ -45,9 +105,11 @@ public class VoskModelManager {
     public java.util.List<String> listAvailableModels() {
         var names = new java.util.LinkedHashSet<String>();
         names.add(properties.modelName());
-        Path local = Path.of("models");
-        if (Files.isDirectory(local)) {
-            try (var dirs = Files.list(local)) {
+        for (Path root : modelRoots()) {
+            if (!Files.isDirectory(root)) {
+                continue;
+            }
+            try (var dirs = Files.list(root)) {
                 dirs.filter(this::isModelPresent)
                         .map(p -> p.getFileName().toString())
                         .sorted()
@@ -64,16 +126,18 @@ public class VoskModelManager {
         if (name == null || name.isBlank() || name.equals(properties.modelName())) {
             return ensureModel();
         }
-        Path bundled = Path.of("models", name);
-        if (isModelPresent(bundled)) {
-            return bundled;
+        for (Path root : modelRoots()) {
+            Path candidate = root.resolve(name);
+            if (isModelPresent(candidate)) {
+                return candidate;
+            }
         }
         Path configured = Path.of(properties.modelDir(), name);
         if (isModelPresent(configured)) {
             return configured;
         }
-        throw new IOException("Model \"" + name + "\" not found. Unzip it into "
-                + bundled.toAbsolutePath().getParent() + " and pick it again.");
+        throw new IOException("Model \"" + name + "\" not found. Place its folder (or .zip) next to "
+                + "the ai-assist jar and pick it again.");
     }
 
     /** Returns the model directory, never touching the network unless allowed. */
