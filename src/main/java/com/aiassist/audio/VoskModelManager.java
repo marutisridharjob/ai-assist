@@ -33,6 +33,7 @@ public class VoskModelManager {
     private static final String EMBEDDED_MODEL_RESOURCE = "/vosk-model.zip";
 
     private final TranscriptionProperties properties;
+    private final java.util.Set<String> unpacking = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public VoskModelManager(TranscriptionProperties properties) {
         this.properties = properties;
@@ -86,9 +87,14 @@ public class VoskModelManager {
                         continue;
                     }
                     log.info("Unpacking dropped model {} into {} (large models take a minute)...", zip, target);
-                    Files.createDirectories(target);
-                    try (InputStream in = Files.newInputStream(zip)) {
-                        unzip(in, target);
+                    unpacking.add(dirName);
+                    try {
+                        Files.createDirectories(target);
+                        try (InputStream in = Files.newInputStream(zip)) {
+                            unzip(in, target);
+                        }
+                    } finally {
+                        unpacking.remove(dirName);
                     }
                     log.info("Model {} ready; reopen the model dropdown to pick it", dirName);
                 }
@@ -118,7 +124,37 @@ public class VoskModelManager {
                 // listing is best-effort
             }
         }
+        names.removeAll(unpacking);
         return java.util.List.copyOf(names);
+    }
+
+    /** Models currently being unpacked from dropped zips (not yet usable). */
+    public java.util.Set<String> unpackingNow() {
+        return java.util.Set.copyOf(unpacking);
+    }
+
+    /**
+     * Optional speaker-identification model (vosk-model-spk-*): when present
+     * in any model folder, meeting voices get speaker-A/B/... labels.
+     */
+    public java.util.Optional<Path> findSpeakerModel() {
+        for (Path root : modelRoots()) {
+            if (!Files.isDirectory(root)) {
+                continue;
+            }
+            try (var dirs = Files.list(root)) {
+                var match = dirs.filter(Files::isDirectory)
+                        .filter(p -> p.getFileName().toString().startsWith("vosk-model-spk"))
+                        .filter(p -> !unpacking.contains(p.getFileName().toString()))
+                        .findFirst();
+                if (match.isPresent()) {
+                    return match;
+                }
+            } catch (IOException ignored) {
+                // best-effort
+            }
+        }
+        return java.util.Optional.empty();
     }
 
     /** Resolves a user-picked alternative model from local folders only. */

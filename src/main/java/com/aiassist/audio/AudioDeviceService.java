@@ -94,7 +94,7 @@ public class AudioDeviceService {
                 }
             }
         }
-        selections.add(new DeviceSelection(null, "mic"));
+        selections.add(new DeviceSelection(null, "you"));
         return selections;
     }
 

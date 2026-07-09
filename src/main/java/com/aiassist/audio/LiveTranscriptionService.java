@@ -52,6 +52,10 @@ public class LiveTranscriptionService {
     private volatile SpeechModel model;
     private volatile String loadedModelName;
     private volatile String requestedModelName;
+    private volatile String modelNote;
+    private volatile com.sun.jna.Pointer speakerModel;
+    private volatile boolean speakerModelChecked;
+    private volatile SpeakerRegistry speakers = new SpeakerRegistry();
 
     public LiveTranscriptionService(AudioDeviceService audioDevices, VoskModelManager modelManager,
                                     SessionStore sessions, TranscriptionProperties properties) {
@@ -73,9 +77,13 @@ public class LiveTranscriptionService {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Live transcription is already running for session " + status.get().sessionId());
         }
-        ListeningSession session = sessionId == null || sessionId.isBlank()
-                ? sessions.create("Live meeting notes")
-                : sessions.get(sessionId);
+        ListeningSession session;
+        if (sessionId == null || sessionId.isBlank()) {
+            session = sessions.create("Live meeting notes");
+            speakers = new SpeakerRegistry(); // fresh voices per meeting
+        } else {
+            session = sessions.get(sessionId);
+        }
 
         running = true;
         status.set(new Status(State.PREPARING, session.id(), List.of("detecting audio sources…"),
@@ -90,9 +98,36 @@ public class LiveTranscriptionService {
                         model.close();
                         model = null;
                     }
-                    model = new SpeechModel(modelManager.ensureModel(wanted).toString());
-                    loadedModelName = wanted;
-                    log.info("Speech model '{}' ready in {} ms", wanted, System.currentTimeMillis() - t0);
+                    try {
+                        model = new SpeechModel(modelManager.ensureModel(wanted).toString());
+                        loadedModelName = wanted;
+                        modelNote = null;
+                    } catch (Throwable loadFailure) {
+                        // A picked model that can't load (still unpacking,
+                        // incomplete, out of memory) must not kill the meeting:
+                        // revert to the built-in default and say so.
+                        String fallback = properties.modelName();
+                        if (fallback.equals(wanted)) {
+                            throw loadFailure;
+                        }
+                        requestedModelName = null;
+                        modelNote = "model \"" + wanted + "\" could not be loaded ("
+                                + loadFailure.getMessage() + ") — using " + fallback
+                                + "; if it was still unpacking, wait for the log to say it is ready and pick it again";
+                        log.warn(modelNote);
+                        model = new SpeechModel(modelManager.ensureModel(fallback).toString());
+                        loadedModelName = fallback;
+                    }
+                    log.info("Speech model '{}' ready in {} ms", loadedModelName, System.currentTimeMillis() - t0);
+                }
+                if (!speakerModelChecked) {
+                    speakerModelChecked = true;
+                    modelManager.findSpeakerModel().ifPresent(path -> {
+                        speakerModel = VoskNative.INSTANCE.vosk_spk_model_new(path.toString());
+                        log.info(speakerModel != null
+                                ? "Speaker-identification model loaded from " + path
+                                : "Speaker model at " + path + " could not be loaded");
+                    });
                 }
             } catch (Throwable e) {
                 // Throwable, not Exception: native-library loading failures are
@@ -197,6 +232,16 @@ public class LiveTranscriptionService {
     public String activeModelName() {
         String requested = requestedModelName;
         return requested != null ? requested : properties.modelName();
+    }
+
+    /** Models still unpacking from dropped zips (shown disabled in the UI). */
+    public java.util.Set<String> unpackingModels() {
+        return modelManager.unpackingNow();
+    }
+
+    /** One-line note about a model fallback, for the status line; null when none. */
+    public String modelNote() {
+        return modelNote;
     }
 
     /**
@@ -312,7 +357,7 @@ public class LiveTranscriptionService {
             log.info("Capturing '{}' as [{}] at {} Hz {} into session {}",
                     selection.displayName(), selection.label(),
                     (int) format.getSampleRate(), stereo ? "stereo" : "mono", session.id());
-            try (SpeechRecognizer recognizer = new SpeechRecognizer(model, format.getSampleRate())) {
+            try (SpeechRecognizer recognizer = newRecognizer(format.getSampleRate())) {
                 byte[] buffer = new byte[BUFFER_BYTES * format.getFrameSize()];
                 while (running) {
                     int n = line.read(buffer, 0, buffer.length);
@@ -359,7 +404,7 @@ public class LiveTranscriptionService {
             markListening();
             log.info("Capturing system audio via native tap at {} Hz into session {}",
                     (int) sampleRate, session.id());
-            try (SpeechRecognizer recognizer = new SpeechRecognizer(model, sampleRate)) {
+            try (SpeechRecognizer recognizer = newRecognizer(sampleRate)) {
                 byte[] buffer = new byte[BUFFER_BYTES];
                 while (running) {
                     int n = pcm.read(buffer, 0, buffer.length);
@@ -427,16 +472,35 @@ public class LiveTranscriptionService {
                     : new Status(State.ERROR, session.id(), deviceLabels, detail));
         }
 
+        /** Meeting audio gets a speaker-identifying recognizer when the spk model is present. */
+        private SpeechRecognizer newRecognizer(float sampleRate) {
+            boolean identifySpeakers = speakerModel != null && "meeting".equals(selection.label());
+            return new SpeechRecognizer(model, sampleRate, identifySpeakers ? speakerModel : null);
+        }
+
         private void appendResult(String resultJson) {
             try {
                 JsonNode node = objectMapper.readTree(resultJson);
                 String text = node.path("text").asText("");
                 if (!text.isBlank() && !session.isEnded()) {
-                    session.addUtterance(text, selection.label());
+                    session.addUtterance(text, speakerLabel(node));
                 }
             } catch (Exception e) {
                 log.warn("Could not parse recognizer result: {}", resultJson, e);
             }
+        }
+
+        /** speaker-A/B/... from the utterance's voice x-vector, else the source label. */
+        private String speakerLabel(JsonNode node) {
+            JsonNode vector = node.path("spk");
+            if (!vector.isArray() || vector.isEmpty()) {
+                return selection.label();
+            }
+            double[] xvector = new double[vector.size()];
+            for (int i = 0; i < xvector.length; i++) {
+                xvector[i] = vector.get(i).asDouble();
+            }
+            return speakers.assign(xvector);
         }
 
         private void updatePartial(String partialJson) {

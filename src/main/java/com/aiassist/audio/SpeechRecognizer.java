@@ -8,7 +8,14 @@ public final class SpeechRecognizer implements AutoCloseable {
     private final Pointer handle;
 
     public SpeechRecognizer(SpeechModel model, float sampleRate) {
-        this.handle = VoskNative.INSTANCE.vosk_recognizer_new(model.handle(), sampleRate);
+        this(model, sampleRate, null);
+    }
+
+    /** With a speaker model, results carry an x-vector for voice identification. */
+    public SpeechRecognizer(SpeechModel model, float sampleRate, Pointer speakerModel) {
+        this.handle = speakerModel == null
+                ? VoskNative.INSTANCE.vosk_recognizer_new(model.handle(), sampleRate)
+                : VoskNative.INSTANCE.vosk_recognizer_new_spk(model.handle(), sampleRate, speakerModel);
         if (handle == null) {
             throw new IllegalStateException("Could not create speech recognizer");
         }

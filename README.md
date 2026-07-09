@@ -49,7 +49,7 @@ JDK — not a browser):
 - a **Dark** toggle (top-right) switching the whole window between light and
   dark mode; the choice is remembered across launches,
 - a **scrolling text box** where the running transcript appears live, each
-  line time-stamped and tagged `[mic]` or `[meeting]`,
+  line time-stamped and tagged `[you]`, `[meeting]`, or `[speaker-A/B/…]` when the optional speaker model is installed,
 - a **live caption line** showing words as they are being recognized,
   before the phrase is final — like the captions in commercial apps,
 - **Start / Pause / Stop** buttons each carry a state dot in their top-right
@@ -63,10 +63,15 @@ JDK — not a browser):
   your **Desktop** (e.g. `2026-07-05_15-02-41_live-meeting-notes.rtf`), and
   the final notes are shown in the window,
 - **who said what**: every transcript line is tagged with its source —
-  `[mic]` is you / your side of the room, `[meeting]` is the other
+  `[you]` is you / your side of the room, `[meeting]` is the other
   participants captured from the system audio. The tags appear live in the
   window, in the running interim draft, and in a "Full transcript (who said
   what)" section at the end of the saved notes,
+- **individual meeting voices (optional)**: download the 13 MB speaker model
+  [vosk-model-spk-0.4](https://alphacephei.com/vosk/models/vosk-model-spk-0.4.zip)
+  and drop the zip (or unzipped folder) next to the jar — meeting utterances
+  are then labelled `[speaker-A]`, `[speaker-B]`, … by clustering each
+  utterance's voiceprint. Restart the app after adding it,
 - the **close button in the top corner** — if a meeting is still running you
   are asked whether to save before closing.
 
@@ -75,7 +80,7 @@ Nothing is written to disk until Stop (or a confirmed save-on-close).
 ## What it hears
 
 The app captures **two streams at once**, each transcribed independently:
-**the microphone** (you and the room, tagged `[mic]`) and **the meeting
+**the microphone** (you and the room, tagged `[you]`) and **the meeting
 audio** (the other participants, tagged `[meeting]`).
 
 ### How the meeting audio is captured — same technique as the commercial apps
@@ -134,7 +139,7 @@ participants. Set it up like this:
    per source. Play any video with speech — the level should jump and the
    words should appear in the transcript within a couple of seconds. In this
    route everything arrives through the microphone, so lines are tagged
-   `[mic]` — that's expected. If the level stays near 0 % while audio is
+   `[you]` — that's expected. If the level stays near 0 % while audio is
    playing, the window tells you and points at the usual causes.
 
 Notes: meeting apps cancel their own echo, so the remote side will not hear
@@ -158,7 +163,7 @@ free, GPL-3.0 virtual audio driver:
    copy of it.
 4. Restart ai-assist. It **auto-detects BlackHole** as the meeting source —
    the status line lists it and remote speech appears tagged `[meeting]`,
-   while your own voice still arrives via the microphone as `[mic]`.
+   while your own voice still arrives via the microphone as `[you]`.
 
 ### If you must use headphones (without installing anything)
 

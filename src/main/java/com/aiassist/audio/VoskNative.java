@@ -25,6 +25,12 @@ interface VoskNative extends Library {
 
     Pointer vosk_recognizer_new(Pointer model, float sampleRate);
 
+    Pointer vosk_spk_model_new(String path);
+
+    void vosk_spk_model_free(Pointer spkModel);
+
+    Pointer vosk_recognizer_new_spk(Pointer model, float sampleRate, Pointer spkModel);
+
     void vosk_recognizer_free(Pointer recognizer);
 
     int vosk_recognizer_accept_waveform(Pointer recognizer, byte[] data, int length);

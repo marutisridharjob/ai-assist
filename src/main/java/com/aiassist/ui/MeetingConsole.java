@@ -102,8 +102,42 @@ public class MeetingConsole {
         }
     }
 
+    /** Meeting-notes icon (page + red recording dot), drawn at runtime. */
+    private static java.awt.image.BufferedImage notesIcon(int size) {
+        var image = new java.awt.image.BufferedImage(size, size, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        var g = image.createGraphics();
+        g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
+                java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+        int m = Math.max(1, size / 10);
+        int arc = size / 5;
+        g.setColor(java.awt.Color.WHITE);
+        g.fillRoundRect(m, m / 2, size - 2 * m, size - m, arc, arc);
+        g.setColor(new java.awt.Color(0x4A4A4A));
+        g.setStroke(new java.awt.BasicStroke(Math.max(1f, size / 24f)));
+        g.drawRoundRect(m, m / 2, size - 2 * m, size - m, arc, arc);
+        for (int i = 1; i <= 3; i++) {
+            int y = m / 2 + i * (size - m) / 5;
+            g.drawLine(2 * m, y, size - 3 * m, y);
+        }
+        int dot = size / 3;
+        g.setColor(new java.awt.Color(0xE74C3C));
+        g.fillOval(size - dot - m, size - dot - m, dot, dot);
+        g.dispose();
+        return image;
+    }
+
     private void build() {
         frame = new JFrame("ai-assist — meeting notes");
+        var icons = java.util.List.of(notesIcon(16), notesIcon(32), notesIcon(64), notesIcon(128));
+        frame.setIconImages(icons);
+        try {
+            if (java.awt.Taskbar.isTaskbarSupported()
+                    && java.awt.Taskbar.getTaskbar().isSupported(java.awt.Taskbar.Feature.ICON_IMAGE)) {
+                java.awt.Taskbar.getTaskbar().setIconImage(icons.get(3)); // macOS dock
+            }
+        } catch (Exception ignored) {
+            // dock icon is cosmetic
+        }
         frame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         frame.addWindowListener(new WindowAdapter() {
             @Override
@@ -165,7 +199,14 @@ public class MeetingConsole {
                 return;
             }
             String selected = (String) modelCombo.getSelectedItem();
-            if (selected != null && !selected.equals(liveTranscription.activeModelName())) {
+            if (selected == null) {
+                return;
+            }
+            if (selected.endsWith(UNPACKING_SUFFIX)) {
+                populateModels(); // not usable yet; snap back to the active model
+                return;
+            }
+            if (!selected.equals(liveTranscription.activeModelName())) {
                 new Thread(() -> liveTranscription.selectModel(selected), "model-switch").start();
             }
         });
@@ -237,6 +278,8 @@ public class MeetingConsole {
             java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
                     .withZone(java.time.ZoneId.systemDefault());
 
+    private static final String UNPACKING_SUFFIX = " (unpacking — wait)";
+
     /** Fills the model dropdown from the built-in default plus ./models. */
     private void populateModels() {
         updatingModels = true;
@@ -244,6 +287,9 @@ public class MeetingConsole {
             modelCombo.removeAllItems();
             for (String name : liveTranscription.availableModels()) {
                 modelCombo.addItem(name);
+            }
+            for (String name : liveTranscription.unpackingModels()) {
+                modelCombo.addItem(name + UNPACKING_SUFFIX);
             }
             modelCombo.setSelectedItem(liveTranscription.activeModelName());
         } finally {
@@ -354,6 +400,9 @@ public class MeetingConsole {
         String message = (detectedMeetingApp != null ? detectedMeetingApp + " detected · " : "")
                 + "Listening (" + String.join(", ", status.devices()) + ")"
                 + (levelText.isEmpty() ? "" : " — audio level: " + levelText);
+        if (liveTranscription.modelNote() != null) {
+            message += " — " + liveTranscription.modelNote();
+        }
         boolean hasMeetingSource = status.devices().stream().anyMatch(d -> d.contains("[meeting]"));
         if (!hasMeetingSource) {
             message += " — NO meeting-audio device detected: only the microphone is being captured. "
