@@ -129,12 +129,13 @@ public class TemplateContentDrafter implements ContentDrafter {
                 sections.add(new Draft.Section("Closing", closing(options.tone())));
             }
             case MEETING_NOTES -> {
-                sections.add(new Draft.Section("Discussion", body));
                 if (!keyPoints.isEmpty()) {
                     sections.add(new Draft.Section("Decisions and highlights", bulleted(keyPoints)));
                 }
                 sections.add(new Draft.Section("Action items",
                         actionItems.isEmpty() ? "No action items were captured." : bulleted(actionItems)));
+                // Last, so it sits directly before the appended full transcript.
+                sections.add(new Draft.Section("Discussion", body));
             }
             case BLOG_POST -> {
                 sections.add(new Draft.Section("Introduction",

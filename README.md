@@ -59,8 +59,8 @@ JDK — not a browser):
   launch, so this is mainly for starting the next meeting after a Stop,
 - **Pause / Resume** — temporarily stop listening without ending the meeting,
 - **Stop** — the meeting is complete: capture stops, the full
-  end-to-end notes are drafted and saved as a timestamped Markdown file on
-  your **Desktop** (e.g. `2026-07-05_15-02-41_live-meeting-notes.md`), and
+  end-to-end notes are drafted and saved as a timestamped rich-text (.rtf) file on
+  your **Desktop** (e.g. `2026-07-05_15-02-41_live-meeting-notes.rtf`), and
   the final notes are shown in the window,
 - **who said what**: every transcript line is tagged with its source —
   `[mic]` is you / your side of the room, `[meeting]` is the other
@@ -246,7 +246,7 @@ universal binary; no Rosetta needed).
 | Status line never shows `system audio (native tap)` | macOS: the helper couldn't be built — install the Command Line Tools once (`xcode-select --install`), then press Pause → Resume. Windows: the helper is prebuilt inside the jar, so check the log (run from a terminal) for the `Native system-audio tap unavailable:` line, which states the exact reason. If the tap fails while running, the app disables it and Pause → Resume switches to the fallback capture automatically. |
 | Native tap listed but `[meeting]` level stays 0 % / helper exits (macOS) | The "System Audio Recording" permission was denied or never shown. System Settings → Privacy & Security → **Screen & System Audio Recording** → **System Audio Recording Only** tab → enable Terminal (or Java), then press Pause → Resume. The `[system-tap]` log lines show the exact error. |
 | BlackHole installed but missing from Audio MIDI Setup / Multi-Output list | CoreAudio only loads new drivers when it restarts. ① Verify the install: `ls /Library/Audio/Plug-Ins/HAL/` must show `BlackHole2ch.driver` — if not, the installer didn't finish (it asks for an admin password); `brew reinstall blackhole-2ch` or rerun the `.pkg`. ② Restart the audio daemon: `sudo killall coreaudiod` (it relaunches itself) — or reboot. ③ Fully quit Audio MIDI Setup (⌘Q) and reopen; **BlackHole 2ch** now appears in the device list and the Multi-Output tick-list. |
-| Where are my notes / the model? | Notes: on the **Desktop**, named `<date>_<time>_live-meeting-notes.md`. Model cache: `$TMPDIR/ai-assist/models` (managed by the OS; safe to ignore). |
+| Where are my notes / the model? | Notes: on the **Desktop**, named `<date>_<time>_live-meeting-notes.rtf`. Model cache: `$TMPDIR/ai-assist/models` (managed by the OS; safe to ignore). |
 
 ## How it works
 

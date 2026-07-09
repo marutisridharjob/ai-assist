@@ -30,8 +30,8 @@ class DraftFileWriterTest {
 
         assertThat(saved).exists();
         assertThat(saved.getFileName().toString())
-                .matches("\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}_weekly-status-meeting-7\\.md");
-        assertThat(saved).content().contains("# Weekly Status: Meeting #7!");
+                .matches("\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}_weekly-status-meeting-7\\.rtf");
+        assertThat(saved).content().contains("Weekly Status: Meeting #7!");
     }
 
     @Test
@@ -49,8 +49,8 @@ class DraftFileWriterTest {
         Path symbols = writer.save(draft("!!!***???"));
         Path nullTitle = writer.save(draft(null));
 
-        assertThat(symbols.getFileName().toString()).contains("_draft.md");
-        assertThat(nullTitle.getFileName().toString()).contains("_draft.md");
+        assertThat(symbols.getFileName().toString()).contains("_draft.rtf");
+        assertThat(nullTitle.getFileName().toString()).contains("_draft.rtf");
     }
 
     @Test
