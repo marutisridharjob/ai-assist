@@ -92,6 +92,20 @@ deterministic and identical on Windows and macOS:
 **Save** writes the result back to the file path, keeping the previous
 version as `<name>.bak`.
 
+### Compose tab
+
+Paste content into the **bottom** box, pick a communication style —
+Formal, Concise, Consultative, Diplomatic, Commanding, Persuasive,
+Empathetic, Transparent, Conversational, Casual, Direct, Analytical,
+Assertive — and press **Draft**: the grammar-corrected, styled draft
+appears in the **top** box (both boxes are multi-line; drag the divider to
+resize). Drafting is deterministic and offline: each style combines
+contraction handling, hedging, formal/casual word choice, framing lines,
+and structure. For free-form LLM-quality rewriting, enable the optional
+local [Ollama](https://ollama.com) integration (`ai-assist.ollama.enabled=true`)
+— style drafts then go through your local model, falling back to the
+rules automatically.
+
 Nothing is written to disk until Stop (or a confirmed save-on-close).
 
 ## What it hears

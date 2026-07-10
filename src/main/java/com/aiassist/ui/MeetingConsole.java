@@ -50,6 +50,7 @@ public class MeetingConsole {
     private final MeetingEndService meetingEndService;
     private final SessionStore sessions;
     private final com.aiassist.draft.TextRewriteService rewriteService;
+    private final com.aiassist.draft.StyleRewriteService styleRewriteService;
 
     private final java.util.prefs.Preferences prefs =
             java.util.prefs.Preferences.userNodeForPackage(MeetingConsole.class);
@@ -73,6 +74,16 @@ public class MeetingConsole {
     private JPanel editorFileRow;
     private JPanel editorActionsRow;
     private JPanel editorSouthRow;
+    private JTextArea composeResult;
+    private JTextArea composeFeed;
+    private javax.swing.JComboBox<String> styleCombo;
+    private JLabel composeStatus;
+    private javax.swing.JSplitPane composeSplit;
+    private JPanel composePanel;
+    private JPanel composeTopPanel;
+    private JPanel composeBottomPanel;
+    private JPanel composeSouthPanel;
+    private JPanel composeControlsPanel;
     private JPanel bottomPanel;
     private JPanel buttonsPanel;
     private JButton startButton;
@@ -91,11 +102,13 @@ public class MeetingConsole {
 
     public MeetingConsole(LiveTranscriptionService liveTranscription,
                           MeetingEndService meetingEndService, SessionStore sessions,
-                          com.aiassist.draft.TextRewriteService rewriteService) {
+                          com.aiassist.draft.TextRewriteService rewriteService,
+                          com.aiassist.draft.StyleRewriteService styleRewriteService) {
         this.liveTranscription = liveTranscription;
         this.meetingEndService = meetingEndService;
         this.sessions = sessions;
         this.rewriteService = rewriteService;
+        this.styleRewriteService = styleRewriteService;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -273,6 +286,7 @@ public class MeetingConsole {
         tabs = new javax.swing.JTabbedPane();
         tabs.addTab("Meeting", scroll);
         tabs.addTab("Editor", buildEditorTab());
+        tabs.addTab("Compose", buildComposeTab());
         frame.add(tabs, BorderLayout.CENTER);
         frame.add(bottom, BorderLayout.SOUTH);
         frame.setSize(760, 540);
@@ -407,6 +421,89 @@ public class MeetingConsole {
         editorStatus.setForeground(error
                 ? (darkMode ? new java.awt.Color(0xFF6B6B) : new java.awt.Color(0xB00020))
                 : (darkMode ? new java.awt.Color(0xC8C8C8) : java.awt.Color.DARK_GRAY));
+    }
+
+    /**
+     * Compose tab: paste content into the bottom box, pick a communication
+     * style, hit Draft — the styled, grammar-corrected result appears in the
+     * top box. The divider between the boxes is draggable.
+     */
+    private JPanel buildComposeTab() {
+        composeResult = multiLineArea();
+        composeFeed = multiLineArea();
+
+        styleCombo = new javax.swing.JComboBox<>();
+        for (var style : com.aiassist.draft.StyleRewriteService.Style.values()) {
+            styleCombo.addItem(style.display());
+        }
+        styleCombo.setToolTipText("Communication style for the draft");
+        JButton draftButton = new JButton("Draft");
+        draftButton.addActionListener(e -> composeDraft());
+        composeStatus = new JLabel(" ");
+
+        JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        controls.add(new JLabel("Style:"));
+        controls.add(styleCombo);
+        controls.add(draftButton);
+        JPanel south = new JPanel(new BorderLayout());
+        south.add(composeStatus, BorderLayout.CENTER);
+        south.add(controls, BorderLayout.EAST);
+        south.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 8, 4, 8));
+
+        JPanel top = new JPanel(new BorderLayout());
+        top.add(new JLabel("  Result (draft appears here):"), BorderLayout.NORTH);
+        top.add(new JScrollPane(composeResult,
+                JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER),
+                BorderLayout.CENTER);
+        JPanel bottom = new JPanel(new BorderLayout());
+        bottom.add(new JLabel("  Your content (paste here):"), BorderLayout.NORTH);
+        bottom.add(new JScrollPane(composeFeed,
+                JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER),
+                BorderLayout.CENTER);
+        composeSplit = new javax.swing.JSplitPane(javax.swing.JSplitPane.VERTICAL_SPLIT, top, bottom);
+        composeSplit.setResizeWeight(0.5);
+
+        composePanel = new JPanel(new BorderLayout());
+        composePanel.add(composeSplit, BorderLayout.CENTER);
+        composePanel.add(south, BorderLayout.SOUTH);
+        composeTopPanel = top;
+        composeBottomPanel = bottom;
+        composeSouthPanel = south;
+        composeControlsPanel = controls;
+        return composePanel;
+    }
+
+    private javax.swing.JTextArea multiLineArea() {
+        var area = new JTextArea();
+        area.setLineWrap(true);
+        area.setWrapStyleWord(true);
+        area.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+        area.setMargin(new java.awt.Insets(8, 8, 8, 8));
+        return area;
+    }
+
+    private void composeDraft() {
+        String feed = composeFeed.getText();
+        if (feed == null || feed.isBlank()) {
+            composeStatus.setText("Paste some content into the bottom box first.");
+            return;
+        }
+        var style = com.aiassist.draft.StyleRewriteService.Style
+                .valueOf(((String) styleCombo.getSelectedItem()).toUpperCase(java.util.Locale.ROOT));
+        composeStatus.setText("Drafting (" + style.display() + ")…");
+        new Thread(() -> {
+            try {
+                String result = styleRewriteService.draft(feed, style);
+                SwingUtilities.invokeLater(() -> {
+                    composeResult.setText(result);
+                    composeResult.setCaretPosition(0);
+                    composeStatus.setText(style.display() + " draft ready.");
+                });
+            } catch (Exception ex) {
+                SwingUtilities.invokeLater(() ->
+                        composeStatus.setText("Could not draft: " + ex.getMessage()));
+            }
+        }, "compose-draft").start();
     }
 
     private static final String UNPACKING_SUFFIX = " (unpacking — wait)";
@@ -622,9 +719,20 @@ public class MeetingConsole {
         titleField.setForeground(textFg);
         titleField.setCaretColor(textFg);
         for (JPanel panel : java.util.List.of(topPanel, bottomPanel, buttonsPanel, controlsPanel,
-                editorPanel, editorFileRow, editorActionsRow, editorSouthRow)) {
+                editorPanel, editorFileRow, editorActionsRow, editorSouthRow,
+                composePanel, composeTopPanel, composeBottomPanel, composeSouthPanel,
+                composeControlsPanel)) {
             panel.setBackground(panelBg);
         }
+        for (JTextArea area : java.util.List.of(composeResult, composeFeed)) {
+            area.setBackground(textBg);
+            area.setForeground(textFg);
+            area.setCaretColor(textFg);
+        }
+        styleCombo.setBackground(textBg);
+        styleCombo.setForeground(textFg);
+        composeSplit.setBackground(panelBg);
+        composeStatus.setForeground(muted);
         modelCombo.setBackground(textBg);
         modelCombo.setForeground(textFg);
         tabs.setBackground(panelBg);
