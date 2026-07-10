@@ -55,8 +55,8 @@ JDK — not a browser):
 - **Start / Pause / Stop** buttons show their label in **green** when that
   action applies right now and **red** when it does not: at launch only
   Start is green (listening does NOT begin automatically); while listening,
-  Pause is green and Stop turns green once something has been recorded;
-  while paused, Start (which resumes) and Stop are green and Pause is red,
+  Pause and Stop are green; while paused, Resume (Start) and Stop are green
+  and Pause is red,
 - **Start** — begins the meeting, or resumes it after a Pause,
 - **Pause** — temporarily stop listening without ending the meeting,
 - **Stop** — the meeting is complete: capture stops, the full
@@ -83,29 +83,27 @@ pick a file with the native file dialog (Finder on macOS, Explorer on
 Windows), then apply an offline transformation — all deterministic and
 identical on both platforms:
 
-- **Fix grammar** — light-touch tidying: sentence capitalization, spacing
-  around punctuation, duplicate words, standalone "i", a/an, repeated
-  punctuation. Never rewrites your meaning.
-- **Make compact** — removes filler words (basically, really, very, …) and
-  shortens wordy phrases (in order to → to, due to the fact that → because, …).
-- **Make detailed** — expands the text into a structured document with a
-  summary, sections, key points, and next steps.
+Tick any combination of **Fix grammar**, **Make compact**, **Make detailed**,
+**Professional**, and **Bullet points**, optionally type free-form
+**Instructions** (these need the optional local Ollama), and press **Apply**
+— the corrected content replaces the text (document view with vertical and
+horizontal scroll bars). **Download** saves the result to your **Desktop**
+with the same file name and format (a "-edited" suffix is added if the name
+is taken).
 
-**Save** writes the corrected text back to the same file in the same
-format, keeping the previous version as `<name>.bak`; with no file loaded it
-opens the native save dialog. While a meeting is running, the Editor and
+While a meeting is running, the Editor and
 Compose tabs hide the meeting controls and show a blinking
 **● MEETING IN PROGRESS** banner instead; switching back to the Meeting tab
 restores the title row, status, and buttons.
 
 ### Compose tab
 
-Paste content into the **bottom** box, pick a communication style —
-Formal, Concise, Consultative, Diplomatic, Commanding, Persuasive,
-Empathetic, Transparent, Conversational, Casual, Direct, Analytical,
-Assertive — and press **Draft**: the grammar-corrected, styled draft
-appears in the **top** box (both boxes are multi-line; drag the divider to
-resize). Drafting is deterministic and offline: each style combines
+Type or paste into the **top** box (*Your content*), tick any combination
+of the 13 style checkboxes — Formal, Concise, Consultative, Diplomatic,
+Commanding, Persuasive, Empathetic, Transparent, Conversational, Casual,
+Direct, Analytical, Assertive — optionally add **Instructions**, and press
+**Apply**: the grammar-corrected result appears in the bottom **Modified**
+box (drag the divider to resize). Drafting is deterministic and offline: each style combines
 contraction handling, hedging, formal/casual word choice, framing lines,
 and structure. For free-form LLM-quality rewriting, enable the optional
 local [Ollama](https://ollama.com) integration (`ai-assist.ollama.enabled=true`)

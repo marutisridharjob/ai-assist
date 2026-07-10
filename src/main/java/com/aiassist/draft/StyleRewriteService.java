@@ -92,21 +92,115 @@ public class StyleRewriteService {
         this.ollama = ollama;
     }
 
+    /** True when the optional local LLM handles free-form instructions. */
+    public boolean llmAvailable() {
+        return ollama.getIfAvailable() != null;
+    }
+
     /** Grammar-corrected draft of the text in the requested style. */
     public String draft(String text, Style style) {
+        return applyStyles(text, List.of(style), null);
+    }
+
+    /**
+     * Applies every selected style in order, plus free-form instructions.
+     * Instructions need the optional local LLM; the deterministic recipes
+     * ignore them (the UI says so).
+     */
+    public String applyStyles(String text, List<Style> styles, String instructions) {
         if (text == null || text.isBlank()) {
             return "";
         }
         OllamaStyleRewriter llm = ollama.getIfAvailable();
         if (llm != null) {
             try {
-                return llm.rewrite(text, style);
+                StringBuilder request = new StringBuilder();
+                for (Style style : styles) {
+                    request.append("use a ").append(style.display()).append(" communication style; ");
+                }
+                if (instructions != null && !instructions.isBlank()) {
+                    request.append(instructions.strip());
+                }
+                return llm.freeform(text, request.isEmpty() ? "improve clarity" : request.toString());
             } catch (RuntimeException e) {
-                log.warn("Ollama style drafting failed ({}); using the rule-based recipe",
-                        e.getMessage());
+                log.warn("Ollama drafting failed ({}); using the rule-based recipes", e.getMessage());
             }
         }
-        String tidy = textRewrite.rewrite(text, TextRewriteService.Mode.GRAMMAR);
+        String result = textRewrite.rewrite(text, TextRewriteService.Mode.GRAMMAR);
+        for (Style style : styles) {
+            result = applyRules(result, style);
+        }
+        return result;
+    }
+
+    /**
+     * Editor pipeline: the checked options applied in a sensible order
+     * (grammar, compact, detailed, professional wording, bullet points),
+     * plus free-form instructions when the local LLM is available.
+     */
+    public String applyEditor(String text, boolean grammar, boolean compact, boolean detailed,
+                              boolean professional, boolean bullets, String instructions) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        OllamaStyleRewriter llm = ollama.getIfAvailable();
+        if (llm != null) {
+            try {
+                StringBuilder request = new StringBuilder();
+                if (grammar) {
+                    request.append("fix all grammar; ");
+                }
+                if (compact) {
+                    request.append("make it compact; ");
+                }
+                if (detailed) {
+                    request.append("make it more detailed; ");
+                }
+                if (professional) {
+                    request.append("use professional wording; ");
+                }
+                if (bullets) {
+                    request.append("format the key content as bullet points; ");
+                }
+                if (instructions != null && !instructions.isBlank()) {
+                    request.append(instructions.strip());
+                }
+                return llm.freeform(text, request.isEmpty() ? "improve clarity" : request.toString());
+            } catch (RuntimeException e) {
+                log.warn("Ollama editing failed ({}); using the rule-based recipes", e.getMessage());
+            }
+        }
+        String result = text;
+        if (grammar) {
+            result = textRewrite.rewrite(result, TextRewriteService.Mode.GRAMMAR);
+        }
+        if (compact) {
+            result = textRewrite.rewrite(result, TextRewriteService.Mode.COMPACT);
+        }
+        if (detailed) {
+            result = textRewrite.rewrite(result, TextRewriteService.Mode.DETAILED);
+        }
+        if (professional) {
+            result = applyRules(result, Style.FORMAL);
+        }
+        if (bullets) {
+            result = bulletize(result);
+        }
+        return result;
+    }
+
+    /** One sentence per bullet line. */
+    private static String bulletize(String text) {
+        StringBuilder out = new StringBuilder();
+        SENTENCE_SPLIT.splitAsStream(text)
+                .map(String::strip)
+                .filter(s -> !s.isEmpty())
+                .forEach(s -> out.append(out.isEmpty() ? "" : "\n")
+                        .append("• ").append(s.startsWith("• ") ? s.substring(2) : s));
+        return out.toString();
+    }
+
+    private String applyRules(String tidy, Style style) {
         return switch (style) {
             case FORMAL -> replaceAll(replaceAll(tidy, EXPAND_CONTRACTIONS), FORMAL_WORDS)
                     .replace("!", ".");

@@ -76,8 +76,19 @@ public class MeetingConsole {
     private JPanel editorSouthRow;
     private JTextArea composeResult;
     private JTextArea composeFeed;
-    private javax.swing.JComboBox<String> styleCombo;
     private JLabel composeStatus;
+    private javax.swing.JTextField composeInstructions;
+    private javax.swing.JTextField editorInstructions;
+    private javax.swing.JCheckBox cbGrammar;
+    private javax.swing.JCheckBox cbCompact;
+    private javax.swing.JCheckBox cbDetailed;
+    private javax.swing.JCheckBox cbProfessional;
+    private javax.swing.JCheckBox cbBullets;
+    private final java.util.List<javax.swing.JCheckBox> styleCheckboxes = new java.util.ArrayList<>();
+    private final java.util.List<javax.swing.JCheckBox> themedChecks = new java.util.ArrayList<>();
+    private final java.util.List<JLabel> themedLabels = new java.util.ArrayList<>();
+    private JPanel composeStylesPanel;
+    private JPanel editorOptionsRow;
     private javax.swing.JSplitPane composeSplit;
     private JPanel composePanel;
     private JPanel composeTopPanel;
@@ -365,63 +376,130 @@ public class MeetingConsole {
         filePathField.setToolTipText("Optional: full path of a text file to load and save (e.g. C:\\notes.txt or /Users/me/notes.txt)");
         JButton loadButton = new JButton("Load");
         loadButton.addActionListener(e -> loadEditorFile());
-        JButton saveButton = new JButton("Save");
-        saveButton.addActionListener(e -> saveEditorFile());
         JPanel fileRow = new JPanel(new BorderLayout(6, 0));
-        fileRow.add(new JLabel("File:"), BorderLayout.WEST);
+        fileRow.add(themedLabel("File:"), BorderLayout.WEST);
         fileRow.add(filePathField, BorderLayout.CENTER);
         JPanel fileButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         fileButtons.add(loadButton);
-        fileButtons.add(saveButton);
         fileRow.add(fileButtons, BorderLayout.EAST);
         fileRow.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 8, 4, 8));
 
         editorStatus = new JLabel(" ");
+        cbGrammar = themedCheck("Fix grammar");
+        cbCompact = themedCheck("Make compact");
+        cbDetailed = themedCheck("Make detailed");
+        cbProfessional = themedCheck("Professional");
+        cbBullets = themedCheck("Bullet points");
+        cbGrammar.setSelected(true);
+        editorInstructions = new javax.swing.JTextField(18);
+        JPanel options = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        for (var cb : java.util.List.of(cbGrammar, cbCompact, cbDetailed, cbProfessional, cbBullets)) {
+            options.add(cb);
+        }
+        options.add(themedLabel("Instructions:"));
+        options.add(editorInstructions);
+
+        JButton applyButton = new JButton("Apply");
+        applyButton.setToolTipText("Apply every checked option and the instructions to the text");
+        applyButton.addActionListener(e -> applyEditorOptions());
+        JButton downloadButton = new JButton("Download");
+        downloadButton.setToolTipText("Save the corrected content to your Desktop with the same file name and format");
+        downloadButton.addActionListener(e -> downloadEditorFile());
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        actions.add(rewriteButton("Fix grammar", com.aiassist.draft.TextRewriteService.Mode.GRAMMAR));
-        actions.add(rewriteButton("Make compact", com.aiassist.draft.TextRewriteService.Mode.COMPACT));
-        actions.add(rewriteButton("Make detailed", com.aiassist.draft.TextRewriteService.Mode.DETAILED));
+        actions.add(applyButton);
+        actions.add(downloadButton);
+
         JPanel south = new JPanel(new BorderLayout());
+        south.add(options, BorderLayout.NORTH);
         south.add(editorStatus, BorderLayout.CENTER);
-        south.add(actions, BorderLayout.SOUTH);
+        south.add(actions, BorderLayout.EAST);
         south.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 8, 4, 8));
 
         editorPanel = new JPanel(new BorderLayout());
         editorPanel.add(fileRow, BorderLayout.NORTH);
+        // Document-like view: no soft wrapping, real horizontal + vertical scroll bars.
+        editorArea.setLineWrap(false);
         editorPanel.add(new JScrollPane(editorArea,
-                JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER),
+                JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED),
                 BorderLayout.CENTER);
         editorPanel.add(south, BorderLayout.SOUTH);
         editorFileRow = fileRow;
         editorActionsRow = actions;
         editorSouthRow = south;
+        editorOptionsRow = options;
         return editorPanel;
     }
 
-    private JButton rewriteButton(String label, com.aiassist.draft.TextRewriteService.Mode mode) {
-        JButton button = new JButton(label);
-        button.addActionListener(e -> {
-            String text = editorArea.getText();
-            if (text == null || text.isBlank()) {
-                setEditorStatus("Paste some text (or Load a file) first.", true);
-                return;
+    private void applyEditorOptions() {
+        String text = editorArea.getText();
+        if (text == null || text.isBlank()) {
+            setEditorStatus("Load a file or paste some text first.", true);
+            return;
+        }
+        setEditorStatus("Applying…", false);
+        new Thread(() -> {
+            try {
+                String result = styleRewriteService.applyEditor(text,
+                        cbGrammar.isSelected(), cbCompact.isSelected(), cbDetailed.isSelected(),
+                        cbProfessional.isSelected(), cbBullets.isSelected(),
+                        editorInstructions.getText());
+                boolean instructionsIgnored = !styleRewriteService.llmAvailable()
+                        && editorInstructions.getText() != null
+                        && !editorInstructions.getText().isBlank();
+                SwingUtilities.invokeLater(() -> {
+                    editorArea.setText(result);
+                    editorArea.setCaretPosition(0);
+                    setEditorStatus(instructionsIgnored
+                            ? "Applied checked options (free-form instructions need the optional local Ollama)."
+                            : "Applied. Press Download to save it to your Desktop.", false);
+                });
+            } catch (Exception ex) {
+                SwingUtilities.invokeLater(() ->
+                        setEditorStatus("Could not apply: " + ex.getMessage(), true));
             }
-            setEditorStatus("Working…", false);
-            new Thread(() -> {
-                try {
-                    String result = rewriteService.rewrite(text, mode);
-                    SwingUtilities.invokeLater(() -> {
-                        editorArea.setText(result);
-                        editorArea.setCaretPosition(0);
-                        setEditorStatus(label + " applied. Use Save to write it to the file.", false);
-                    });
-                } catch (Exception ex) {
-                    SwingUtilities.invokeLater(() ->
-                            setEditorStatus("Could not rewrite: " + ex.getMessage(), true));
-                }
-            }, "rewrite").start();
-        });
-        return button;
+        }, "editor-apply").start();
+    }
+
+    /** Writes the corrected content to the Desktop, same name and format. */
+    private void downloadEditorFile() {
+        String content = editorArea.getText();
+        if (content == null || content.isBlank()) {
+            setEditorStatus("Nothing to download yet.", true);
+            return;
+        }
+        try {
+            String sourcePath = filePathField.getText();
+            String fileName = sourcePath == null || sourcePath.isBlank()
+                    ? "edited.txt"
+                    : java.nio.file.Path.of(sourcePath.strip()).getFileName().toString();
+            java.nio.file.Path desktop = java.nio.file.Path.of(
+                    System.getProperty("user.home"), "Desktop");
+            java.nio.file.Files.createDirectories(desktop);
+            java.nio.file.Path target = desktop.resolve(fileName);
+            if (java.nio.file.Files.exists(target)) {
+                int dot = fileName.lastIndexOf('.');
+                target = desktop.resolve(dot > 0
+                        ? fileName.substring(0, dot) + "-edited" + fileName.substring(dot)
+                        : fileName + "-edited");
+            }
+            java.nio.file.Files.writeString(target, content);
+            setEditorStatus("Downloaded to " + target, false);
+        } catch (Exception e) {
+            setEditorStatus("Could not download: " + e.getMessage(), true);
+        }
+    }
+
+    private javax.swing.JCheckBox themedCheck(String text) {
+        var check = new javax.swing.JCheckBox(text);
+        check.setOpaque(true);
+        themedChecks.add(check);
+        return check;
+    }
+
+    private JLabel themedLabel(String text) {
+        var label = new JLabel(text);
+        themedLabels.add(label);
+        return label;
     }
 
     /** Native file dialog: Finder sheet on macOS, Explorer dialog on Windows. */
@@ -461,29 +539,6 @@ public class MeetingConsole {
         }
     }
 
-    private void saveEditorFile() {
-        String path = filePathField.getText();
-        if (path == null || path.isBlank()) {
-            path = chooseFile(true);
-            if (path == null) {
-                return;
-            }
-            filePathField.setText(path);
-        }
-        try {
-            java.nio.file.Path target = java.nio.file.Path.of(path.strip());
-            if (java.nio.file.Files.exists(target)) {
-                java.nio.file.Files.copy(target,
-                        java.nio.file.Path.of(target + ".bak"),
-                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-            }
-            java.nio.file.Files.writeString(target, editorArea.getText());
-            setEditorStatus("Saved to " + target + " (previous version kept as .bak)", false);
-        } catch (Exception e) {
-            setEditorStatus("Could not save: " + e.getMessage(), true);
-        }
-    }
-
     private void setEditorStatus(String message, boolean error) {
         editorStatus.setText(message);
         editorStatus.setForeground(error
@@ -500,32 +555,39 @@ public class MeetingConsole {
         composeResult = multiLineArea();
         composeFeed = multiLineArea();
 
-        styleCombo = new javax.swing.JComboBox<>();
+        // One checkbox per communication style; several can combine.
+        JPanel styleChecks = new JPanel(new java.awt.GridLayout(0, 5, 4, 0));
         for (var style : com.aiassist.draft.StyleRewriteService.Style.values()) {
-            styleCombo.addItem(style.display());
+            var check = themedCheck(style.display());
+            check.putClientProperty("style", style);
+            styleCheckboxes.add(check);
+            styleChecks.add(check);
         }
-        styleCombo.setToolTipText("Communication style for the draft");
-        JButton draftButton = new JButton("Draft");
-        draftButton.addActionListener(e -> composeDraft());
+        composeInstructions = new javax.swing.JTextField(18);
+        JButton applyButton = new JButton("Apply");
+        applyButton.setToolTipText("Apply every checked style and the instructions to your content");
+        applyButton.addActionListener(e -> composeApply());
         composeStatus = new JLabel(" ");
 
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
-        controls.add(new JLabel("Style:"));
-        controls.add(styleCombo);
-        controls.add(draftButton);
+        controls.add(themedLabel("Instructions:"));
+        controls.add(composeInstructions);
+        controls.add(applyButton);
         JPanel south = new JPanel(new BorderLayout());
+        south.add(styleChecks, BorderLayout.NORTH);
         south.add(composeStatus, BorderLayout.CENTER);
         south.add(controls, BorderLayout.EAST);
         south.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 8, 4, 8));
 
+        // Your content on TOP, the modified result below it.
         JPanel top = new JPanel(new BorderLayout());
-        top.add(new JLabel("  Result (draft appears here):"), BorderLayout.NORTH);
-        top.add(new JScrollPane(composeResult,
+        top.add(themedLabel("  Your content (type or paste here):"), BorderLayout.NORTH);
+        top.add(new JScrollPane(composeFeed,
                 JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER),
                 BorderLayout.CENTER);
         JPanel bottom = new JPanel(new BorderLayout());
-        bottom.add(new JLabel("  Your content (paste here):"), BorderLayout.NORTH);
-        bottom.add(new JScrollPane(composeFeed,
+        bottom.add(themedLabel("  Modified:"), BorderLayout.NORTH);
+        bottom.add(new JScrollPane(composeResult,
                 JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER),
                 BorderLayout.CENTER);
         composeSplit = new javax.swing.JSplitPane(javax.swing.JSplitPane.VERTICAL_SPLIT, top, bottom);
@@ -538,6 +600,7 @@ public class MeetingConsole {
         composeBottomPanel = bottom;
         composeSouthPanel = south;
         composeControlsPanel = controls;
+        composeStylesPanel = styleChecks;
         return composePanel;
     }
 
@@ -550,28 +613,36 @@ public class MeetingConsole {
         return area;
     }
 
-    private void composeDraft() {
+    private void composeApply() {
         String feed = composeFeed.getText();
         if (feed == null || feed.isBlank()) {
-            composeStatus.setText("Paste some content into the bottom box first.");
+            composeStatus.setText("Type or paste content into the top box first.");
             return;
         }
-        var style = com.aiassist.draft.StyleRewriteService.Style
-                .valueOf(((String) styleCombo.getSelectedItem()).toUpperCase(java.util.Locale.ROOT));
-        composeStatus.setText("Drafting (" + style.display() + ")…");
+        var styles = styleCheckboxes.stream()
+                .filter(javax.swing.AbstractButton::isSelected)
+                .map(cb -> (com.aiassist.draft.StyleRewriteService.Style) cb.getClientProperty("style"))
+                .toList();
+        composeStatus.setText("Applying…");
         new Thread(() -> {
             try {
-                String result = styleRewriteService.draft(feed, style);
+                String result = styleRewriteService.applyStyles(feed, styles,
+                        composeInstructions.getText());
+                boolean instructionsIgnored = !styleRewriteService.llmAvailable()
+                        && composeInstructions.getText() != null
+                        && !composeInstructions.getText().isBlank();
                 SwingUtilities.invokeLater(() -> {
                     composeResult.setText(result);
                     composeResult.setCaretPosition(0);
-                    composeStatus.setText(style.display() + " draft ready.");
+                    composeStatus.setText(instructionsIgnored
+                            ? "Applied checked styles (free-form instructions need the optional local Ollama)."
+                            : "Applied.");
                 });
             } catch (Exception ex) {
                 SwingUtilities.invokeLater(() ->
-                        composeStatus.setText("Could not draft: " + ex.getMessage()));
+                        composeStatus.setText("Could not apply: " + ex.getMessage()));
             }
-        }, "compose-draft").start();
+        }, "compose-apply").start();
     }
 
     private static final String UNPACKING_SUFFIX = " (unpacking — wait)";
@@ -630,12 +701,16 @@ public class MeetingConsole {
                 case ERROR -> "Audio problem: " + status.detail();
                 case IDLE -> "Idle — press Start to begin";
             }, status.state() == LiveTranscriptionService.State.ERROR);
-            // Green text = press me now, red = not applicable: idle → only
-            // Start is green; listening → Pause (and Stop once something is
-            // recorded); paused → Start (resumes) and Stop are green.
-            pauseButton.setEnabled(status.state() == LiveTranscriptionService.State.LISTENING);
-            startButton.setText(status.state() == LiveTranscriptionService.State.PAUSED
-                    ? "Resume" : "Start");
+            // Green text = press me now, red = not applicable:
+            //   idle/finished → only Start green;
+            //   listening     → Pause and Stop green, Start red;
+            //   paused        → Resume (Start) and Stop green, Pause red.
+            boolean capturing = status.state() == LiveTranscriptionService.State.LISTENING
+                    || status.state() == LiveTranscriptionService.State.PREPARING;
+            boolean paused = status.state() == LiveTranscriptionService.State.PAUSED;
+            pauseButton.setEnabled(capturing);
+            stopButton.setEnabled(capturing || paused);
+            startButton.setText(paused ? "Resume" : "Start");
         }
         startButton.setEnabled(meetingCompleted
                 || status.state() == LiveTranscriptionService.State.IDLE
@@ -643,18 +718,12 @@ public class MeetingConsole {
                 || status.state() == LiveTranscriptionService.State.PAUSED);
         String sessionId = status.sessionId();
         if (sessionId == null) {
-            if (!meetingCompleted) {
-                stopButton.setEnabled(false);
-            }
             return;
         }
         ListeningSession session;
         try {
             session = sessions.get(sessionId);
         } catch (Exception e) {
-            if (!meetingCompleted) {
-                stopButton.setEnabled(false);
-            }
             return;
         }
         if (!sessionId.equals(renderedSessionId)) {
@@ -667,11 +736,6 @@ public class MeetingConsole {
             titleField.setText(session.topic());
         }
         List<Utterance> utterances = session.utterances();
-        // Stop only makes sense once something has actually been recorded —
-        // there is nothing to draft or save from an empty meeting.
-        if (!meetingCompleted) {
-            stopButton.setEnabled(!utterances.isEmpty());
-        }
         for (int i = renderedUtterances; i < utterances.size(); i++) {
             Utterance u = utterances.get(i);
             transcript.append("[" + LINE_TIME.format(u.capturedAt()) + "] ["
@@ -805,9 +869,11 @@ public class MeetingConsole {
         titleField.setForeground(textFg);
         titleField.setCaretColor(textFg);
         for (JPanel panel : java.util.List.of(topPanel, bottomPanel, buttonsPanel, controlsPanel,
-                editorPanel, editorFileRow, editorActionsRow, editorSouthRow,
+                editorPanel, editorFileRow, editorActionsRow, editorSouthRow, editorOptionsRow,
                 composePanel, composeTopPanel, composeBottomPanel, composeSouthPanel,
-                composeControlsPanel, indicatorPanel, southWrapPanel)) {
+                composeControlsPanel, composeStylesPanel, indicatorPanel, southWrapPanel)) {
+            // Aqua only honors panel backgrounds when the panel is opaque.
+            panel.setOpaque(true);
             panel.setBackground(panelBg);
         }
         for (JTextArea area : java.util.List.of(composeResult, composeFeed)) {
@@ -815,8 +881,20 @@ public class MeetingConsole {
             area.setForeground(textFg);
             area.setCaretColor(textFg);
         }
-        styleCombo.setBackground(textBg);
-        styleCombo.setForeground(textFg);
+        for (javax.swing.JTextField field : java.util.List.of(editorInstructions, composeInstructions)) {
+            field.setBackground(textBg);
+            field.setForeground(textFg);
+            field.setCaretColor(textFg);
+        }
+        // Every static label and checkbox follows the theme (Aqua does not
+        // restyle them by itself, which left labels dark-on-dark on macOS).
+        for (JLabel label : themedLabels) {
+            label.setForeground(textFg);
+        }
+        for (javax.swing.JCheckBox check : themedChecks) {
+            check.setForeground(textFg);
+            check.setBackground(panelBg);
+        }
         composeSplit.setBackground(panelBg);
         composeStatus.setForeground(muted);
         modelCombo.setBackground(textBg);

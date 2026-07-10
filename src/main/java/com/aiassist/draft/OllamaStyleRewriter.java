@@ -38,14 +38,19 @@ public class OllamaStyleRewriter {
     }
 
     public String rewrite(String text, StyleRewriteService.Style style) {
+        return freeform(text, "use a " + style.display() + " communication style");
+    }
+
+    /** Free-form rewrite honoring checkbox options and typed instructions. */
+    public String freeform(String text, String request) {
         String prompt = """
-                Rewrite the text below in a %s communication style. Correct all grammar.
-                Keep the meaning and every fact; do not invent anything new.
+                Rewrite the text below. Requirements: %s.
+                Correct all grammar. Keep the meaning and every fact; do not invent anything new.
                 Return only the rewritten text, no preamble.
 
                 Text:
                 %s
-                """.formatted(style.display(), text);
+                """.formatted(request, text);
         OllamaResponse result = restClient.post()
                 .uri("/api/generate")
                 .body(Map.of("model", properties.model(), "prompt", prompt, "stream", false))
