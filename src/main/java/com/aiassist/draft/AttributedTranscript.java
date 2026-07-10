@@ -17,7 +17,7 @@ public final class AttributedTranscript {
     public static final String HEADING = "Full transcript (who said what)";
     private static final String LEGEND =
             "[you] = you / your side of the room · [meeting] = other participants (system audio) · "
-            + "[speaker-A/B/...] = individual meeting voices (when the speaker model is installed)";
+            + "[Speaker-1/2/...] = individual meeting voices (when the speaker model is installed)";
 
     private AttributedTranscript() {
     }

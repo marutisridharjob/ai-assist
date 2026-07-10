@@ -732,6 +732,10 @@ public class MeetingConsole {
         if (liveTranscription.modelNote() != null) {
             message += " — " + liveTranscription.modelNote();
         }
+        boolean hasMeetingAudio = status.devices().stream().anyMatch(d -> d.contains("[meeting]"));
+        if (hasMeetingAudio && !liveTranscription.speakerIdActive()) {
+            message += " — speaker ID off: put vosk-model-spk-0.4 next to the jar, then press Start";
+        }
         boolean hasMeetingSource = status.devices().stream().anyMatch(d -> d.contains("[meeting]"));
         if (!hasMeetingSource) {
             message += " — NO meeting-audio device detected: only the microphone is being captured. "

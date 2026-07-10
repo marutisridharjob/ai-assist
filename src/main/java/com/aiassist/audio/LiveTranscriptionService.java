@@ -54,7 +54,6 @@ public class LiveTranscriptionService {
     private volatile String requestedModelName;
     private volatile String modelNote;
     private volatile com.sun.jna.Pointer speakerModel;
-    private volatile boolean speakerModelChecked;
     private volatile SpeakerRegistry speakers = new SpeakerRegistry();
 
     public LiveTranscriptionService(AudioDeviceService audioDevices, VoskModelManager modelManager,
@@ -120,8 +119,9 @@ public class LiveTranscriptionService {
                     }
                     log.info("Speech model '{}' ready in {} ms", loadedModelName, System.currentTimeMillis() - t0);
                 }
-                if (!speakerModelChecked) {
-                    speakerModelChecked = true;
+                // Re-checked on every start so a speaker model dropped in
+                // while the app is running is picked up without a relaunch.
+                if (speakerModel == null) {
                     modelManager.findSpeakerModel().ifPresent(path -> {
                         speakerModel = VoskNative.INSTANCE.vosk_spk_model_new(path.toString());
                         log.info(speakerModel != null
@@ -247,6 +247,11 @@ public class LiveTranscriptionService {
     /** One-line note about a model fallback, for the status line; null when none. */
     public String modelNote() {
         return modelNote;
+    }
+
+    /** True when meeting voices get Speaker-1/2/... labels (spk model loaded). */
+    public boolean speakerIdActive() {
+        return speakerModel != null;
     }
 
     /**
@@ -495,7 +500,7 @@ public class LiveTranscriptionService {
             }
         }
 
-        /** speaker-A/B/... from the utterance's voice x-vector, else the source label. */
+        /** Speaker-1/2/... from the utterance's voice x-vector, else the source label. */
         private String speakerLabel(JsonNode node) {
             JsonNode vector = node.path("spk");
             if (!vector.isArray() || vector.isEmpty()) {

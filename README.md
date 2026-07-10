@@ -49,7 +49,7 @@ JDK — not a browser):
 - a **Dark** toggle (top-right) switching the whole window between light and
   dark mode; the choice is remembered across launches,
 - a **scrolling text box** where the running transcript appears live, each
-  line time-stamped and tagged `[you]`, `[meeting]`, or `[speaker-A/B/…]` when the optional speaker model is installed,
+  line time-stamped and tagged `[you]`, `[meeting]`, or `[Speaker-1/2/…]` when the optional speaker model is installed,
 - a **live caption line** showing words as they are being recognized,
   before the phrase is final — like the captions in commercial apps,
 - **Start / Pause / Stop** buttons show their label in **green** when that
@@ -71,8 +71,8 @@ JDK — not a browser):
 - **individual meeting voices (optional)**: download the 13 MB speaker model
   [vosk-model-spk-0.4](https://alphacephei.com/vosk/models/vosk-model-spk-0.4.zip)
   and drop the zip (or unzipped folder) next to the jar — meeting utterances
-  are then labelled `[speaker-A]`, `[speaker-B]`, … by clustering each
-  utterance's voiceprint. Restart the app after adding it,
+  are then labelled `[Speaker-1]`, `[Speaker-2]`, … by clustering each
+  utterance's voiceprint. No restart needed: drop the zip, then press Start (or Pause → Start),
 - the **close button in the top corner** — if a meeting is still running you
   are asked whether to save before closing.
 

@@ -171,7 +171,7 @@ public class VoskModelManager {
 
     /**
      * Optional speaker-identification model (vosk-model-spk-*): when present
-     * in any model folder, meeting voices get speaker-A/B/... labels.
+     * in any model folder, meeting voices get Speaker-1/2/... labels.
      */
     public java.util.Optional<Path> findSpeakerModel() {
         for (Path root : modelRoots()) {

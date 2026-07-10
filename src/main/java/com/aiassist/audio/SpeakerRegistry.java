@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Assigns stable speaker-A / speaker-B / ... labels to meeting voices by
+ * Assigns stable Speaker-1 / Speaker-2 / ... labels to meeting voices by
  * clustering the x-vectors the speaker model produces per utterance:
  * cosine similarity against running centroids, new centroid when nothing
  * is close enough. Lightweight online clustering — good enough to tell
@@ -43,7 +43,7 @@ final class SpeakerRegistry {
     }
 
     private static String label(int index) {
-        return "speaker-" + (char) ('A' + Math.min(index, 25));
+        return "Speaker-" + (index + 1);
     }
 
     private static double cosine(double[] a, double[] b) {
