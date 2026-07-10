@@ -41,7 +41,7 @@ JDK — not a browser):
   title is pre-filled and the status line notes the detection,
 - a **model dropdown** (top-right): the built-in small English model by
   default, plus any Vosk model you unzip into a `models/` folder next to the
-  jar — switching mid-meeting pauses briefly and resumes with the new model.
+  jar; the model you pick is remembered as your default across launches — switching mid-meeting pauses briefly and resumes with the new model.
   Recommended for noisy rooms (from
   [alphacephei.com/vosk/models](https://alphacephei.com/vosk/models)):
   `vosk-model-en-us-0.22-lgraph` (128 MB, compact and notably more accurate)
@@ -52,12 +52,13 @@ JDK — not a browser):
   line time-stamped and tagged `[you]`, `[meeting]`, or `[speaker-A/B/…]` when the optional speaker model is installed,
 - a **live caption line** showing words as they are being recognized,
   before the phrase is final — like the captions in commercial apps,
-- **Start / Pause / Stop** buttons each carry a state dot in their top-right
-  corner — **green** means the action is available right now, **red** means
-  it is not (e.g. Stop stays red until something has been recorded),
-- **Start** — begins a fresh meeting; listening also auto-starts on
-  launch, so this is mainly for starting the next meeting after a Stop,
-- **Pause / Resume** — temporarily stop listening without ending the meeting,
+- **Start / Pause / Stop** buttons show their label in **green** when that
+  action applies right now and **red** when it does not: at launch only
+  Start is green (listening does NOT begin automatically); while listening,
+  Pause is green and Stop turns green once something has been recorded;
+  while paused, Start (which resumes) and Stop are green and Pause is red,
+- **Start** — begins the meeting, or resumes it after a Pause,
+- **Pause** — temporarily stop listening without ending the meeting,
 - **Stop** — the meeting is complete: capture stops, the full
   end-to-end notes are drafted and saved as a timestamped rich-text (.rtf) file on
   your **Desktop** (e.g. `2026-07-05_15-02-41_live-meeting-notes.rtf`), and

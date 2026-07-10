@@ -13,10 +13,10 @@ ai-assist:
     save-drafts: true
     dir: ${user.home}/Desktop
   auto:
-    # Double-click-and-go: start capturing (microphone + any OS loopback
-    # device) as soon as the app launches, and keep re-drafting interim
-    # notes in memory. The desktop window opens automatically.
-    start-capture: true
+    # Listening begins when the user presses Start (set true to begin
+    # capturing immediately at launch). Interim notes keep re-drafting in
+    # memory. The desktop window opens automatically.
+    start-capture: false
     draft-interval-seconds: 30
     content-type: MEETING_NOTES
     tone: PROFESSIONAL

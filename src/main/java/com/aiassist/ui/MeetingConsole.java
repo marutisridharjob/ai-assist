@@ -151,6 +151,14 @@ public class MeetingConsole {
     }
 
     private void build() {
+        try {
+            // Native look on each OS (Aqua on macOS, Windows LAF on Windows)
+            // instead of Swing's gray cross-platform default.
+            javax.swing.UIManager.setLookAndFeel(
+                    javax.swing.UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception e) {
+            log.debug("System look and feel unavailable: {}", e.getMessage());
+        }
         frame = new JFrame("ai-assist — meeting notes");
         var icons = java.util.List.of(notesIcon(16), notesIcon(32), notesIcon(64), notesIcon(128));
         frame.setIconImages(icons);
@@ -231,9 +239,19 @@ public class MeetingConsole {
                 return;
             }
             if (!selected.equals(liveTranscription.activeModelName())) {
+                prefs.put("model", selected); // stays the default until changed
                 new Thread(() -> liveTranscription.selectModel(selected), "model-switch").start();
             }
         });
+        // Restore the model chosen in a previous run; if its folder is gone,
+        // the load falls back to the built-in model with an explanation.
+        String savedModel = prefs.get("model", null);
+        if (savedModel != null && !savedModel.equals(liveTranscription.activeModelName())) {
+            new Thread(() -> {
+                liveTranscription.selectModel(savedModel);
+                SwingUtilities.invokeLater(this::populateModels);
+            }, "model-restore").start();
+        }
 
         titleLabel = new JLabel("Title:");
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
@@ -557,17 +575,19 @@ public class MeetingConsole {
             setStatus(switch (status.state()) {
                 case PREPARING -> status.detail() != null ? status.detail() : "Preparing speech model…";
                 case LISTENING -> listeningMessage(status);
-                case PAUSED -> "Paused — press Resume to continue";
+                case PAUSED -> "Paused — press Start to continue";
                 case ERROR -> "Audio problem: " + status.detail();
                 case IDLE -> "Idle — press Start to begin";
             }, status.state() == LiveTranscriptionService.State.ERROR);
-            pauseButton.setText(status.state() == LiveTranscriptionService.State.PAUSED ? "Resume" : "Pause");
-            pauseButton.setEnabled(status.state() == LiveTranscriptionService.State.LISTENING
-                    || status.state() == LiveTranscriptionService.State.PAUSED);
+            // Green text = press me now, red = not applicable: idle → only
+            // Start is green; listening → Pause (and Stop once something is
+            // recorded); paused → Start (resumes) and Stop are green.
+            pauseButton.setEnabled(status.state() == LiveTranscriptionService.State.LISTENING);
         }
         startButton.setEnabled(meetingCompleted
                 || status.state() == LiveTranscriptionService.State.IDLE
-                || status.state() == LiveTranscriptionService.State.ERROR);
+                || status.state() == LiveTranscriptionService.State.ERROR
+                || status.state() == LiveTranscriptionService.State.PAUSED);
         String sessionId = status.sessionId();
         if (sessionId == null) {
             if (!meetingCompleted) {
@@ -664,43 +684,24 @@ public class MeetingConsole {
     }
 
     /**
-     * Button with a state dot in its top-right corner: green when the action
-     * is currently available, red when it is not — visible at a glance which
-     * of Start/Pause/Stop applies right now.
+     * Button whose label text is green when the action is available right
+     * now and red when it is not — no extra decorations, readable on the
+     * native look and feel of both macOS and Windows.
      */
     private static final class IndicatorButton extends JButton {
 
-        private static final java.awt.Color ACTIVE = new java.awt.Color(0x2ECC71);
-        private static final java.awt.Color INACTIVE = new java.awt.Color(0xE74C3C);
+        private static final java.awt.Color ACTIVE = new java.awt.Color(0x1E8E3E);
+        private static final java.awt.Color INACTIVE = new java.awt.Color(0xC62828);
 
         private IndicatorButton(String text) {
             super(text);
-            setMargin(new java.awt.Insets(4, 14, 4, 18));
+            setForeground(INACTIVE);
         }
 
         @Override
         public void setEnabled(boolean enabled) {
-            boolean changed = enabled != isEnabled();
             super.setEnabled(enabled);
-            if (changed) {
-                repaint();
-            }
-        }
-
-        @Override
-        protected void paintComponent(java.awt.Graphics g) {
-            super.paintComponent(g);
-            java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
-            g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
-                    java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-            int diameter = 8;
-            int x = getWidth() - diameter - 5;
-            int y = 5;
-            g2.setColor(isEnabled() ? ACTIVE : INACTIVE);
-            g2.fillOval(x, y, diameter, diameter);
-            g2.setColor(g2.getColor().darker());
-            g2.drawOval(x, y, diameter, diameter);
-            g2.dispose();
+            setForeground(enabled ? ACTIVE : INACTIVE);
         }
     }
 
@@ -749,10 +750,7 @@ public class MeetingConsole {
         captionLabel.setForeground(muted);
         darkModeToggle.setBackground(panelBg);
         darkModeToggle.setForeground(textFg);
-        for (JButton button : java.util.List.of(startButton, pauseButton, stopButton)) {
-            button.setBackground(dark ? new java.awt.Color(0x3C3C3C) : null);
-            button.setForeground(dark ? textFg : null);
-        }
+        // Start/Pause/Stop keep their green/red action colors in both themes.
         setStatus(lastStatusMessage, lastStatusWasError);
         frame.repaint();
     }
@@ -760,6 +758,12 @@ public class MeetingConsole {
     /** Begins a fresh meeting (a new session), e.g. after Stop or a startup error. */
     private void startMeeting() {
         try {
+            if (liveTranscription.status().state() == LiveTranscriptionService.State.PAUSED
+                    && !meetingCompleted) {
+                liveTranscription.resume(); // Start continues a paused meeting
+                setStatus("Resumed.", false);
+                return;
+            }
             liveTranscription.start(null, null);
             meetingCompleted = false;
             transcript.setText("");
@@ -772,10 +776,9 @@ public class MeetingConsole {
     }
 
     private void togglePause() {
-        if (liveTranscription.status().state() == LiveTranscriptionService.State.PAUSED) {
-            liveTranscription.resume();
-        } else {
-            liveTranscription.pause();
+        if (liveTranscription.status().state() == LiveTranscriptionService.State.LISTENING
+                || liveTranscription.status().state() == LiveTranscriptionService.State.PREPARING) {
+            liveTranscription.pause(); // resuming is Start's job
         }
     }
 
