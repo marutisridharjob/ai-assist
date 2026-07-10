@@ -583,6 +583,8 @@ public class MeetingConsole {
             // Start is green; listening → Pause (and Stop once something is
             // recorded); paused → Start (resumes) and Stop are green.
             pauseButton.setEnabled(status.state() == LiveTranscriptionService.State.LISTENING);
+            startButton.setText(status.state() == LiveTranscriptionService.State.PAUSED
+                    ? "Resume" : "Start");
         }
         startButton.setEnabled(meetingCompleted
                 || status.state() == LiveTranscriptionService.State.IDLE
