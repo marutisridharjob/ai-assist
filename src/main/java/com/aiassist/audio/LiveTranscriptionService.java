@@ -229,6 +229,11 @@ public class LiveTranscriptionService {
         return modelManager.listAvailableModels();
     }
 
+    /** Kicks off unpacking of any model zips dropped while the app runs. */
+    public void rescanModelZips() {
+        modelManager.rescanDroppedZips();
+    }
+
     public String activeModelName() {
         String requested = requestedModelName;
         return requested != null ? requested : properties.modelName();

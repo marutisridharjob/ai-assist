@@ -78,9 +78,10 @@ JDK — not a browser):
 
 ### Editor tab
 
-A second tab next to the meeting view: paste any text (or type a file's full
-path and press **Load**), then apply an offline transformation — all
-deterministic and identical on Windows and macOS:
+A second tab next to the meeting view: paste any text, or press **Load** to
+pick a file with the native file dialog (Finder on macOS, Explorer on
+Windows), then apply an offline transformation — all deterministic and
+identical on both platforms:
 
 - **Fix grammar** — light-touch tidying: sentence capitalization, spacing
   around punctuation, duplicate words, standalone "i", a/an, repeated
@@ -90,8 +91,12 @@ deterministic and identical on Windows and macOS:
 - **Make detailed** — expands the text into a structured document with a
   summary, sections, key points, and next steps.
 
-**Save** writes the result back to the file path, keeping the previous
-version as `<name>.bak`.
+**Save** writes the corrected text back to the same file in the same
+format, keeping the previous version as `<name>.bak`; with no file loaded it
+opens the native save dialog. While a meeting is running, the Editor and
+Compose tabs hide the meeting controls and show a blinking
+**● MEETING IN PROGRESS** banner instead; switching back to the Meeting tab
+restores the title row, status, and buttons.
 
 ### Compose tab
 

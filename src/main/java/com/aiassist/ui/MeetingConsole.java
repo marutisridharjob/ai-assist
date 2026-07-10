@@ -84,6 +84,10 @@ public class MeetingConsole {
     private JPanel composeBottomPanel;
     private JPanel composeSouthPanel;
     private JPanel composeControlsPanel;
+    private JLabel meetingIndicator;
+    private JPanel indicatorPanel;
+    private JPanel southWrapPanel;
+    private boolean blinkOn;
     private JPanel bottomPanel;
     private JPanel buttonsPanel;
     private JButton startButton;
@@ -215,6 +219,7 @@ public class MeetingConsole {
         modelCombo.addPopupMenuListener(new javax.swing.event.PopupMenuListener() {
             @Override
             public void popupMenuWillBecomeVisible(javax.swing.event.PopupMenuEvent e) {
+                liveTranscription.rescanModelZips(); // zips dropped after launch
                 populateModels();
             }
 
@@ -306,7 +311,27 @@ public class MeetingConsole {
         tabs.addTab("Editor", buildEditorTab());
         tabs.addTab("Compose", buildComposeTab());
         frame.add(tabs, BorderLayout.CENTER);
-        frame.add(bottom, BorderLayout.SOUTH);
+
+        // On the Editor/Compose tabs the meeting chrome (title row, status,
+        // buttons) is hidden; a blinking indicator shows a live meeting.
+        meetingIndicator = new JLabel(" ");
+        meetingIndicator.setFont(meetingIndicator.getFont().deriveFont(Font.BOLD));
+        indicatorPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        indicatorPanel.add(meetingIndicator);
+        indicatorPanel.setVisible(false);
+        JPanel southWrap = new JPanel();
+        southWrap.setLayout(new javax.swing.BoxLayout(southWrap, javax.swing.BoxLayout.Y_AXIS));
+        southWrap.add(bottom);
+        southWrap.add(indicatorPanel);
+        southWrapPanel = southWrap;
+        tabs.addChangeListener(e -> {
+            boolean meetingTab = tabs.getSelectedIndex() == 0;
+            topPanel.setVisible(meetingTab);
+            bottomPanel.setVisible(meetingTab);
+            frame.revalidate();
+            frame.repaint();
+        });
+        frame.add(southWrap, BorderLayout.SOUTH);
         frame.setSize(760, 540);
         frame.setMinimumSize(new java.awt.Dimension(520, 380));
         frame.setResizable(true);
@@ -399,16 +424,38 @@ public class MeetingConsole {
         return button;
     }
 
+    /** Native file dialog: Finder sheet on macOS, Explorer dialog on Windows. */
+    private String chooseFile(boolean save) {
+        java.awt.FileDialog dialog = new java.awt.FileDialog(frame,
+                save ? "Save file" : "Open file",
+                save ? java.awt.FileDialog.SAVE : java.awt.FileDialog.LOAD);
+        String current = filePathField.getText();
+        if (current != null && !current.isBlank()) {
+            java.io.File hint = new java.io.File(current.strip());
+            dialog.setDirectory(hint.getParent());
+            if (save) {
+                dialog.setFile(hint.getName());
+            }
+        } else if (save) {
+            dialog.setFile("edited.txt");
+        }
+        dialog.setVisible(true);
+        if (dialog.getFile() == null) {
+            return null;
+        }
+        return new java.io.File(dialog.getDirectory(), dialog.getFile()).getAbsolutePath();
+    }
+
     private void loadEditorFile() {
-        String path = filePathField.getText();
-        if (path == null || path.isBlank()) {
-            setEditorStatus("Enter the full path of a text file, then press Load.", true);
+        String path = chooseFile(false);
+        if (path == null) {
             return;
         }
+        filePathField.setText(path);
         try {
-            editorArea.setText(java.nio.file.Files.readString(java.nio.file.Path.of(path.strip())));
+            editorArea.setText(java.nio.file.Files.readString(java.nio.file.Path.of(path)));
             editorArea.setCaretPosition(0);
-            setEditorStatus("Loaded " + path.strip(), false);
+            setEditorStatus("Loaded " + path, false);
         } catch (Exception e) {
             setEditorStatus("Could not load: " + e.getMessage(), true);
         }
@@ -417,8 +464,11 @@ public class MeetingConsole {
     private void saveEditorFile() {
         String path = filePathField.getText();
         if (path == null || path.isBlank()) {
-            setEditorStatus("Enter the file path to save to, then press Save.", true);
-            return;
+            path = chooseFile(true);
+            if (path == null) {
+                return;
+            }
+            filePathField.setText(path);
         }
         try {
             java.nio.file.Path target = java.nio.file.Path.of(path.strip());
@@ -571,6 +621,7 @@ public class MeetingConsole {
                         .reduce((a, b) -> a + "   " + b)
                         .orElse(" "));
         LiveTranscriptionService.Status status = liveTranscription.status();
+        updateMeetingIndicator(status);
         if (!meetingCompleted) {
             setStatus(switch (status.state()) {
                 case PREPARING -> status.detail() != null ? status.detail() : "Preparing speech model…";
@@ -629,6 +680,34 @@ public class MeetingConsole {
         if (utterances.size() > renderedUtterances) {
             renderedUtterances = utterances.size();
             transcript.setCaretPosition(transcript.getDocument().getLength());
+        }
+    }
+
+    /** Blinking banner on the Editor/Compose tabs while a meeting is live. */
+    private void updateMeetingIndicator(LiveTranscriptionService.Status status) {
+        boolean onMeetingTab = tabs.getSelectedIndex() == 0;
+        boolean active = !meetingCompleted
+                && (status.state() == LiveTranscriptionService.State.LISTENING
+                    || status.state() == LiveTranscriptionService.State.PREPARING);
+        boolean paused = !meetingCompleted
+                && status.state() == LiveTranscriptionService.State.PAUSED;
+        boolean show = !onMeetingTab && (active || paused);
+        if (indicatorPanel.isVisible() != show) {
+            indicatorPanel.setVisible(show);
+            frame.revalidate();
+        }
+        if (!show) {
+            return;
+        }
+        if (active) {
+            blinkOn = !blinkOn;
+            meetingIndicator.setText("● MEETING IN PROGRESS");
+            meetingIndicator.setForeground(blinkOn
+                    ? new java.awt.Color(0xE74C3C)
+                    : (darkMode ? new java.awt.Color(0x5A2A2A) : new java.awt.Color(0xF5C6C2)));
+        } else {
+            meetingIndicator.setText("❚❚ Meeting paused");
+            meetingIndicator.setForeground(new java.awt.Color(0xE67E22));
         }
     }
 
@@ -724,7 +803,7 @@ public class MeetingConsole {
         for (JPanel panel : java.util.List.of(topPanel, bottomPanel, buttonsPanel, controlsPanel,
                 editorPanel, editorFileRow, editorActionsRow, editorSouthRow,
                 composePanel, composeTopPanel, composeBottomPanel, composeSouthPanel,
-                composeControlsPanel)) {
+                composeControlsPanel, indicatorPanel, southWrapPanel)) {
             panel.setBackground(panelBg);
         }
         for (JTextArea area : java.util.List.of(composeResult, composeFeed)) {

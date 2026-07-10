@@ -34,14 +34,46 @@ public class VoskModelManager {
 
     private final TranscriptionProperties properties;
     private final java.util.Set<String> unpacking = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final java.util.concurrent.atomic.AtomicBoolean scanning =
+            new java.util.concurrent.atomic.AtomicBoolean();
 
     public VoskModelManager(TranscriptionProperties properties) {
         this.properties = properties;
         // Users drop downloaded model .zips next to the jar; unpack them
         // into ./models in the background so they appear in the dropdown.
-        Thread unzipper = new Thread(this::unpackDroppedZips, "model-unzip");
+        rescanDroppedZips();
+    }
+
+    /**
+     * Unpacks any newly dropped model zips in the background. Also invoked
+     * every time the model dropdown opens, so zips added while the app is
+     * running are picked up without a restart.
+     */
+    public void rescanDroppedZips() {
+        if (!scanning.compareAndSet(false, true)) {
+            return;
+        }
+        Thread unzipper = new Thread(() -> {
+            try {
+                unpackDroppedZips();
+            } finally {
+                scanning.set(false);
+            }
+        }, "model-unzip");
         unzipper.setDaemon(true);
         unzipper.start();
+    }
+
+    private static String topLevelDirOf(Path zip) {
+        try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(zip))) {
+            ZipEntry first = zis.getNextEntry();
+            if (first != null && first.getName().contains("/")) {
+                return first.getName().substring(0, first.getName().indexOf('/'));
+            }
+        } catch (IOException ignored) {
+            // unreadable zip; skip it
+        }
+        return null;
     }
 
     /** Directory containing the running jar (falls back to the working dir). */
@@ -72,10 +104,14 @@ public class VoskModelManager {
             try (var files = Files.list(root)) {
                 for (Path zip : files.filter(p -> {
                     String n = p.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
-                    return n.startsWith("vosk-model") && n.endsWith(".zip");
+                    return n.contains("vosk-model") && n.endsWith(".zip");
                 }).toList()) {
-                    String dirName = zip.getFileName().toString();
-                    dirName = dirName.substring(0, dirName.length() - 4);
+                    // The model folder name comes from inside the zip, so a
+                    // renamed download (e.g. "... (1).zip") still works.
+                    String dirName = topLevelDirOf(zip);
+                    if (dirName == null) {
+                        continue;
+                    }
                     boolean alreadyUnpacked = false;
                     for (Path candidate : modelRoots()) {
                         if (isModelPresent(candidate.resolve(dirName))) {
