@@ -98,9 +98,8 @@
                                 </goals>
                                 <configuration>
                                     <url>https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip</url>
-                                    <unpack>false</unpack>
-                                    <outputDirectory>${project.build.outputDirectory}</outputDirectory>
-                                    <outputFileName>vosk-model.zip</outputFileName>
+                                    <unpack>true</unpack>
+                                    <outputDirectory>${project.basedir}/models</outputDirectory>
                                     <skipCache>false</skipCache>
                                 </configuration>
                             </execution>

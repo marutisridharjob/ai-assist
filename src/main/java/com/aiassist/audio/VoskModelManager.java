@@ -144,9 +144,17 @@ public class VoskModelManager {
      * Models the user can pick from: the built-in default plus any unpacked
      * Vosk model folder found in ./models next to the app.
      */
+    /** First available model — the default until the user picks another. */
+    public String defaultModelName() {
+        var available = listAvailableModels();
+        return available.isEmpty() ? properties.modelName() : available.getFirst();
+    }
+
     public java.util.List<String> listAvailableModels() {
         var names = new java.util.LinkedHashSet<String>();
-        names.add(properties.modelName());
+        if (isModelPresent(Path.of(properties.modelDir(), properties.modelName()))) {
+            names.add(properties.modelName());
+        }
         for (Path root : modelRoots()) {
             if (!Files.isDirectory(root)) {
                 continue;
@@ -238,12 +246,10 @@ public class VoskModelManager {
         }
 
         if (!properties.allowDownload()) {
-            throw new IOException(("Speech model \"%s\" not found (looked in %s, %s, and inside the app) "
-                    + "and runtime download is disabled so the app stays offline. Rebuild with "
-                    + "`mvn package -Pfetch-model` to embed the model, or download %s on another machine, "
-                    + "unzip it, and place the folder in one of those locations.")
-                    .formatted(properties.modelName(), bundled.toAbsolutePath(), modelPath.toAbsolutePath(),
-                            properties.modelUrl()));
+            throw new IOException(("No speech model found. Place a Vosk model folder or .zip "
+                    + "(e.g. vosk-model-en-us-0.22-lgraph from alphacephei.com/vosk/models) next to "
+                    + "the ai-assist jar or in %s, then press Start again.")
+                    .formatted(bundled.toAbsolutePath().getParent()));
         }
         log.info("Vosk model not found at {}; downloading from {}", modelPath, properties.modelUrl());
         Files.createDirectories(modelPath.getParent());

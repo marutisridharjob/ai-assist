@@ -80,17 +80,17 @@ public class AudioDeviceService {
     /**
      * Picks every source worth listening to: the default microphone (always,
      * labelled "mic") plus each OS loopback-style device carrying what the
-     * computer is playing (labelled "meeting"). A configured preferred device
+     * computer is playing (labelled "other"). A configured preferred device
      * is used as the meeting source instead of auto-detection.
      */
     public List<DeviceSelection> resolveAutoDevices(String preferredDevice) {
         List<DeviceSelection> selections = new ArrayList<>();
         if (preferredDevice != null && !preferredDevice.isBlank()) {
-            selections.add(new DeviceSelection(preferredDevice.strip(), "meeting"));
+            selections.add(new DeviceSelection(preferredDevice.strip(), "other"));
         } else {
             for (AudioDevice device : listCaptureDevices()) {
                 if (device.likelyLoopback()) {
-                    selections.add(new DeviceSelection(device.name(), "meeting"));
+                    selections.add(new DeviceSelection(device.name(), "other"));
                 }
             }
         }

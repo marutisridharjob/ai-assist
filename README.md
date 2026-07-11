@@ -9,8 +9,9 @@ timestamped file.
 **No internet. No browser. No other apps. No third-party drivers.** The app
 uses only the operating system's own resources (audio devices, a window,
 files). Speech recognition runs inside the app with the proven, lightweight
-[Vosk](https://alphacephei.com/vosk/) small English model (~40 MB, Apache-2.0),
-embedded into the jar at build time.
+[Vosk](https://alphacephei.com/vosk/) English models you place in the app
+folder — on first start any model `.zip` you dropped there is extracted
+(a progress bar shows) and offered in the dropdown.
 
 ## 100 % open source
 
@@ -49,7 +50,7 @@ JDK — not a browser):
 - a **Dark** toggle (top-right) switching the whole window between light and
   dark mode; the choice is remembered across launches,
 - a **scrolling text box** where the running transcript appears live, each
-  line time-stamped and tagged `[you]`, `[meeting]`, or `[Speaker-1/2/…]` when the optional speaker model is installed,
+  line time-stamped and tagged `[you]`, `[other]`, or `[Speaker-1/2/…]` when the optional speaker model is installed,
 - a **live caption line** showing words as they are being recognized,
   before the phrase is final — like the captions in commercial apps,
 - **Start / Pause / Stop** buttons show their label in **green** when that
@@ -64,7 +65,7 @@ JDK — not a browser):
   your **Desktop** (e.g. `2026-07-05_15-02-41_live-meeting-notes.rtf`), and
   the final notes are shown in the window,
 - **who said what**: every transcript line is tagged with its source —
-  `[you]` is you / your side of the room, `[meeting]` is the other
+  `[you]` is you / your side of the room, `[other]` is the other
   participants captured from the system audio. The tags appear live in the
   window, in the running interim draft, and in a "Full transcript (who said
   what)" section at the end of the saved notes,
@@ -116,7 +117,7 @@ Nothing is written to disk until Stop (or a confirmed save-on-close).
 
 The app captures **two streams at once**, each transcribed independently:
 **the microphone** (you and the room, tagged `[you]`) and **the meeting
-audio** (the other participants, tagged `[meeting]`).
+audio** (the other participants, tagged `[other]`).
 
 ### How the meeting audio is captured — same technique as the commercial apps
 
@@ -132,7 +133,7 @@ shipped inside the jar, using compilers the OS already has:
 | **macOS 14.2+** | **Core Audio system-audio tap** — Apple's API for exactly this (what Granola-style apps use) | Xcode Command Line Tools (`xcode-select --install`; already present if you use Homebrew), and approving the one-time **"System Audio Recording"** permission prompt |
 
 When the app starts (or when you press Pause → Resume), it prepares the
-helper and lists **`system audio (native tap) [meeting]`** in the status
+helper and lists **`system audio (native tap) [other]`** in the status
 line, with its own live level. If the helper can't be built on your machine,
 the app falls back automatically to the routes below.
 
@@ -226,15 +227,15 @@ headphones, your options without installing anything are:
 ## Getting the app
 
 **Ready-built**: `dist/ai-assist-<version>.jar` in this repository is the
-complete self-contained app, speech model included — copy that one file and
-run it.
+app (no model bundled). Put it in a folder, then download one or more Vosk
+English models from [alphacephei.com/vosk/models](https://alphacephei.com/vosk/models)
+and drop the `.zip` files into the **same folder**. On first start each zip
+is extracted (a progress bar shows) and appears in the model dropdown.
+Recommended: `vosk-model-en-us-0.22-lgraph` (128 MB) or, for the smallest,
+`vosk-model-small-en-us-0.15` (40 MB).
 
-To rebuild it yourself (the model ships in `src/main/resources/vosk-model.zip`,
-so a plain build embeds it — internet is only needed for Maven dependencies):
-
-```bash
-mvn package
-```
+To rebuild the app: `mvn package`. To also fetch the small model into
+`./models` at build time: `mvn package -Pfetch-model`.
 
 To refresh the model archive from upstream, build with `-Pfetch-model`.
 

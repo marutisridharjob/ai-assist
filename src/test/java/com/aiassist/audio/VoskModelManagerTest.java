@@ -64,8 +64,8 @@ class VoskModelManagerTest {
 
         assertThatThrownBy(manager::ensureModel)
                 .isInstanceOf(IOException.class)
-                .hasMessageContaining("download is disabled")
-                .hasMessageContaining("fetch-model");
+                .hasMessageContaining("No speech model found")
+                .hasMessageContaining("next to");
     }
 
     @Test

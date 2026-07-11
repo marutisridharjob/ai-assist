@@ -77,7 +77,7 @@ public class AutoPilot {
             return;
         }
         // The attributed transcript rides along so the running draft also
-        // shows which source ([mic] you / [meeting] others) said what.
+        // shows which source ([mic] you / [other] others) said what.
         Draft draft = com.aiassist.draft.AttributedTranscript.appendTo(
                 drafter.draft(session.topic(), session.transcript(),
                         new DraftOptions(properties.contentType(), properties.tone())),

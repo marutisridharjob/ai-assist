@@ -66,6 +66,12 @@ public class MeetingConsole {
     private boolean updatingModels;
     private JPanel controlsPanel;
     private JPanel topPanel;
+    private JPanel topStackPanel;
+    private JPanel meetingTopRow;
+    private JPanel extractionPanel;
+    private javax.swing.JProgressBar extractionBar;
+    private JLabel extractionLabel;
+    private boolean modelsAvailable = true;
     private javax.swing.JTabbedPane tabs;
     private JTextArea editorArea;
     private javax.swing.JTextField filePathField;
@@ -277,8 +283,22 @@ public class MeetingConsole {
         top.add(titleLabel, BorderLayout.WEST);
         top.add(titleField, BorderLayout.CENTER);
         top.add(controls, BorderLayout.EAST);
+        // Shown while dropped model zips are being extracted on first start.
+        extractionBar = new javax.swing.JProgressBar();
+        extractionBar.setIndeterminate(true);
+        extractionLabel = themedLabel(" ");
+        extractionPanel = new JPanel(new BorderLayout(6, 0));
+        extractionPanel.add(extractionLabel, BorderLayout.WEST);
+        extractionPanel.add(extractionBar, BorderLayout.CENTER);
+        extractionPanel.setVisible(false);
+        JPanel topStack = new JPanel();
+        topStack.setLayout(new javax.swing.BoxLayout(topStack, javax.swing.BoxLayout.Y_AXIS));
+        topStack.add(top);
+        topStack.add(extractionPanel);
+        topStackPanel = topStack;
         top.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 8, 4, 8));
-        topPanel = top;
+        topPanel = topStack;
+        meetingTopRow = top;
         controlsPanel = controls;
 
         statusLabel = new JLabel(" ");
@@ -316,7 +336,7 @@ public class MeetingConsole {
         bottomPanel = bottom;
 
         frame.setLayout(new BorderLayout());
-        frame.add(top, BorderLayout.NORTH);
+        frame.add(topStackPanel, BorderLayout.NORTH);
         tabs = new javax.swing.JTabbedPane();
         tabs.addTab("Meeting", scroll);
         tabs.addTab("Editor", buildEditorTab());
@@ -337,7 +357,7 @@ public class MeetingConsole {
         southWrapPanel = southWrap;
         tabs.addChangeListener(e -> {
             boolean meetingTab = tabs.getSelectedIndex() == 0;
-            topPanel.setVisible(meetingTab);
+            meetingTopRow.setVisible(meetingTab);
             bottomPanel.setVisible(meetingTab);
             frame.revalidate();
             frame.repaint();
@@ -684,6 +704,17 @@ public class MeetingConsole {
         if (detectorCountdown-- <= 0) {
             detectorCountdown = 5;
             detectedMeetingApp = MeetingAppDetector.detectRunningMeetingApp().orElse(null);
+            modelsAvailable = !liveTranscription.availableModels().isEmpty();
+        }
+        // First-start extraction: progress bar until the dropped zips are ready.
+        var unpackingNow = liveTranscription.unpackingModels();
+        boolean extracting = !unpackingNow.isEmpty();
+        if (extractionPanel.isVisible() != extracting) {
+            extractionPanel.setVisible(extracting);
+            frame.revalidate();
+        }
+        if (extracting) {
+            extractionLabel.setText("  Extracting model(s): " + String.join(", ", unpackingNow) + " ");
         }
         var partials = liveTranscription.partials();
         captionLabel.setText(partials.isEmpty() ? " "
@@ -699,8 +730,12 @@ public class MeetingConsole {
                 case LISTENING -> listeningMessage(status);
                 case PAUSED -> "Paused — press Start to continue";
                 case ERROR -> "Audio problem: " + status.detail();
-                case IDLE -> "Idle — press Start to begin";
-            }, status.state() == LiveTranscriptionService.State.ERROR);
+                case IDLE -> modelsAvailable
+                        ? "Idle — press Start to begin"
+                        : "No speech model found — place a Vosk model zip or folder next to the jar"
+                          + " (it extracts automatically)";
+            }, status.state() == LiveTranscriptionService.State.ERROR
+                    || (status.state() == LiveTranscriptionService.State.IDLE && !modelsAvailable));
             // Green text = press me now, red = not applicable:
             //   idle/finished → only Start green;
             //   listening     → Pause and Stop green, Start red;
@@ -712,10 +747,12 @@ public class MeetingConsole {
             stopButton.setEnabled(capturing || paused);
             startButton.setText(paused ? "Resume" : "Start");
         }
-        startButton.setEnabled(meetingCompleted
+        boolean startableState = meetingCompleted
                 || status.state() == LiveTranscriptionService.State.IDLE
                 || status.state() == LiveTranscriptionService.State.ERROR
-                || status.state() == LiveTranscriptionService.State.PAUSED);
+                || status.state() == LiveTranscriptionService.State.PAUSED;
+        startButton.setEnabled(startableState
+                && (modelsAvailable || status.state() == LiveTranscriptionService.State.PAUSED));
         String sessionId = status.sessionId();
         if (sessionId == null) {
             return;
@@ -782,37 +819,36 @@ public class MeetingConsole {
      * Control Center Mic Mode set to "Voice Isolation", which strips the
      * meeting audio out of the microphone signal.
      */
+    /** Compact: connected source per label with its live level, nothing more. */
     private String listeningMessage(LiveTranscriptionService.Status status) {
         var levels = liveTranscription.levels();
-        String levelText = levels.entrySet().stream()
-                .map(e -> e.getKey() + " " + e.getValue() + "%")
-                .reduce((a, b) -> a + ", " + b)
-                .orElse("");
         int loudest = levels.values().stream().mapToInt(Integer::intValue).max().orElse(0);
         silentCycles = loudest < 3 ? silentCycles + 1 : 0;
-        String message = (detectedMeetingApp != null ? detectedMeetingApp + " detected · " : "")
-                + "Listening (" + String.join(", ", status.devices()) + ")"
-                + (levelText.isEmpty() ? "" : " — audio level: " + levelText);
-        if (liveTranscription.modelNote() != null) {
-            message += " — " + liveTranscription.modelNote();
+        StringBuilder message = new StringBuilder("Listening — ");
+        boolean first = true;
+        for (String device : status.devices()) {
+            int open = device.lastIndexOf('[');
+            int close = device.lastIndexOf(']');
+            String label = open >= 0 && close > open ? device.substring(open + 1, close) : device;
+            String name = open > 1 ? device.substring(0, open - 1) : device;
+            if (!first) {
+                message.append("  ·  ");
+            }
+            first = false;
+            message.append(label).append(": ").append(name)
+                    .append(" ").append(levels.getOrDefault(label, 0)).append("%");
         }
-        boolean hasMeetingAudio = status.devices().stream().anyMatch(d -> d.contains("[meeting]"));
-        if (hasMeetingAudio && !liveTranscription.speakerIdActive()) {
-            message += " — speaker ID off: put vosk-model-spk-0.4 next to the jar, then press Start";
-        }
-        boolean hasMeetingSource = status.devices().stream().anyMatch(d -> d.contains("[meeting]"));
-        if (!hasMeetingSource) {
-            message += " — NO meeting-audio device detected: only the microphone is being captured. "
-                    + "Remote participants will only be heard if the meeting plays on speakers. For direct "
-                    + "capture (works with headphones) install BlackHole and route the meeting through it "
-                    + "(see README), then press Pause and Resume to rescan devices.";
+        boolean hasOtherSource = status.devices().stream().anyMatch(d -> d.contains("[other]"));
+        if (!hasOtherSource) {
+            message.append("  ·  no meeting-audio source (mic only)");
         }
         if (silentCycles >= 8) {
-            message += " — hearing only silence: if a meeting is playing, raise the speaker volume, "
-                    + "and on macOS set Control Center > Mic Mode to \"Standard\" (Voice Isolation "
-                    + "removes the meeting audio)";
+            message.append("  ·  hearing silence — check volume / Mic Mode");
         }
-        return message;
+        if (liveTranscription.modelNote() != null) {
+            message.append("  ·  ").append(liveTranscription.modelNote());
+        }
+        return message.toString();
     }
 
     /**
@@ -950,10 +986,13 @@ public class MeetingConsole {
         if (meetingCompleted) {
             return;
         }
-        int choice = JOptionPane.showConfirmDialog(frame,
-                "End the meeting and save the notes file?", "Meeting complete",
-                JOptionPane.OK_CANCEL_OPTION);
-        if (choice != JOptionPane.OK_OPTION) {
+        // Explicit button labels: the plain confirm dialog rendered without
+        // visible buttons for some users on Windows.
+        Object[] choices = {"Yes — save notes", "Cancel"};
+        int choice = JOptionPane.showOptionDialog(frame,
+                "End the meeting and save the notes file to your Desktop?", "Meeting complete",
+                JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, null, choices, choices[0]);
+        if (choice != 0) {
             return;
         }
         meetingCompleted = true;
@@ -975,12 +1014,20 @@ public class MeetingConsole {
                     setStatus(draft.savedTo() != null
                             ? "Notes saved to " + draft.savedTo()
                             : "Meeting ended (file saving is disabled in configuration)", false);
+                    if (draft.savedTo() != null) {
+                        JOptionPane.showMessageDialog(frame, "Notes saved to:\n" + draft.savedTo(),
+                                "Meeting complete", JOptionPane.INFORMATION_MESSAGE);
+                    }
                 } catch (Exception e) {
                     meetingCompleted = false;
                     pauseButton.setEnabled(true);
                     stopButton.setEnabled(true);
                     String message = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
                     setStatus("Could not end the meeting: " + message, true);
+                    // Loud on purpose: Windows users reported "nothing saved"
+                    // with the reason hidden in the status line.
+                    JOptionPane.showMessageDialog(frame, "The notes were NOT saved:\n" + message,
+                            "Could not save", JOptionPane.ERROR_MESSAGE);
                 }
                 transcript.setCaretPosition(transcript.getDocument().getLength());
             }
@@ -994,20 +1041,27 @@ public class MeetingConsole {
                     || status.state() == LiveTranscriptionService.State.PAUSED
                     || status.state() == LiveTranscriptionService.State.PREPARING);
         if (meetingActive && hasCapturedContent(status.sessionId())) {
-            int choice = JOptionPane.showConfirmDialog(frame,
+            int choice = JOptionPane.showOptionDialog(frame,
                     "A meeting is still running. Save the notes before closing?",
-                    "Close ai-assist", JOptionPane.YES_NO_CANCEL_OPTION);
-            if (choice == JOptionPane.CANCEL_OPTION || choice == JOptionPane.CLOSED_OPTION) {
+                    "Close ai-assist", JOptionPane.YES_NO_CANCEL_OPTION,
+                    JOptionPane.QUESTION_MESSAGE, null,
+                    new Object[]{"Yes — save and close", "Close without saving", "Cancel"},
+                    "Yes — save and close");
+            if (choice == 2 || choice == JOptionPane.CLOSED_OPTION) {
                 return;
             }
-            if (choice == JOptionPane.YES_OPTION) {
+            if (choice == 0) {
                 try {
                     Draft draft = meetingEndService.endCurrentLiveMeeting(null);
                     if (draft.savedTo() != null) {
-                        JOptionPane.showMessageDialog(frame, "Notes saved to\n" + draft.savedTo());
+                        JOptionPane.showMessageDialog(frame, "Notes saved to:\n" + draft.savedTo());
                     }
                 } catch (Exception e) {
-                    log.warn("Could not save notes while closing: {}", e.getMessage());
+                    // Don't silently discard the meeting: report and abort the close.
+                    JOptionPane.showMessageDialog(frame,
+                            "The notes were NOT saved:\n" + e.getMessage(),
+                            "Could not save", JOptionPane.ERROR_MESSAGE);
+                    return;
                 }
             }
         }

@@ -25,7 +25,7 @@ import org.springframework.web.server.ResponseStatusException;
  * loopback device that carries what the computer is playing (an active
  * Webex/Teams/any-platform meeting) — and streams each through its own
  * offline Vosk recognizer into one listening session. Utterances are
- * labelled with their source ("mic" or "meeting"). Supports pause/resume
+ * labelled with their source ("mic" or "other"). Supports pause/resume
  * mid-meeting; a full stop is driven by the meeting-end flow.
  */
 @Service
@@ -104,8 +104,8 @@ public class LiveTranscriptionService {
                     } catch (Throwable loadFailure) {
                         // A picked model that can't load (still unpacking,
                         // incomplete, out of memory) must not kill the meeting:
-                        // revert to the built-in default and say so.
-                        String fallback = properties.modelName();
+                        // revert to the first available model and say so.
+                        String fallback = modelManager.defaultModelName();
                         if (fallback.equals(wanted)) {
                             throw loadFailure;
                         }
@@ -177,15 +177,15 @@ public class LiveTranscriptionService {
     private List<AudioDeviceService.DeviceSelection> resolveSelections(List<String> requested) {
         if (requested != null && !requested.isEmpty()) {
             return requested.stream()
-                    .map(n -> new AudioDeviceService.DeviceSelection(n, "meeting"))
+                    .map(n -> new AudioDeviceService.DeviceSelection(n, "other"))
                     .toList();
         }
         List<AudioDeviceService.DeviceSelection> auto =
                 new ArrayList<>(audioDevices.resolveAutoDevices(properties.preferredDevice()));
         if (NativeSystemAudioTap.isSupported()) {
-            auto.removeIf(s -> "meeting".equals(s.label()));
+            auto.removeIf(s -> "other".equals(s.label()));
             auto.add(0, new AudioDeviceService.DeviceSelection(
-                    NativeSystemAudioTap.SOURCE_NAME, "meeting", true));
+                    NativeSystemAudioTap.SOURCE_NAME, "other", true));
         }
         return auto;
     }
@@ -236,7 +236,7 @@ public class LiveTranscriptionService {
 
     public String activeModelName() {
         String requested = requestedModelName;
-        return requested != null ? requested : properties.modelName();
+        return requested != null ? requested : modelManager.defaultModelName();
     }
 
     /** Models still unpacking from dropped zips (shown disabled in the UI). */
@@ -319,6 +319,7 @@ public class LiveTranscriptionService {
         private volatile TargetDataLine line;
         private volatile Process tapProcess;
         private volatile int level;
+        private volatile int utterancePeak;
         private volatile String partialText;
         private Thread thread;
 
@@ -376,6 +377,7 @@ public class LiveTranscriptionService {
                     }
                     int length = stereo ? downmixToMono(buffer, n) : n;
                     level = peakPercent(buffer, length);
+                    utterancePeak = Math.max(utterancePeak, level);
                     if (recognizer.acceptWaveform(buffer, length)) {
                         appendResult(recognizer.result());
                         partialText = "";
@@ -425,6 +427,7 @@ public class LiveTranscriptionService {
                         continue;
                     }
                     level = peakPercent(buffer, n);
+                    utterancePeak = Math.max(utterancePeak, level);
                     if (recognizer.acceptWaveform(buffer, n)) {
                         appendResult(recognizer.result());
                         partialText = "";
@@ -484,17 +487,31 @@ public class LiveTranscriptionService {
 
         /** Meeting audio gets a speaker-identifying recognizer when the spk model is present. */
         private SpeechRecognizer newRecognizer(float sampleRate) {
-            boolean identifySpeakers = speakerModel != null && "meeting".equals(selection.label());
+            boolean identifySpeakers = speakerModel != null && "other".equals(selection.label());
             return new SpeechRecognizer(model, sampleRate, identifySpeakers ? speakerModel : null);
         }
 
+        /** Throwaway noises the microphone should never put into the notes. */
+        private static final java.util.Set<String> MIC_FILLERS = java.util.Set.of(
+                "huh", "uh", "um", "hm", "hmm", "mhm", "mm", "uh huh", "ah", "oh");
+
         private void appendResult(String resultJson) {
+            int peak = utterancePeak;
+            utterancePeak = 0;
             try {
                 JsonNode node = objectMapper.readTree(resultJson);
                 String text = node.path("text").asText("");
-                if (!text.isBlank() && !session.isEnded()) {
-                    session.addUtterance(text, speakerLabel(node));
+                if (text.isBlank() || session.isEnded()) {
+                    return;
                 }
+                if ("you".equals(selection.label())) {
+                    // Noise gate: ambient mumble below 10% level, and bare
+                    // filler noises, never reach the notes.
+                    if (peak < 10 || MIC_FILLERS.contains(text.toLowerCase(java.util.Locale.ROOT))) {
+                        return;
+                    }
+                }
+                session.addUtterance(text, speakerLabel(node));
             } catch (Exception e) {
                 log.warn("Could not parse recognizer result: {}", resultJson, e);
             }

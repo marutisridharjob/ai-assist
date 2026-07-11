@@ -8,7 +8,7 @@ import com.aiassist.listen.Utterance;
 /**
  * Appends the word-for-word transcript with source attribution to a draft,
  * so it is always clear who was captured where: {@code [mic]} is the user's
- * side of the room, {@code [meeting]} is the other participants arriving
+ * side of the room, {@code [other]} is the other participants arriving
  * through the system/speaker audio. Used for both the running interim draft
  * and the final saved notes.
  */
@@ -16,7 +16,7 @@ public final class AttributedTranscript {
 
     public static final String HEADING = "Full transcript (who said what)";
     private static final String LEGEND =
-            "[you] = you / your side of the room · [meeting] = other participants (system audio) · "
+            "[you] = you / your side of the room · [other] = other participants (system audio) · "
             + "[Speaker-1/2/...] = individual meeting voices (when the speaker model is installed)";
 
     private AttributedTranscript() {
