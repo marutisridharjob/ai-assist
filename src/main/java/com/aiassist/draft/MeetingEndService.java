@@ -44,14 +44,20 @@ public class MeetingEndService {
     public Draft endMeeting(String sessionId, DraftOptions options) {
         ListeningSession session = sessions.get(sessionId);
 
-        // Stop the recognizer first so its final flushed phrase still lands
-        // in the session before we lock it.
+        // Stop capture first so the recording is complete before we transcribe it.
         if (sessionId.equals(liveTranscription.status().sessionId())) {
             liveTranscription.stop();
         }
         session.end();
 
-        String transcript = session.transcript();
+        // Convert the recorded voice into text now — a full, accurate pass over
+        // the whole meeting audio (falls back to the live captions if there is
+        // no recording). Then summarize.
+        var utterances = liveTranscription.finalTranscript(session);
+        String transcript = utterances.stream()
+                .map(com.aiassist.listen.Utterance::text)
+                .reduce((a, b) -> a + "\n" + b)
+                .orElse("");
         if (transcript.isBlank()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "Meeting " + sessionId + " ended but nothing was captured, so there is nothing to save");
@@ -60,10 +66,10 @@ public class MeetingEndService {
             options = new DraftOptions(autoPilotProperties.contentType(), autoPilotProperties.tone());
         }
         Draft draft = AttributedTranscript.appendTo(
-                drafter.draft(session.topic(), transcript, options), session.utterances());
+                drafter.draft(session.topic(), transcript, options), utterances);
         Path saved = fileWriter.save(draft);
         log.info("Meeting {} ended with {} utterances; notes saved to {}",
-                sessionId, session.utterances().size(), saved);
+                sessionId, utterances.size(), saved);
         return saved == null ? draft : draft.withSavedTo(saved.toString());
     }
 

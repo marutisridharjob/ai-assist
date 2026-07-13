@@ -112,6 +112,16 @@ local [Ollama](https://ollama.com) integration (`ai-assist.ollama.enabled=true`)
 — style drafts then go through your local model, falling back to the
 rules automatically.
 
+### How a meeting is processed
+
+On **Start** (and **Resume**) the meeting audio is recorded to a temporary
+file per source. The meeting box shows **live captions** as you talk —
+straight speech-to-text, no LLM. On **Stop**, the recorded audio is
+transcribed in full (an unhurried, more accurate pass than the live
+captions), the transcript is summarized into the notes, and the recording
+is deleted. If recording is unavailable, the notes fall back to the live
+captions.
+
 Nothing is written to disk until Stop (or a confirmed save-on-close).
 
 ## What it hears

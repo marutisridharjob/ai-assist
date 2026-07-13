@@ -265,19 +265,12 @@ public class MeetingConsole {
                 return;
             }
             if (!selected.equals(liveTranscription.activeModelName())) {
-                prefs.put("model", selected); // stays the default until changed
+                // selectModel persists the choice in the service (survives restarts).
                 new Thread(() -> liveTranscription.selectModel(selected), "model-switch").start();
             }
         });
-        // Restore the model chosen in a previous run; if its folder is gone,
-        // the load falls back to the built-in model with an explanation.
-        String savedModel = prefs.get("model", null);
-        if (savedModel != null && !savedModel.equals(liveTranscription.activeModelName())) {
-            new Thread(() -> {
-                liveTranscription.selectModel(savedModel);
-                SwingUtilities.invokeLater(this::populateModels);
-            }, "model-restore").start();
-        }
+        // The dropdown reflects activeModelName(), which the service restores
+        // from the saved preference — so the previous choice shows on launch.
 
         titleLabel = new JLabel("Title:");
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
