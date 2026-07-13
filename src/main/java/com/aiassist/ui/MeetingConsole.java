@@ -858,13 +858,11 @@ public class MeetingConsole {
             int open = device.lastIndexOf('[');
             int close = device.lastIndexOf(']');
             String label = open >= 0 && close > open ? device.substring(open + 1, close) : device;
-            String name = open > 1 ? device.substring(0, open - 1) : device;
             if (!first) {
                 message.append("  ·  ");
             }
             first = false;
-            message.append(label).append(": ").append(name)
-                    .append(" ").append(levels.getOrDefault(label, 0)).append("%");
+            message.append(label).append(" ").append(levels.getOrDefault(label, 0)).append("%");
         }
         boolean hasOtherSource = status.devices().stream().anyMatch(d -> d.contains("[other]"));
         if (!hasOtherSource) {
