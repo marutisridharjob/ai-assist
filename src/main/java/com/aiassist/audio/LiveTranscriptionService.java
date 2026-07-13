@@ -119,11 +119,20 @@ public class LiveTranscriptionService {
             org.springframework.boot.context.event.ApplicationReadyEvent.class)
     public void preloadOnStartup() {
         Thread preloader = new Thread(() -> {
+            // Warm the capture path once, in parallel with waiting for a model:
+            // the native tap's one-time helper build and device enumeration
+            // are the slow parts, so doing them now makes Start instant.
+            try {
+                NativeSystemAudioTap.isSupported();
+                audioDevices.listCaptureDevices();
+            } catch (Throwable e) {
+                log.debug("Capture warm-up skipped: {}", e.getMessage());
+            }
             for (int i = 0; i < 600 && model == null && !running; i++) {
                 if (!modelManager.listAvailableModels().isEmpty()) {
                     try {
                         loadModelIfNeeded(activeModelName());
-                        log.info("Model preloaded — Start will begin drafting immediately");
+                        log.info("Model and audio capture ready — Start begins drafting immediately");
                     } catch (Throwable e) {
                         log.warn("Model preload failed ({}); it will load when you press Start",
                                 e.getMessage());
@@ -137,7 +146,7 @@ public class LiveTranscriptionService {
                     return;
                 }
             }
-        }, "model-preload");
+        }, "capture-warmup");
         preloader.setDaemon(true);
         preloader.start();
     }
