@@ -65,6 +65,84 @@ public class LiveTranscriptionService {
     }
 
     /**
+     * Loads the active speech model into memory (and the optional speaker
+     * model). Called on start, and preloaded at app launch so pressing Start
+     * begins drafting immediately. Falls back to the first available model
+     * when the requested one can't load.
+     */
+    private synchronized void loadModelIfNeeded(String wanted) throws Exception {
+        if (model == null || !wanted.equals(loadedModelName)) {
+            long t0 = System.currentTimeMillis();
+            if (model != null) {
+                model.close();
+                model = null;
+            }
+            try {
+                model = new SpeechModel(modelManager.ensureModel(wanted).toString());
+                loadedModelName = wanted;
+                modelNote = null;
+            } catch (Throwable loadFailure) {
+                // A picked model that can't load (still unpacking, incomplete,
+                // out of memory) must not kill the meeting: revert to the first
+                // available model and say so.
+                String fallback = modelManager.defaultModelName();
+                if (fallback.equals(wanted)) {
+                    throw loadFailure;
+                }
+                requestedModelName = null;
+                modelNote = "model \"" + wanted + "\" could not be loaded ("
+                        + loadFailure.getMessage() + ") — using " + fallback;
+                log.warn(modelNote);
+                model = new SpeechModel(modelManager.ensureModel(fallback).toString());
+                loadedModelName = fallback;
+            }
+            log.info("Speech model '{}' ready in {} ms", loadedModelName, System.currentTimeMillis() - t0);
+        }
+        // Re-checked each time so a speaker model dropped in while the app is
+        // running is picked up without a relaunch.
+        if (speakerModel == null) {
+            modelManager.findSpeakerModel().ifPresent(path -> {
+                speakerModel = VoskNative.INSTANCE.vosk_spk_model_new(path.toString());
+                log.info(speakerModel != null
+                        ? "Speaker-identification model loaded from " + path
+                        : "Speaker model at " + path + " could not be loaded");
+            });
+        }
+    }
+
+    /**
+     * Preloads the model at app launch so Start is instant. Best-effort:
+     * waits (in the background) for a model to appear if the user is still
+     * dropping/extracting one, then loads it. Never blocks startup.
+     */
+    @org.springframework.context.event.EventListener(
+            org.springframework.boot.context.event.ApplicationReadyEvent.class)
+    public void preloadOnStartup() {
+        Thread preloader = new Thread(() -> {
+            for (int i = 0; i < 600 && model == null && !running; i++) {
+                if (!modelManager.listAvailableModels().isEmpty()) {
+                    try {
+                        loadModelIfNeeded(activeModelName());
+                        log.info("Model preloaded — Start will begin drafting immediately");
+                    } catch (Throwable e) {
+                        log.warn("Model preload failed ({}); it will load when you press Start",
+                                e.getMessage());
+                    }
+                    return;
+                }
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        }, "model-preload");
+        preloader.setDaemon(true);
+        preloader.start();
+    }
+
+    /**
      * Starts capture on the given devices (auto-resolved to microphone +
      * loopback devices when null/empty) into the given session (created when
      * null). Returns immediately; model loading and recognition happen on
@@ -90,45 +168,7 @@ public class LiveTranscriptionService {
 
         Thread starter = new Thread(() -> {
             try {
-                String wanted = activeModelName();
-                if (model == null || !wanted.equals(loadedModelName)) {
-                    long t0 = System.currentTimeMillis();
-                    if (model != null) {
-                        model.close();
-                        model = null;
-                    }
-                    try {
-                        model = new SpeechModel(modelManager.ensureModel(wanted).toString());
-                        loadedModelName = wanted;
-                        modelNote = null;
-                    } catch (Throwable loadFailure) {
-                        // A picked model that can't load (still unpacking,
-                        // incomplete, out of memory) must not kill the meeting:
-                        // revert to the first available model and say so.
-                        String fallback = modelManager.defaultModelName();
-                        if (fallback.equals(wanted)) {
-                            throw loadFailure;
-                        }
-                        requestedModelName = null;
-                        modelNote = "model \"" + wanted + "\" could not be loaded ("
-                                + loadFailure.getMessage() + ") — using " + fallback
-                                + "; if it was still unpacking, wait for the log to say it is ready and pick it again";
-                        log.warn(modelNote);
-                        model = new SpeechModel(modelManager.ensureModel(fallback).toString());
-                        loadedModelName = fallback;
-                    }
-                    log.info("Speech model '{}' ready in {} ms", loadedModelName, System.currentTimeMillis() - t0);
-                }
-                // Re-checked on every start so a speaker model dropped in
-                // while the app is running is picked up without a relaunch.
-                if (speakerModel == null) {
-                    modelManager.findSpeakerModel().ifPresent(path -> {
-                        speakerModel = VoskNative.INSTANCE.vosk_spk_model_new(path.toString());
-                        log.info(speakerModel != null
-                                ? "Speaker-identification model loaded from " + path
-                                : "Speaker model at " + path + " could not be loaded");
-                    });
-                }
+                loadModelIfNeeded(activeModelName());
             } catch (Throwable e) {
                 // Throwable, not Exception: native-library loading failures are
                 // Errors, and swallowing them would leave the status stuck on

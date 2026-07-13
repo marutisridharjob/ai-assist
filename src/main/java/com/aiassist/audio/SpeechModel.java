@@ -10,7 +10,10 @@ public final class SpeechModel implements AutoCloseable {
     public SpeechModel(String modelDirectory) {
         this.handle = VoskNative.INSTANCE.vosk_model_new(modelDirectory);
         if (handle == null) {
-            throw new IllegalStateException("Could not load speech model from " + modelDirectory);
+            // Name only — the full path is noise in the on-screen status.
+            java.nio.file.Path path = java.nio.file.Path.of(modelDirectory);
+            throw new IllegalStateException("Could not load speech model \""
+                    + path.getFileName() + "\"");
         }
     }
 
