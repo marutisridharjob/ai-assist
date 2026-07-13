@@ -33,6 +33,8 @@ public class LiveTranscriptionService {
 
     private static final Logger log = LoggerFactory.getLogger(LiveTranscriptionService.class);
     private static final int BUFFER_BYTES = 4096;
+    // Force-commit pending speech after this long without a natural pause.
+    private static final long FLUSH_MILLIS = 12_000;
 
     public enum State { IDLE, PREPARING, LISTENING, PAUSED, ERROR }
 
@@ -319,7 +321,8 @@ public class LiveTranscriptionService {
         private volatile TargetDataLine line;
         private volatile Process tapProcess;
         private volatile int level;
-        private volatile String partialText;
+        private volatile String partialText = "";
+        private long lastCommit = System.currentTimeMillis();
         private Thread thread;
 
         private CaptureWorker(ListeningSession session, AudioDeviceService.DeviceSelection selection,
@@ -356,32 +359,28 @@ public class LiveTranscriptionService {
 
         /** Java Sound path: microphone or a loopback device. */
         private void captureFromDevice() throws Exception {
-            // The device chooses the format (macOS often refuses 16 kHz);
-            // the recognizer is created with whatever rate was granted and
-            // stereo input is downmixed to mono before recognition.
             line = audioDevices.openBestCaptureLine(selection.deviceName());
             AudioFormat format = line.getFormat();
             boolean stereo = format.getChannels() == 2;
+            float deviceRate = format.getSampleRate();
             line.start();
             markListening();
-            log.info("Capturing '{}' as [{}] at {} Hz {} into session {}",
+            log.info("Capturing '{}' as [{}] at {} Hz {} → 16 kHz into session {}",
                     selection.displayName(), selection.label(),
-                    (int) format.getSampleRate(), stereo ? "stereo" : "mono", session.id());
-            try (SpeechRecognizer recognizer = newRecognizer(format.getSampleRate())) {
+                    (int) deviceRate, stereo ? "stereo" : "mono", session.id());
+            // The model runs at 16 kHz; always recognize at 16 kHz for accuracy,
+            // resampling whatever rate the OS granted.
+            try (SpeechRecognizer recognizer = newRecognizer(16000f)) {
                 byte[] buffer = new byte[BUFFER_BYTES * format.getFrameSize()];
                 while (running) {
                     int n = line.read(buffer, 0, buffer.length);
                     if (n <= 0) {
                         continue;
                     }
-                    int length = stereo ? downmixToMono(buffer, n) : n;
-                    level = peakPercent(buffer, length);
-                    if (recognizer.acceptWaveform(buffer, length)) {
-                        appendResult(recognizer.result());
-                        partialText = "";
-                    } else {
-                        updatePartial(recognizer.partialResult());
-                    }
+                    int monoLen = stereo ? downmixToMono(buffer, n) : n;
+                    level = peakPercent(buffer, monoLen);
+                    byte[] pcm16k = resampleTo16k(buffer, monoLen, deviceRate);
+                    feed(recognizer, pcm16k, pcm16k.length);
                 }
                 appendResult(recognizer.finalResult());
                 partialText = "";
@@ -412,9 +411,9 @@ public class LiveTranscriptionService {
             java.io.InputStream pcm = new java.io.BufferedInputStream(process.getInputStream());
             float sampleRate = NativeSystemAudioTap.readHeader(pcm);
             markListening();
-            log.info("Capturing system audio via native tap at {} Hz into session {}",
+            log.info("Capturing system audio via native tap at {} Hz → 16 kHz into session {}",
                     (int) sampleRate, session.id());
-            try (SpeechRecognizer recognizer = newRecognizer(sampleRate)) {
+            try (SpeechRecognizer recognizer = newRecognizer(16000f)) {
                 byte[] buffer = new byte[BUFFER_BYTES];
                 while (running) {
                     int n = pcm.read(buffer, 0, buffer.length);
@@ -425,12 +424,8 @@ public class LiveTranscriptionService {
                         continue;
                     }
                     level = peakPercent(buffer, n);
-                    if (recognizer.acceptWaveform(buffer, n)) {
-                        appendResult(recognizer.result());
-                        partialText = "";
-                    } else {
-                        updatePartial(recognizer.partialResult());
-                    }
+                    byte[] pcm16k = resampleTo16k(buffer, n, sampleRate);
+                    feed(recognizer, pcm16k, pcm16k.length);
                 }
                 appendResult(recognizer.finalResult());
                 partialText = "";
@@ -438,6 +433,28 @@ public class LiveTranscriptionService {
             if (running && !process.isAlive() && process.exitValue() != 0) {
                 throw new java.io.IOException("system-audio helper exited with code "
                         + process.exitValue() + " (see [system-tap] log lines for the reason)");
+            }
+        }
+
+        /**
+         * Feeds 16 kHz mono PCM to the recognizer. Commits on Vosk's own
+         * end-of-phrase detection, and also force-commits every
+         * {@code FLUSH_MILLIS} of continuous audio so long, pause-free speech
+         * (or noisy meeting audio that hides silences) is never left
+         * un-recorded.
+         */
+        private void feed(SpeechRecognizer recognizer, byte[] pcm, int length) {
+            if (recognizer.acceptWaveform(pcm, length)) {
+                appendResult(recognizer.result());
+                partialText = "";
+                lastCommit = System.currentTimeMillis();
+            } else {
+                updatePartial(recognizer.partialResult());
+                if (System.currentTimeMillis() - lastCommit > FLUSH_MILLIS && !partialText.isBlank()) {
+                    appendResult(recognizer.finalResult());
+                    partialText = "";
+                    lastCommit = System.currentTimeMillis();
+                }
             }
         }
 
@@ -451,6 +468,10 @@ public class LiveTranscriptionService {
                 }
             }
             return peak * 100 / 32767;
+        }
+
+        private byte[] resampleTo16k(byte[] buffer, int length, float sourceRate) {
+            return AudioResampler.to16k(buffer, length, sourceRate);
         }
 
         /** Averages 16-bit little-endian stereo frames into mono, in place. */
