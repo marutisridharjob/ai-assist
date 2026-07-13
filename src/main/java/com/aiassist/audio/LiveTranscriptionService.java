@@ -33,8 +33,6 @@ public class LiveTranscriptionService {
 
     private static final Logger log = LoggerFactory.getLogger(LiveTranscriptionService.class);
     private static final int BUFFER_BYTES = 4096;
-    // Force-commit pending speech after this long without a natural pause.
-    private static final long FLUSH_MILLIS = 12_000;
 
     public enum State { IDLE, PREPARING, LISTENING, PAUSED, ERROR }
 
@@ -322,7 +320,6 @@ public class LiveTranscriptionService {
         private volatile Process tapProcess;
         private volatile int level;
         private volatile String partialText = "";
-        private long lastCommit = System.currentTimeMillis();
         private Thread thread;
 
         private CaptureWorker(ListeningSession session, AudioDeviceService.DeviceSelection selection,
@@ -437,24 +434,16 @@ public class LiveTranscriptionService {
         }
 
         /**
-         * Feeds 16 kHz mono PCM to the recognizer. Commits on Vosk's own
-         * end-of-phrase detection, and also force-commits every
-         * {@code FLUSH_MILLIS} of continuous audio so long, pause-free speech
-         * (or noisy meeting audio that hides silences) is never left
-         * un-recorded.
+         * Feeds 16 kHz mono PCM to the recognizer. A phrase is committed only
+         * when the speaker pauses (Vosk's own end-of-phrase detection); until
+         * then it grows as live-caption partial text and is never cut off.
          */
         private void feed(SpeechRecognizer recognizer, byte[] pcm, int length) {
             if (recognizer.acceptWaveform(pcm, length)) {
                 appendResult(recognizer.result());
                 partialText = "";
-                lastCommit = System.currentTimeMillis();
             } else {
                 updatePartial(recognizer.partialResult());
-                if (System.currentTimeMillis() - lastCommit > FLUSH_MILLIS && !partialText.isBlank()) {
-                    appendResult(recognizer.finalResult());
-                    partialText = "";
-                    lastCommit = System.currentTimeMillis();
-                }
             }
         }
 
