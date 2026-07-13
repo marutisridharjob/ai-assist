@@ -75,10 +75,10 @@
 
     <profiles>
         <!--
-          One-time, build-machine-only fetch of the proven lightweight English
-          speech model (vosk-model-small-en-us, ~40 MB), embedded INTO the jar
-          so the shipped app is one self-contained file that never needs the
-          internet, a browser, or any other application:
+          Optional convenience for developers: fetch the small English model
+          into ./models next to the build so you can run the app immediately.
+          The shipped app bundles NO model — users drop their own model .zip
+          in the app folder and it is extracted on first start.
               mvn package -Pfetch-model
         -->
         <profile>
@@ -91,7 +91,7 @@
                         <version>1.9.0</version>
                         <executions>
                             <execution>
-                                <id>embed-vosk-model</id>
+                                <id>fetch-vosk-model</id>
                                 <phase>generate-resources</phase>
                                 <goals>
                                     <goal>wget</goal>

@@ -85,9 +85,10 @@ Windows), then apply an offline transformation — all deterministic and
 identical on both platforms:
 
 Tick any combination of **Fix grammar**, **Make compact**, **Make detailed**,
-**Professional**, and **Bullet points**, optionally type free-form
-**Instructions** (these need the optional local Ollama), and press **Apply**
-— the corrected content replaces the text (document view with vertical and
+**Professional**, **Bullet points**, and any of the 13 communication-style
+checkboxes, optionally type free-form **Instructions** (these need the
+optional local Ollama), and press **Apply** — every checked option and the
+instructions are applied together and the corrected content replaces the text (document view with vertical and
 horizontal scroll bars). **Download** saves the result to your **Desktop**
 with the same file name and format (a "-edited" suffix is added if the name
 is taken).

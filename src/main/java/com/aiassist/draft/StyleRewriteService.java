@@ -139,7 +139,8 @@ public class StyleRewriteService {
      * plus free-form instructions when the local LLM is available.
      */
     public String applyEditor(String text, boolean grammar, boolean compact, boolean detailed,
-                              boolean professional, boolean bullets, String instructions) {
+                              boolean professional, boolean bullets, List<Style> styles,
+                              String instructions) {
         if (text == null || text.isBlank()) {
             return "";
         }
@@ -162,6 +163,9 @@ public class StyleRewriteService {
                 if (bullets) {
                     request.append("format the key content as bullet points; ");
                 }
+                for (Style style : styles) {
+                    request.append("use a ").append(style.display()).append(" communication style; ");
+                }
                 if (instructions != null && !instructions.isBlank()) {
                     request.append(instructions.strip());
                 }
@@ -182,6 +186,9 @@ public class StyleRewriteService {
         }
         if (professional) {
             result = applyRules(result, Style.FORMAL);
+        }
+        for (Style style : styles) {
+            result = applyRules(result, style);
         }
         if (bullets) {
             result = bulletize(result);

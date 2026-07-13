@@ -91,6 +91,10 @@ public class MeetingConsole {
     private javax.swing.JCheckBox cbProfessional;
     private javax.swing.JCheckBox cbBullets;
     private final java.util.List<javax.swing.JCheckBox> styleCheckboxes = new java.util.ArrayList<>();
+    private final java.util.List<javax.swing.JCheckBox> editorStyleChecks = new java.util.ArrayList<>();
+    private JPanel editorStyleRow;
+    private JPanel editorInstrRow;
+    private JPanel editorOptionStack;
     private final java.util.List<javax.swing.JCheckBox> themedChecks = new java.util.ArrayList<>();
     private final java.util.List<JLabel> themedLabels = new java.util.ArrayList<>();
     private JPanel composeStylesPanel;
@@ -412,15 +416,32 @@ public class MeetingConsole {
         cbBullets = themedCheck("Bullet points");
         cbGrammar.setSelected(true);
         editorInstructions = new javax.swing.JTextField(18);
+        // Row 1: the editing options.
         JPanel options = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
         for (var cb : java.util.List.of(cbGrammar, cbCompact, cbDetailed, cbProfessional, cbBullets)) {
             options.add(cb);
         }
-        options.add(themedLabel("Instructions:"));
-        options.add(editorInstructions);
+        // Row 2: every communication style as a checkbox (combinable).
+        JPanel styleRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        styleRow.add(themedLabel("Styles:"));
+        for (var style : com.aiassist.draft.StyleRewriteService.Style.values()) {
+            var check = themedCheck(style.display());
+            check.putClientProperty("style", style);
+            editorStyleChecks.add(check);
+            styleRow.add(check);
+        }
+        // Row 3: free-form instructions.
+        JPanel instrRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        instrRow.add(themedLabel("Instructions:"));
+        instrRow.add(editorInstructions);
+        JPanel optionStack = new JPanel();
+        optionStack.setLayout(new javax.swing.BoxLayout(optionStack, javax.swing.BoxLayout.Y_AXIS));
+        optionStack.add(options);
+        optionStack.add(styleRow);
+        optionStack.add(instrRow);
 
         JButton applyButton = new JButton("Apply");
-        applyButton.setToolTipText("Apply every checked option and the instructions to the text");
+        applyButton.setToolTipText("Apply every checked option and style plus the instructions to the text");
         applyButton.addActionListener(e -> applyEditorOptions());
         JButton downloadButton = new JButton("Download");
         downloadButton.setToolTipText("Save the corrected content to your Desktop with the same file name and format");
@@ -430,10 +451,13 @@ public class MeetingConsole {
         actions.add(downloadButton);
 
         JPanel south = new JPanel(new BorderLayout());
-        south.add(options, BorderLayout.NORTH);
+        south.add(optionStack, BorderLayout.NORTH);
         south.add(editorStatus, BorderLayout.CENTER);
         south.add(actions, BorderLayout.EAST);
         south.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 8, 4, 8));
+        editorStyleRow = styleRow;
+        editorInstrRow = instrRow;
+        editorOptionStack = optionStack;
 
         editorPanel = new JPanel(new BorderLayout());
         editorPanel.add(fileRow, BorderLayout.NORTH);
@@ -456,12 +480,16 @@ public class MeetingConsole {
             setEditorStatus("Load a file or paste some text first.", true);
             return;
         }
+        var styles = editorStyleChecks.stream()
+                .filter(javax.swing.AbstractButton::isSelected)
+                .map(cb -> (com.aiassist.draft.StyleRewriteService.Style) cb.getClientProperty("style"))
+                .toList();
         setEditorStatus("Applying…", false);
         new Thread(() -> {
             try {
                 String result = styleRewriteService.applyEditor(text,
                         cbGrammar.isSelected(), cbCompact.isSelected(), cbDetailed.isSelected(),
-                        cbProfessional.isSelected(), cbBullets.isSelected(),
+                        cbProfessional.isSelected(), cbBullets.isSelected(), styles,
                         editorInstructions.getText());
                 boolean instructionsIgnored = !styleRewriteService.llmAvailable()
                         && editorInstructions.getText() != null
@@ -906,6 +934,7 @@ public class MeetingConsole {
         titleField.setCaretColor(textFg);
         for (JPanel panel : java.util.List.of(topPanel, bottomPanel, buttonsPanel, controlsPanel,
                 editorPanel, editorFileRow, editorActionsRow, editorSouthRow, editorOptionsRow,
+                editorStyleRow, editorInstrRow, editorOptionStack,
                 composePanel, composeTopPanel, composeBottomPanel, composeSouthPanel,
                 composeControlsPanel, composeStylesPanel, indicatorPanel, southWrapPanel)) {
             // Aqua only honors panel backgrounds when the panel is opaque.
