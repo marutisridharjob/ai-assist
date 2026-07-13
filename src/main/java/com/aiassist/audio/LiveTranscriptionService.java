@@ -319,7 +319,6 @@ public class LiveTranscriptionService {
         private volatile TargetDataLine line;
         private volatile Process tapProcess;
         private volatile int level;
-        private volatile int utterancePeak;
         private volatile String partialText;
         private Thread thread;
 
@@ -377,7 +376,6 @@ public class LiveTranscriptionService {
                     }
                     int length = stereo ? downmixToMono(buffer, n) : n;
                     level = peakPercent(buffer, length);
-                    utterancePeak = Math.max(utterancePeak, level);
                     if (recognizer.acceptWaveform(buffer, length)) {
                         appendResult(recognizer.result());
                         partialText = "";
@@ -427,7 +425,6 @@ public class LiveTranscriptionService {
                         continue;
                     }
                     level = peakPercent(buffer, n);
-                    utterancePeak = Math.max(utterancePeak, level);
                     if (recognizer.acceptWaveform(buffer, n)) {
                         appendResult(recognizer.result());
                         partialText = "";
@@ -491,27 +488,14 @@ public class LiveTranscriptionService {
             return new SpeechRecognizer(model, sampleRate, identifySpeakers ? speakerModel : null);
         }
 
-        /** Throwaway noises the microphone should never put into the notes. */
-        private static final java.util.Set<String> MIC_FILLERS = java.util.Set.of(
-                "huh", "uh", "um", "hm", "hmm", "mhm", "mm", "uh huh", "ah", "oh");
-
         private void appendResult(String resultJson) {
-            int peak = utterancePeak;
-            utterancePeak = 0;
             try {
                 JsonNode node = objectMapper.readTree(resultJson);
                 String text = node.path("text").asText("");
-                if (text.isBlank() || session.isEnded()) {
-                    return;
+                // Capture every recognized phrase, unfiltered.
+                if (!text.isBlank() && !session.isEnded()) {
+                    session.addUtterance(text, speakerLabel(node));
                 }
-                if ("you".equals(selection.label())) {
-                    // Noise gate: ambient mumble below 10% level, and bare
-                    // filler noises, never reach the notes.
-                    if (peak < 10 || MIC_FILLERS.contains(text.toLowerCase(java.util.Locale.ROOT))) {
-                        return;
-                    }
-                }
-                session.addUtterance(text, speakerLabel(node));
             } catch (Exception e) {
                 log.warn("Could not parse recognizer result: {}", resultJson, e);
             }
