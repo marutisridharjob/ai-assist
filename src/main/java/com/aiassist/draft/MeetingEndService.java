@@ -44,20 +44,18 @@ public class MeetingEndService {
     public Draft endMeeting(String sessionId, DraftOptions options) {
         ListeningSession session = sessions.get(sessionId);
 
-        // Stop capture first so the recording is complete before we transcribe it.
+        // Stop the recognizer first so its last phrase still lands in the
+        // session before we lock it.
         if (sessionId.equals(liveTranscription.status().sessionId())) {
             liveTranscription.stop();
         }
         session.end();
 
-        // Convert the recorded voice into text now — a full, accurate pass over
-        // the whole meeting audio (falls back to the live captions if there is
-        // no recording). Then summarize.
-        var utterances = liveTranscription.finalTranscript(session);
-        String transcript = utterances.stream()
-                .map(com.aiassist.listen.Utterance::text)
-                .reduce((a, b) -> a + "\n" + b)
-                .orElse("");
+        // The document is the exact live captions that were shown — every one,
+        // verbatim, in order — so nothing seen during the meeting is ever
+        // missed or altered. These are then summarized into the notes.
+        var utterances = session.utterances();
+        String transcript = session.transcript();
         if (transcript.isBlank()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "Meeting " + sessionId + " ended but nothing was captured, so there is nothing to save");
@@ -68,7 +66,7 @@ public class MeetingEndService {
         Draft draft = AttributedTranscript.appendTo(
                 drafter.draft(session.topic(), transcript, options), utterances);
         Path saved = fileWriter.save(draft);
-        log.info("Meeting {} ended with {} utterances; notes saved to {}",
+        log.info("Meeting {} ended with {} live-caption utterances; notes saved to {}",
                 sessionId, utterances.size(), saved);
         return saved == null ? draft : draft.withSavedTo(saved.toString());
     }

@@ -114,13 +114,11 @@ rules automatically.
 
 ### How a meeting is processed
 
-On **Start** (and **Resume**) the meeting audio is recorded to a temporary
-file per source. The meeting box shows **live captions** as you talk —
-straight speech-to-text, no LLM. On **Stop**, the recorded audio is
-transcribed in full (an unhurried, more accurate pass than the live
-captions), the transcript is summarized into the notes, and the recording
-is deleted. If recording is unavailable, the notes fall back to the live
-captions.
+The meeting box shows **live captions** as you talk — straight
+speech-to-text, no LLM, every phrase committed as the speaker pauses (the
+last pending phrase is captured on Stop, so nothing is missed). On **Stop**,
+those exact live captions — verbatim, in order — become the document, and
+are summarized into the notes. The saved notes always match what you saw.
 
 Nothing is written to disk until Stop (or a confirmed save-on-close).
 

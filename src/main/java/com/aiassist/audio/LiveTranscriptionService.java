@@ -55,8 +55,6 @@ public class LiveTranscriptionService {
     private volatile String modelNote;
     private volatile com.sun.jna.Pointer speakerModel;
     private volatile SpeakerRegistry speakers = new SpeakerRegistry();
-    private volatile MeetingRecorder recorder;
-    private volatile String recorderSessionId;
 
     public LiveTranscriptionService(AudioDeviceService audioDevices, VoskModelManager modelManager,
                                     SessionStore sessions, TranscriptionProperties properties) {
@@ -172,18 +170,6 @@ public class LiveTranscriptionService {
             speakers = new SpeakerRegistry(); // fresh voices per meeting
         } else {
             session = sessions.get(sessionId);
-        }
-        // One recording per meeting; a new one on a new session, kept across
-        // pause/resume so the whole meeting is captured to disk.
-        if (recorder == null || !session.id().equals(recorderSessionId)) {
-            try {
-                recorder = new MeetingRecorder(session.id());
-                recorderSessionId = session.id();
-            } catch (java.io.IOException e) {
-                log.warn("Audio recording unavailable ({}); notes will use the live transcript",
-                        e.getMessage());
-                recorder = null;
-            }
         }
 
         running = true;
@@ -316,93 +302,6 @@ public class LiveTranscriptionService {
     /** Models still unpacking from dropped zips (shown disabled in the UI). */
     public java.util.Set<String> unpackingModels() {
         return modelManager.unpackingNow();
-    }
-
-    /**
-     * Final transcript for the saved notes: a full, unhurried transcription
-     * of the recorded meeting audio (more accurate than the live captions),
-     * with source labels and speaker IDs, ordered chronologically across
-     * sources. Falls back to the live utterances when no recording exists.
-     * The recording is deleted afterwards.
-     */
-    private record Timed(double at, String speaker, String text) {
-    }
-
-    public List<com.aiassist.listen.Utterance> finalTranscript(ListeningSession session) {
-        MeetingRecorder rec = recorder;
-        if (rec == null || !session.id().equals(recorderSessionId) || model == null) {
-            return session.utterances();
-        }
-        java.util.Map<String, java.nio.file.Path> files = rec.finish();
-        try {
-            if (files.isEmpty()) {
-                return session.utterances();
-            }
-            List<Timed> collected = new ArrayList<>();
-            SpeakerRegistry finalSpeakers = new SpeakerRegistry();
-            for (var entry : files.entrySet()) {
-                transcribeFile(entry.getKey(), entry.getValue(), finalSpeakers, collected);
-            }
-            collected.sort(java.util.Comparator.comparingDouble(Timed::at));
-            List<com.aiassist.listen.Utterance> result = new ArrayList<>();
-            int seq = 1;
-            for (Timed t : collected) {
-                result.add(new com.aiassist.listen.Utterance(seq++, t.text(), t.speaker(),
-                        session.startedAt().plusMillis((long) (t.at() * 1000))));
-            }
-            log.info("Final transcription of meeting {} produced {} utterances", session.id(), result.size());
-            return result.isEmpty() ? session.utterances() : result;
-        } finally {
-            rec.discard();
-            if (session.id().equals(recorderSessionId)) {
-                recorder = null;
-                recorderSessionId = null;
-            }
-        }
-    }
-
-    private void transcribeFile(String label, java.nio.file.Path file,
-                                SpeakerRegistry finalSpeakers, List<Timed> out) {
-        boolean spk = speakerModel != null && "other".equals(label);
-        try (var in = new java.io.BufferedInputStream(java.nio.file.Files.newInputStream(file));
-             SpeechRecognizer recognizer =
-                     new SpeechRecognizer(model, 16000f, spk ? speakerModel : null)) {
-            byte[] buffer = new byte[BUFFER_BYTES];
-            long samples = 0;
-            int n;
-            while ((n = in.read(buffer)) > 0) {
-                samples += n / 2;
-                if (recognizer.acceptWaveform(buffer, n)) {
-                    collectResult(recognizer.result(), label, finalSpeakers, samples / 16000.0, out);
-                }
-            }
-            collectResult(recognizer.finalResult(), label, finalSpeakers, samples / 16000.0, out);
-        } catch (Exception e) {
-            log.warn("Could not transcribe recorded {} audio: {}", label, e.getMessage());
-        }
-    }
-
-    private void collectResult(String resultJson, String label, SpeakerRegistry finalSpeakers,
-                               double at, List<Timed> out) {
-        try {
-            JsonNode node = objectMapper.readTree(resultJson);
-            String text = node.path("text").asText("");
-            if (text.isBlank()) {
-                return;
-            }
-            String speaker = label;
-            JsonNode vector = node.path("spk");
-            if (vector.isArray() && !vector.isEmpty()) {
-                double[] xvector = new double[vector.size()];
-                for (int i = 0; i < xvector.length; i++) {
-                    xvector[i] = vector.get(i).asDouble();
-                }
-                speaker = finalSpeakers.assign(xvector);
-            }
-            out.add(new Timed(at, speaker, text));
-        } catch (Exception e) {
-            log.warn("Could not parse recorded result: {}", resultJson, e);
-        }
     }
 
     /** One-line note about a model fallback, for the status line; null when none. */
@@ -601,10 +500,6 @@ public class LiveTranscriptionService {
          * then it grows as live-caption partial text and is never cut off.
          */
         private void feed(SpeechRecognizer recognizer, byte[] pcm, int length) {
-            MeetingRecorder rec = recorder;
-            if (rec != null) {
-                rec.record(selection.label(), pcm, length);
-            }
             if (recognizer.acceptWaveform(pcm, length)) {
                 appendResult(recognizer.result());
                 partialText = "";
