@@ -1,11 +1,16 @@
 package com.aiassist.draft;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 import com.aiassist.audio.LiveTranscriptionService;
-import com.aiassist.config.AutoPilotProperties;
+import com.aiassist.audio.WhisperTranscriber;
 import com.aiassist.listen.ListeningSession;
 import com.aiassist.listen.SessionStore;
+import com.aiassist.listen.Utterance;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,11 +19,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Ends a meeting: stops live capture if it feeds this session, locks the
- * session against further input, drafts the complete end-to-end transcript,
- * and only then writes the timestamped notes file. Interim drafts shown
- * during the meeting are never persisted — the file on disk is always the
- * full final version.
+ * Ends a meeting: stops live capture, locks the session, converts the
+ * recorded voice into text with Whisper (the accurate complete-conversation
+ * transcription; falls back to the live captions when Whisper or a recording
+ * is unavailable), and saves that verbatim transcript. No AI drafting or
+ * summarizing happens here — that is applied only on demand from the Editor
+ * and Compose tabs.
  */
 @Service
 public class MeetingEndService {
@@ -27,48 +33,86 @@ public class MeetingEndService {
 
     private final SessionStore sessions;
     private final LiveTranscriptionService liveTranscription;
-    private final ContentDrafter drafter;
+    private final WhisperTranscriber whisper;
     private final DraftFileWriter fileWriter;
-    private final AutoPilotProperties autoPilotProperties;
 
     public MeetingEndService(SessionStore sessions, LiveTranscriptionService liveTranscription,
-                             ContentDrafter drafter, DraftFileWriter fileWriter,
-                             AutoPilotProperties autoPilotProperties) {
+                             WhisperTranscriber whisper, DraftFileWriter fileWriter) {
         this.sessions = sessions;
         this.liveTranscription = liveTranscription;
-        this.drafter = drafter;
+        this.whisper = whisper;
         this.fileWriter = fileWriter;
-        this.autoPilotProperties = autoPilotProperties;
     }
 
     public Draft endMeeting(String sessionId, DraftOptions options) {
         ListeningSession session = sessions.get(sessionId);
 
-        // Stop the recognizer first so its last phrase still lands in the
-        // session before we lock it.
+        // Stop capture first so the recording is complete before we read it.
         if (sessionId.equals(liveTranscription.status().sessionId())) {
             liveTranscription.stop();
         }
         session.end();
 
-        // The document is the exact live captions that were shown — every one,
-        // verbatim, in order — so nothing seen during the meeting is ever
-        // missed or altered. These are then summarized into the notes.
-        var utterances = session.utterances();
-        String transcript = session.transcript();
+        List<Utterance> utterances = transcribeRecordingOrLive(session);
+        String transcript = utterances.stream().map(Utterance::text)
+                .reduce((a, b) -> a + "\n" + b).orElse("");
         if (transcript.isBlank()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "Meeting " + sessionId + " ended but nothing was captured, so there is nothing to save");
         }
-        if (options == null) {
-            options = new DraftOptions(autoPilotProperties.contentType(), autoPilotProperties.tone());
-        }
-        Draft draft = AttributedTranscript.appendTo(
-                drafter.draft(session.topic(), transcript, options), utterances);
+        // Verbatim transcript document — no AI drafting/summarizing.
+        Draft base = new Draft(session.topic(), "TRANSCRIPT", "", "", List.of(),
+                List.of(), List.of(), "# " + session.topic(), "verbatim", Instant.now(), null);
+        Draft draft = AttributedTranscript.appendTo(base, utterances);
         Path saved = fileWriter.save(draft);
-        log.info("Meeting {} ended with {} live-caption utterances; notes saved to {}",
+        log.info("Meeting {} ended with {} utterances; transcript saved to {}",
                 sessionId, utterances.size(), saved);
         return saved == null ? draft : draft.withSavedTo(saved.toString());
+    }
+
+    /**
+     * Whisper transcription of the recorded audio (accurate, complete),
+     * ordered chronologically across sources; falls back to the live captions
+     * when Whisper or the recording is unavailable. Deletes the recording.
+     */
+    private List<Utterance> transcribeRecordingOrLive(ListeningSession session) {
+        var files = liveTranscription.finishRecording(session.id());
+        if (files.isEmpty() || !whisper.isAvailable()) {
+            files.values().forEach(this::deleteQuietly);
+            return session.utterances();
+        }
+        record Timed(double at, String speaker, String text) {
+        }
+        List<Timed> collected = new ArrayList<>();
+        try {
+            for (var entry : files.entrySet()) {
+                for (WhisperTranscriber.Segment seg : whisper.transcribe(entry.getValue())) {
+                    collected.add(new Timed(seg.start(), entry.getKey(), seg.text()));
+                }
+            }
+        } finally {
+            files.values().forEach(this::deleteQuietly);
+        }
+        if (collected.isEmpty()) {
+            return session.utterances();
+        }
+        collected.sort(java.util.Comparator.comparingDouble(Timed::at));
+        List<Utterance> result = new ArrayList<>();
+        int seq = 1;
+        for (Timed t : collected) {
+            result.add(new Utterance(seq++, t.text(), t.speaker(),
+                    session.startedAt().plusMillis((long) (t.at() * 1000))));
+        }
+        log.info("Whisper transcribed meeting {} into {} segments", session.id(), result.size());
+        return result;
+    }
+
+    private void deleteQuietly(Path file) {
+        try {
+            Files.deleteIfExists(file);
+        } catch (Exception ignored) {
+            // temp file; OS cleans up
+        }
     }
 
     /** Ends whichever meeting the live capture is currently feeding. */

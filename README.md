@@ -22,7 +22,8 @@ proprietary libraries, models, or cloud services anywhere:
 |---|---|
 | ai-assist code and its native helper sources | this repository |
 | Spring Boot, Jackson, Apache Commons Lang | Apache-2.0 |
-| Vosk speech engine + `vosk-model-small-en-us` | Apache-2.0 |
+| Vosk speech engine (live captions) | Apache-2.0 |
+| Whisper / whisper.cpp + whisper-jni (final transcript) | MIT |
 | JNA (native access) | Apache-2.0 / LGPL-2.1 dual |
 | Java runtime (use e.g. Eclipse Temurin) | GPLv2 + Classpath Exception |
 | BlackHole (optional macOS fallback) | GPL-3.0 |
@@ -112,13 +113,26 @@ local [Ollama](https://ollama.com) integration (`ai-assist.ollama.enabled=true`)
 — style drafts then go through your local model, falling back to the
 rules automatically.
 
-### How a meeting is processed
+### How a meeting is processed — two engines, both offline
 
-The meeting box shows **live captions** as you talk — straight
-speech-to-text, no LLM, every phrase committed as the speaker pauses (the
-last pending phrase is captured on Stop, so nothing is missed). On **Stop**,
-those exact live captions — verbatim, in order — become the document, and
-are summarized into the notes. The saved notes always match what you saw.
+- **Live captions (Vosk):** while you talk, the meeting box shows real-time
+  speech-to-text, verbatim, no AI. The audio is recorded locally at the same
+  time (temp files, one per source).
+- **Complete transcript (Whisper):** on **Stop**, the whole recorded meeting
+  is transcribed with **OpenAI Whisper** (whisper.cpp, MIT) for an accurate,
+  complete-conversation transcript, ordered across sources; the recording is
+  then deleted. If no Whisper model is present, the notes fall back to the
+  live captions.
+- **No AI during the meeting, and none on Stop** — the saved file is the
+  *verbatim transcript*. Summarizing, drafting, grammar, and styles are
+  applied only when you press **Apply** on the Editor or Compose tab.
+
+Whisper runs 100% locally on the CPU; its native libraries are bundled in
+the jar. Drop a model file — `ggml-base.en.bin` (~142 MB, recommended),
+`ggml-tiny.en.bin` (~75 MB, fastest), or `ggml-small.en.bin` (~466 MB, most
+accurate) from
+[huggingface.co/ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp/tree/main)
+— into the app folder, the same place as the Vosk model.
 
 Nothing is written to disk until Stop (or a confirmed save-on-close).
 

@@ -26,14 +26,20 @@ public final class AttributedTranscript {
             java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
                     .withZone(java.time.ZoneId.systemDefault());
 
-    public static Draft appendTo(Draft draft, List<Utterance> utterances) {
+    /** The verbatim transcript text: legend then one timestamped, tagged line each. */
+    public static String rawText(List<Utterance> utterances) {
         StringBuilder lines = new StringBuilder(LEGEND).append("\n");
         for (Utterance utterance : utterances) {
             lines.append("\n[").append(TIME.format(utterance.capturedAt())).append("] [")
                     .append(utterance.speaker()).append("] ").append(utterance.text());
         }
+        return lines.toString();
+    }
+
+    public static Draft appendTo(Draft draft, List<Utterance> utterances) {
+        String lines = rawText(utterances);
         List<Draft.Section> sections = new ArrayList<>(draft.sections());
-        sections.add(new Draft.Section(HEADING, lines.toString()));
+        sections.add(new Draft.Section(HEADING, lines));
         return new Draft(draft.title(), draft.contentType(), draft.tone(), draft.summary(),
                 List.copyOf(sections), draft.keyPoints(), draft.actionItems(),
                 draft.fullText() + "\n\n## " + HEADING + "\n\n" + lines,

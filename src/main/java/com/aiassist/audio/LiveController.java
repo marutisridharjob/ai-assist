@@ -25,13 +25,10 @@ public class LiveController {
 
     private final AudioDeviceService audioDevices;
     private final LiveTranscriptionService liveTranscription;
-    private final AutoPilot autoPilot;
 
-    public LiveController(AudioDeviceService audioDevices, LiveTranscriptionService liveTranscription,
-                          AutoPilot autoPilot) {
+    public LiveController(AudioDeviceService audioDevices, LiveTranscriptionService liveTranscription) {
         this.audioDevices = audioDevices;
         this.liveTranscription = liveTranscription;
-        this.autoPilot = autoPilot;
     }
 
     @GetMapping("/audio/devices")
@@ -68,12 +65,5 @@ public class LiveController {
     @GetMapping("/live/status")
     public LiveTranscriptionService.Status status() {
         return liveTranscription.status();
-    }
-
-    /** Latest interim auto-draft (in memory), if any yet. */
-    @GetMapping("/live/draft")
-    public ResponseEntity<Draft> latestDraft() {
-        Draft draft = autoPilot.latestDraft();
-        return draft == null ? ResponseEntity.noContent().build() : ResponseEntity.ok(draft);
     }
 }

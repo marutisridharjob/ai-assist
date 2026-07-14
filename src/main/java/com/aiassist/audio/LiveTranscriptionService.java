@@ -55,6 +55,8 @@ public class LiveTranscriptionService {
     private volatile String modelNote;
     private volatile com.sun.jna.Pointer speakerModel;
     private volatile SpeakerRegistry speakers = new SpeakerRegistry();
+    private volatile MeetingRecorder recorder;
+    private volatile String recorderSessionId;
 
     public LiveTranscriptionService(AudioDeviceService audioDevices, VoskModelManager modelManager,
                                     SessionStore sessions, TranscriptionProperties properties) {
@@ -170,6 +172,18 @@ public class LiveTranscriptionService {
             speakers = new SpeakerRegistry(); // fresh voices per meeting
         } else {
             session = sessions.get(sessionId);
+        }
+        // Record the meeting audio locally (one file per source), kept across
+        // pause/resume, so Whisper can transcribe the whole conversation on Stop.
+        if (recorder == null || !session.id().equals(recorderSessionId)) {
+            try {
+                recorder = new MeetingRecorder(session.id());
+                recorderSessionId = session.id();
+            } catch (java.io.IOException e) {
+                log.warn("Local recording unavailable ({}); notes will use the live captions",
+                        e.getMessage());
+                recorder = null;
+            }
         }
 
         running = true;
@@ -302,6 +316,31 @@ public class LiveTranscriptionService {
     /** Models still unpacking from dropped zips (shown disabled in the UI). */
     public java.util.Set<String> unpackingModels() {
         return modelManager.unpackingNow();
+    }
+
+    /**
+     * Closes the recording for the session and returns its per-source PCM
+     * files for Whisper transcription (empty when nothing was recorded). The
+     * caller deletes the files when done.
+     */
+    public java.util.Map<String, java.nio.file.Path> finishRecording(String sessionId) {
+        MeetingRecorder rec = recorder;
+        if (rec == null || !sessionId.equals(recorderSessionId)) {
+            return java.util.Map.of();
+        }
+        recorder = null;
+        recorderSessionId = null;
+        return rec.finish();
+    }
+
+    /** Discards any active recording (e.g. meeting abandoned without saving). */
+    public void discardRecording() {
+        MeetingRecorder rec = recorder;
+        if (rec != null) {
+            rec.discard();
+            recorder = null;
+            recorderSessionId = null;
+        }
     }
 
     /** One-line note about a model fallback, for the status line; null when none. */
@@ -500,6 +539,10 @@ public class LiveTranscriptionService {
          * then it grows as live-caption partial text and is never cut off.
          */
         private void feed(SpeechRecognizer recognizer, byte[] pcm, int length) {
+            MeetingRecorder rec = recorder;
+            if (rec != null) {
+                rec.record(selection.label(), pcm, length);
+            }
             if (recognizer.acceptWaveform(pcm, length)) {
                 appendResult(recognizer.result());
                 partialText = "";

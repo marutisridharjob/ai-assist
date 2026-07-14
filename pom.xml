@@ -50,6 +50,17 @@
             <artifactId>vosk</artifactId>
             <version>0.3.45</version>
         </dependency>
+        <!--
+          Whisper (OpenAI, MIT) via whisper.cpp — bundles native libs for
+          macOS/Windows/Linux. Used for the accurate complete-conversation
+          transcription of the recorded meeting on Stop; Vosk stays for the
+          real-time live captions. Fully offline, CPU-only.
+        -->
+        <dependency>
+            <groupId>io.github.givimad</groupId>
+            <artifactId>whisper-jni</artifactId>
+            <version>1.7.1</version>
+        </dependency>
         <!-- Pinned to the version whose macOS resource lookup matches the vosk jar layout -->
         <dependency>
             <groupId>net.java.dev.jna</groupId>

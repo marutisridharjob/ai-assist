@@ -95,6 +95,11 @@ public class VoskModelManager {
                 Path.of("models").toAbsolutePath(), Path.of("").toAbsolutePath())));
     }
 
+    /** Same locations, shared with the Whisper model lookup. */
+    static java.util.List<Path> modelSearchRoots() {
+        return modelRoots();
+    }
+
     private void unpackDroppedZips() {
         Path target = appHome().resolve("models");
         for (Path root : modelRoots()) {

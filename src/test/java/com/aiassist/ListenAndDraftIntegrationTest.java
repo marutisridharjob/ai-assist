@@ -219,12 +219,6 @@ class ListenAndDraftIntegrationTest {
     }
 
     @Test
-    void liveDraftIsEmptyBeforeAnyMeeting() {
-        ResponseEntity<String> response = rest.getForEntity("/api/live/draft", String.class);
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-    }
-
-    @Test
     void pausingWhenIdleIsSafeAndResumingWithoutAPauseIsRejected() {
         ResponseEntity<Map> paused = rest.postForEntity("/api/live/pause", null, Map.class);
         assertThat(paused.getStatusCode()).isEqualTo(HttpStatus.OK);
