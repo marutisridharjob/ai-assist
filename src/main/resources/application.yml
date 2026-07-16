@@ -8,10 +8,11 @@ server:
 ai-assist:
   output:
     # When Stop is pressed, the complete notes are saved as a timestamped
-    # Markdown file on the Desktop, immediately visible. Nothing is ever
-    # written into the folder the app was launched from.
+    # rich-text (.rtf) file. Leave dir blank to save into a "meeting-notes"
+    # folder inside the app's own folder (next to the jar); set an absolute
+    # path to save somewhere else (e.g. ${user.home}/Desktop).
     save-drafts: true
-    dir: ${user.home}/Desktop
+    dir: ""
   auto:
     # Listening begins when the user presses Start (set true to begin
     # capturing immediately at launch). Interim notes keep re-drafting in

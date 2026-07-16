@@ -1,0 +1,5 @@
+# Whisper model binaries are large (142 MB – 1.5 GB) and exceed GitHub's
+# 100 MB per-file limit — a normal `git push` would REJECT them. Do not
+# commit them. Download them with the scripts in this folder instead.
+*.bin
+*.partial

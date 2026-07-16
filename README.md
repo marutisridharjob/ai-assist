@@ -51,7 +51,7 @@ JDK — not a browser):
 - a **Dark** toggle (top-right) switching the whole window between light and
   dark mode; the choice is remembered across launches,
 - a **scrolling text box** where the running transcript appears live, each
-  line time-stamped and tagged `[you]`, `[other]`, or `[Speaker-1/2/…]` when the optional speaker model is installed,
+  line time-stamped and tagged `[you]` (your microphone) or `[other]` (the system audio),
 - a **live caption line** showing words as they are being recognized,
   before the phrase is final — like the captions in commercial apps,
 - **Start / Pause / Stop** buttons show their label in **green** when that
@@ -61,20 +61,24 @@ JDK — not a browser):
   and Pause is red,
 - **Start** — begins the meeting, or resumes it after a Pause,
 - **Pause** — temporarily stop listening without ending the meeting,
-- **Stop** — the meeting is complete: capture stops, the full
-  end-to-end notes are drafted and saved as a timestamped rich-text (.rtf) file on
-  your **Desktop** (e.g. `2026-07-05_15-02-41_live-meeting-notes.rtf`), and
-  the final notes are shown in the window,
+- **Apply** — summarize the meeting *so far* without ending it: a detailed
+  summary with action points is drafted from everything captured up to this
+  point and shown in a **Summary** pane below the live transcript (drag the
+  divider to resize). This is the *same* summary the **Meeting summary**
+  checkbox produces on the Editor and Compose tabs — Apply behaves identically
+  on every tab, using the local Ollama LLM when enabled and the built-in
+  drafter otherwise. Press it as often as you like; the running transcript
+  keeps flowing above it. Nothing is saved — this is a live preview,
+- **Stop** — the meeting is complete: capture stops, the **summary** (meeting
+  notes) followed by the **full verbatim transcript** is saved as a
+  timestamped rich-text (.rtf) file in the **`meeting-notes`** folder inside
+  the app's own folder (e.g. `meeting-notes/2026-07-05_15-02-41_live-meeting-notes.rtf`),
+  and that same summary is shown in the Summary pane,
 - **who said what**: every transcript line is tagged with its source —
   `[you]` is you / your side of the room, `[other]` is the other
   participants captured from the system audio. The tags appear live in the
   window, in the running interim draft, and in a "Full transcript (who said
   what)" section at the end of the saved notes,
-- **individual meeting voices (optional)**: download the 13 MB speaker model
-  [vosk-model-spk-0.4](https://alphacephei.com/vosk/models/vosk-model-spk-0.4.zip)
-  and drop the zip (or unzipped folder) next to the jar — meeting utterances
-  are then labelled `[Speaker-1]`, `[Speaker-2]`, … by clustering each
-  utterance's voiceprint. No restart needed: drop the zip, then press Start (or Pause → Start),
 - the **close button in the top corner** — if a meeting is still running you
   are asked whether to save before closing.
 
@@ -93,6 +97,15 @@ instructions are applied together and the corrected content replaces the text (d
 horizontal scroll bars). **Download** saves the result to your **Desktop**
 with the same file name and format (a "-edited" suffix is added if the name
 is taken).
+
+Tick **Meeting summary** to turn the text into a **detailed summary with
+action points** instead: press **Apply** and the content (a transcript,
+pasted notes, anything) is rewritten as meeting notes — an overview, key
+points, and an **Action items** list. With the optional local Ollama enabled
+the summary is written by the LLM (and honours your **Instructions**);
+without it, the built-in drafter produces the structured notes offline. When
+**Meeting summary** is checked it takes over the Apply button, so the other
+editing options are skipped for that run.
 
 While a meeting is running, the Editor and
 Compose tabs hide the meeting controls and show a blinking
@@ -113,6 +126,30 @@ local [Ollama](https://ollama.com) integration (`ai-assist.ollama.enabled=true`)
 — style drafts then go through your local model, falling back to the
 rules automatically.
 
+Tick **Meeting summary** (next to Instructions) and Apply turns your content
+into a **detailed summary with action points** — the same overview / key
+points / **Action items** notes as the Editor tab, written by the local LLM
+when Ollama is enabled, or by the built-in drafter offline.
+
+### Help tab
+
+A fourth tab with three sections:
+
+- **About** — *Architecture & Design by Maruti, version 0.1*.
+- **Help** — a link, **Instructions to use ai-assist**, that opens a window
+  with a **Search** box and a read-only information panel covering the
+  Meeting, Editor, and Compose tabs, how Vosk and the ggml/whisper.cpp models
+  work (with links to their sites), and the open-source licenses and
+  technology stack. Type a word and press **Search** to highlight every match;
+  **Close** (bottom-right) dismisses the window.
+- **Feedback** — type a note, pick a **Rating** (0–5), and press **Submit**.
+  This composes an email to the author (subject *Feedback on ai-assist with
+  rating N*, body = your note plus your rating, machine IP, user name, and
+  time zone/region) in your default mail client — no mail credentials are
+  embedded in the app, so you send it with one click. On success the form
+  greys out, shows **Submitted**, then clears. With no internet it greys out,
+  shows **No Internet** for two seconds, and re-enables.
+
 ### How a meeting is processed — two engines, both offline
 
 - **Live captions (Vosk):** while you talk, the meeting box shows real-time
@@ -123,16 +160,28 @@ rules automatically.
   complete-conversation transcript, ordered across sources; the recording is
   then deleted. If no Whisper model is present, the notes fall back to the
   live captions.
-- **No AI during the meeting, and none on Stop** — the saved file is the
-  *verbatim transcript*. Summarizing, drafting, grammar, and styles are
-  applied only when you press **Apply** on the Editor or Compose tab.
+- **No AI while the meeting is in progress** — the live box shows only the
+  raw verbatim captions. AI drafting happens only when you ask for it: press
+  **Apply** on the Meeting tab for a live summary, or **Stop** to save the
+  summary together with the full verbatim transcript. Grammar and style
+  rewriting stay on the Editor and Compose tabs.
 
 Whisper runs 100% locally on the CPU; its native libraries are bundled in
-the jar. Drop a model file — `ggml-base.en.bin` (~142 MB, recommended),
-`ggml-tiny.en.bin` (~75 MB, fastest), or `ggml-small.en.bin` (~466 MB, most
-accurate) from
-[huggingface.co/ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp/tree/main)
-— into the app folder, the same place as the Vosk model.
+the jar. It needs one `ggml-*.bin` model file, which is **not** committed to
+this repo — the models are 142 MB – 1.5 GB, over GitHub's 100 MB per-file
+limit. Fetch one with the scripts in the [`models/`](models/) folder (no
+Hugging Face account needed; they pull from a public GitHub mirror):
+
+```bash
+cd models
+./download-models.sh        # fast + accurate (base + small)   — Windows: download-models.bat
+./download-models.sh all    # also fetch medium (1.5 GB, most accurate)
+```
+
+Keep the `models/` folder next to `ai-assist-<version>.jar` and the app finds
+the model automatically on Stop. See [`models/README.md`](models/README.md)
+for the model comparison, checksums/trust notes, and the official Hugging Face
+source.
 
 Nothing is written to disk until Stop (or a confirmed save-on-close).
 
@@ -267,10 +316,9 @@ everything** — code and speech model. That single jar is all you ever copy,
 ship, or click: **double-click it** to start (needs Java 21+, e.g. from
 [adoptium.net](https://adoptium.net)), or run `java -jar ai-assist-<version>.jar`.
 The embedded model is unpacked invisibly into OS temp space at startup; the
-only visible output the app ever creates is the notes file that appears on
-your Desktop when you press Stop — never anything in the folder it was
-launched from. The app makes **zero network requests at runtime** — verified
-by socket inspection in testing.
+only visible output the app ever creates is the notes file it writes to the
+`meeting-notes` folder next to the jar when you press Stop. The app makes
+**zero network requests at runtime** — verified by socket inspection in testing.
 
 > Recording a meeting may require participants' consent depending on your
 > jurisdiction and company policy.
@@ -293,8 +341,8 @@ universal binary; no Rosetta needed).
    from a terminal, *Java* if you double-clicked. Click **Allow**. The app's
    status line tells you while it is waiting on this.
 4. The window opens, listening starts automatically, and after the meeting
-   you press **Stop**: the notes file appears on your
-   Desktop.
+   you press **Stop**: the notes file appears in the `meeting-notes` folder
+   next to the jar.
 
 ### macOS troubleshooting
 
@@ -310,7 +358,7 @@ universal binary; no Rosetta needed).
 | Status line never shows `system audio (native tap)` | macOS: the helper couldn't be built — install the Command Line Tools once (`xcode-select --install`), then press Pause → Resume. Windows: the helper is prebuilt inside the jar, so check the log (run from a terminal) for the `Native system-audio tap unavailable:` line, which states the exact reason. If the tap fails while running, the app disables it and Pause → Resume switches to the fallback capture automatically. |
 | Native tap listed but `[meeting]` level stays 0 % / helper exits (macOS) | The "System Audio Recording" permission was denied or never shown. System Settings → Privacy & Security → **Screen & System Audio Recording** → **System Audio Recording Only** tab → enable Terminal (or Java), then press Pause → Resume. The `[system-tap]` log lines show the exact error. |
 | BlackHole installed but missing from Audio MIDI Setup / Multi-Output list | CoreAudio only loads new drivers when it restarts. ① Verify the install: `ls /Library/Audio/Plug-Ins/HAL/` must show `BlackHole2ch.driver` — if not, the installer didn't finish (it asks for an admin password); `brew reinstall blackhole-2ch` or rerun the `.pkg`. ② Restart the audio daemon: `sudo killall coreaudiod` (it relaunches itself) — or reboot. ③ Fully quit Audio MIDI Setup (⌘Q) and reopen; **BlackHole 2ch** now appears in the device list and the Multi-Output tick-list. |
-| Where are my notes / the model? | Notes: on the **Desktop**, named `<date>_<time>_live-meeting-notes.rtf`. Model cache: `$TMPDIR/ai-assist/models` (managed by the OS; safe to ignore). |
+| Where are my notes / the model? | Notes: in the **`meeting-notes`** folder next to the jar, named `<date>_<time>_live-meeting-notes.rtf`. Model cache: `$TMPDIR/ai-assist/models` (managed by the OS; safe to ignore). |
 
 ## How it works
 
@@ -322,11 +370,12 @@ Microphone ───────────────────────
 ```
 
 - Every recognized phrase lands in one **listening session**, labelled with
-  its source and sequence.
-- Every 30 s an **interim draft** is refreshed in memory (never on disk).
-- **Stop** locks the session, drafts the complete transcript — title,
-  summary, discussion, key points, action items — and saves the one final
-  timestamped file.
+  its source and sequence. No AI runs while the meeting is in progress.
+- **Apply** (Meeting tab) drafts a summary of everything captured so far and
+  shows it in memory — never on disk.
+- **Stop** locks the session, drafts the summary — title, summary,
+  discussion, key points, action items — appends the full verbatim
+  transcript, and saves the one final timestamped file.
 
 ## Optional REST API (localhost)
 
@@ -342,7 +391,7 @@ and device listing (`/api/audio/devices`).
 ai-assist:
   output:
     save-drafts: true          # save final notes at meeting Stop
-    dir: ${user.home}/Desktop   # where the notes file appears on Stop
+    dir: ""                    # blank = meeting-notes/ next to the jar; or an absolute path
   auto:
     start-capture: true        # listen immediately on launch
     draft-interval-seconds: 30 # interim in-memory draft cadence

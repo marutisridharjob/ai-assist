@@ -85,16 +85,51 @@ public class StyleRewriteService {
 
     private final TextRewriteService textRewrite;
     private final ObjectProvider<OllamaStyleRewriter> ollama;
+    private final ContentDrafter drafter;
 
     public StyleRewriteService(TextRewriteService textRewrite,
-                               ObjectProvider<OllamaStyleRewriter> ollama) {
+                               ObjectProvider<OllamaStyleRewriter> ollama,
+                               ContentDrafter drafter) {
         this.textRewrite = textRewrite;
         this.ollama = ollama;
+        this.drafter = drafter;
     }
 
     /** True when the optional local LLM handles free-form instructions. */
     public boolean llmAvailable() {
         return ollama.getIfAvailable() != null;
+    }
+
+    /**
+     * Turns the given text (a meeting transcript, pasted notes, anything) into
+     * a detailed meeting summary with action points. When the optional local
+     * LLM is enabled it writes the summary directly; otherwise the built-in
+     * drafter produces the structured meeting notes (overview, decisions and
+     * highlights, action items). Free-form instructions refine the LLM path.
+     */
+    public String summarizeMeeting(String text, String instructions) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        OllamaStyleRewriter llm = ollama.getIfAvailable();
+        if (llm != null) {
+            try {
+                StringBuilder request = new StringBuilder(
+                        "Write a detailed summary of this meeting. Start with a short overview "
+                        + "paragraph, then a 'Key points' section as a bulleted list, then an "
+                        + "'Action items' section as a bulleted list, each item naming the owner "
+                        + "and any due date when they are mentioned.");
+                if (instructions != null && !instructions.isBlank()) {
+                    request.append(" Also: ").append(instructions.strip());
+                }
+                return llm.freeform(text, request.toString());
+            } catch (RuntimeException e) {
+                log.warn("Ollama summary failed ({}); using the built-in drafter", e.getMessage());
+            }
+        }
+        Draft draft = drafter.draft("Meeting notes", text,
+                new DraftOptions(DraftOptions.ContentType.MEETING_NOTES, DraftOptions.Tone.PROFESSIONAL));
+        return draft.fullText();
     }
 
     /** Grammar-corrected draft of the text in the requested style. */

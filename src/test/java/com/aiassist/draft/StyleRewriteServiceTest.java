@@ -9,7 +9,8 @@ class StyleRewriteServiceTest {
     private final StyleRewriteService service = new StyleRewriteService(
             new TextRewriteService(new TemplateContentDrafter()),
             new org.springframework.beans.factory.support.DefaultListableBeanFactory()
-                    .getBeanProvider(OllamaStyleRewriter.class));
+                    .getBeanProvider(OllamaStyleRewriter.class),
+            new TemplateContentDrafter());
 
     private static final String TEXT =
             "i think we should update the docs. don't forget the release notes. "
@@ -69,5 +70,20 @@ class StyleRewriteServiceTest {
     @Test
     void blankInputYieldsEmptyDraft() {
         assertThat(service.draft("  ", StyleRewriteService.Style.FORMAL)).isEmpty();
+    }
+
+    @Test
+    void meetingSummaryIncludesActionItems() {
+        String transcript = "We agreed to ship the beta on Friday. "
+                + "John needs to update the docs. Please send the release notes to the team.";
+        String summary = service.summarizeMeeting(transcript, null);
+        assertThat(summary)
+                .isNotBlank()
+                .contains("Action items");
+    }
+
+    @Test
+    void meetingSummaryOfBlankIsEmpty() {
+        assertThat(service.summarizeMeeting("   ", null)).isEmpty();
     }
 }

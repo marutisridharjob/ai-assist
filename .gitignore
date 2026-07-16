@@ -1,8 +1,10 @@
 target/
-models/
+models/*.bin
+models/*.partial
 drafts/
 *.log
 .idea/
 *.iml
 .vscode/
 .DS_Store
+meeting-notes/

@@ -53,8 +53,6 @@ public class LiveTranscriptionService {
     private volatile String loadedModelName;
     private volatile String requestedModelName;
     private volatile String modelNote;
-    private volatile com.sun.jna.Pointer speakerModel;
-    private volatile SpeakerRegistry speakers = new SpeakerRegistry();
     private volatile MeetingRecorder recorder;
     private volatile String recorderSessionId;
 
@@ -100,16 +98,6 @@ public class LiveTranscriptionService {
                 loadedModelName = fallback;
             }
             log.info("Speech model '{}' ready in {} ms", loadedModelName, System.currentTimeMillis() - t0);
-        }
-        // Re-checked each time so a speaker model dropped in while the app is
-        // running is picked up without a relaunch.
-        if (speakerModel == null) {
-            modelManager.findSpeakerModel().ifPresent(path -> {
-                speakerModel = VoskNative.INSTANCE.vosk_spk_model_new(path.toString());
-                log.info(speakerModel != null
-                        ? "Speaker-identification model loaded from " + path
-                        : "Speaker model at " + path + " could not be loaded");
-            });
         }
     }
 
@@ -169,7 +157,6 @@ public class LiveTranscriptionService {
         ListeningSession session;
         if (sessionId == null || sessionId.isBlank()) {
             session = sessions.create("Live meeting notes");
-            speakers = new SpeakerRegistry(); // fresh voices per meeting
         } else {
             session = sessions.get(sessionId);
         }
@@ -348,11 +335,6 @@ public class LiveTranscriptionService {
         return modelNote;
     }
 
-    /** True when meeting voices get Speaker-1/2/... labels (spk model loaded). */
-    public boolean speakerIdActive() {
-        return speakerModel != null;
-    }
-
     /**
      * Switches the recognition model; a running meeting is briefly paused
      * and resumed on the same session with the new model loaded.
@@ -420,6 +402,17 @@ public class LiveTranscriptionService {
         private volatile Process tapProcess;
         private volatile int level;
         private volatile String partialText = "";
+        // When the caption (partial) stops growing for this long, the phrase is
+        // committed to the transcript ourselves — Vosk's own end-of-phrase
+        // detection can keep a phrase open indefinitely on some inputs, leaving
+        // the box empty while the live caption keeps scrolling.
+        private static final long PARTIAL_FLUSH_MS = 900;
+        private long lastPartialGrewAt;
+        // Loudest sample seen (0-100) since the last committed phrase. A phrase
+        // whose audio never rose above near-silence is dropped, so a quiet room
+        // can't post a stray filler word like "the" when Pause flushes.
+        private static final int MIN_SPEECH_LEVEL = 3;
+        private volatile int phrasePeak;
         private Thread thread;
 
         private CaptureWorker(ListeningSession session, AudioDeviceService.DeviceSelection selection,
@@ -543,11 +536,21 @@ public class LiveTranscriptionService {
             if (rec != null) {
                 rec.record(selection.label(), pcm, length);
             }
+            if (level > phrasePeak) {
+                phrasePeak = level; // track the loudest moment of this phrase
+            }
             if (recognizer.acceptWaveform(pcm, length)) {
                 appendResult(recognizer.result());
                 partialText = "";
             } else {
                 updatePartial(recognizer.partialResult());
+                // Vosk hasn't closed the phrase, but if the caption has stopped
+                // growing (a natural pause) commit it now so the box keeps up.
+                if (!partialText.isBlank()
+                        && System.currentTimeMillis() - lastPartialGrewAt > PARTIAL_FLUSH_MS) {
+                    appendResult(recognizer.finalResult());
+                    partialText = "";
+                }
             }
         }
 
@@ -596,41 +599,38 @@ public class LiveTranscriptionService {
                     : new Status(State.ERROR, session.id(), deviceLabels, detail));
         }
 
-        /** Meeting audio gets a speaker-identifying recognizer when the spk model is present. */
         private SpeechRecognizer newRecognizer(float sampleRate) {
-            boolean identifySpeakers = speakerModel != null && "other".equals(selection.label());
-            return new SpeechRecognizer(model, sampleRate, identifySpeakers ? speakerModel : null);
+            return new SpeechRecognizer(model, sampleRate);
         }
 
         private void appendResult(String resultJson) {
             try {
                 JsonNode node = objectMapper.readTree(resultJson);
                 String text = node.path("text").asText("");
-                // Capture every recognized phrase, unfiltered.
-                if (!text.isBlank() && !session.isEnded()) {
-                    session.addUtterance(text, speakerLabel(node));
+                // Capture every recognized phrase, labelled only by its source
+                // ([you] = mic, [other] = system audio), but drop phrases that
+                // carried no real audio energy — those are silence artefacts.
+                boolean hadSpeech = phrasePeak >= MIN_SPEECH_LEVEL;
+                phrasePeak = 0; // start measuring the next phrase
+                if (!text.isBlank() && hadSpeech && !session.isEnded()) {
+                    session.addUtterance(text, selection.label());
                 }
             } catch (Exception e) {
                 log.warn("Could not parse recognizer result: {}", resultJson, e);
             }
         }
 
-        /** Speaker-1/2/... from the utterance's voice x-vector, else the source label. */
-        private String speakerLabel(JsonNode node) {
-            JsonNode vector = node.path("spk");
-            if (!vector.isArray() || vector.isEmpty()) {
-                return selection.label();
-            }
-            double[] xvector = new double[vector.size()];
-            for (int i = 0; i < xvector.length; i++) {
-                xvector[i] = vector.get(i).asDouble();
-            }
-            return speakers.assign(xvector);
-        }
-
         private void updatePartial(String partialJson) {
             try {
-                partialText = objectMapper.readTree(partialJson).path("partial").asText("");
+                String next = objectMapper.readTree(partialJson).path("partial").asText("");
+                if (!next.equals(partialText)) {
+                    // The caption grew (or changed): note when, so the flush timer
+                    // only fires after it has been quiet for PARTIAL_FLUSH_MS.
+                    if (!next.isBlank()) {
+                        lastPartialGrewAt = System.currentTimeMillis();
+                    }
+                    partialText = next;
+                }
             } catch (Exception e) {
                 partialText = "";
             }

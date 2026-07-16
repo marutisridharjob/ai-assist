@@ -125,6 +125,49 @@ class TemplateContentDrafterTest {
         assertThat(sectionBody(draft, "Details").split("\n\n")).hasSize(3);
     }
 
+    @Test
+    void detectsImperativeTasksAndIgnoresNonActorFuture() {
+        Draft draft = drafter.draft("Sync",
+                "Schedule the design review for Monday. It will rain tomorrow. "
+                + "There will be a holiday next week.",
+                new DraftOptions(DraftOptions.ContentType.MEETING_NOTES, DraftOptions.Tone.PROFESSIONAL));
+
+        assertThat(draft.actionItems())
+                .anySatisfy(item -> assertThat(item).containsIgnoringCase("Schedule the design review"))
+                .noneSatisfy(item -> assertThat(item).containsIgnoringCase("rain"))
+                .noneSatisfy(item -> assertThat(item).containsIgnoringCase("holiday"));
+    }
+
+    @Test
+    void wordBoundaryStopsFalseActionMatches() {
+        // "shoulder" contains "should" but must not count as an action.
+        Draft draft = drafter.draft("Health", "He hurt his shoulder yesterday.",
+                new DraftOptions(DraftOptions.ContentType.MEETING_NOTES, DraftOptions.Tone.CONCISE));
+
+        assertThat(sectionBody(draft, "Action items")).isEqualTo("No action items were captured.");
+    }
+
+    @Test
+    void dropsFillerAndDuplicateLines() {
+        Draft draft = drafter.draft("Standup",
+                "Okay. Yeah. The API latency dropped by 30 percent. "
+                + "The API latency dropped by 30 percent. Right. Cool.",
+                new DraftOptions(DraftOptions.ContentType.SUMMARY, DraftOptions.Tone.CONCISE));
+
+        assertThat(draft.keyPoints()).hasSize(1);
+        assertThat(draft.keyPoints().getFirst()).containsIgnoringCase("latency");
+    }
+
+    @Test
+    void ranksSentencesWithNumbersAndDecisionsAbovePlainOnes() {
+        Draft draft = drafter.draft("Review",
+                "Someone opened the window. The board approved a 2 million dollar budget increase. "
+                + "The coffee was cold.",
+                new DraftOptions(DraftOptions.ContentType.SUMMARY, DraftOptions.Tone.CONCISE));
+
+        assertThat(draft.keyPoints().getFirst()).containsIgnoringCase("budget");
+    }
+
     private String sectionBody(Draft draft, String heading) {
         return draft.sections().stream()
                 .filter(s -> s.heading().equals(heading))

@@ -34,13 +34,16 @@ public class MeetingEndService {
     private final SessionStore sessions;
     private final LiveTranscriptionService liveTranscription;
     private final WhisperTranscriber whisper;
+    private final ContentDrafter drafter;
     private final DraftFileWriter fileWriter;
 
     public MeetingEndService(SessionStore sessions, LiveTranscriptionService liveTranscription,
-                             WhisperTranscriber whisper, DraftFileWriter fileWriter) {
+                             WhisperTranscriber whisper, ContentDrafter drafter,
+                             DraftFileWriter fileWriter) {
         this.sessions = sessions;
         this.liveTranscription = liveTranscription;
         this.whisper = whisper;
+        this.drafter = drafter;
         this.fileWriter = fileWriter;
     }
 
@@ -60,12 +63,20 @@ public class MeetingEndService {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "Meeting " + sessionId + " ended but nothing was captured, so there is nothing to save");
         }
-        // Verbatim transcript document — no AI drafting/summarizing.
-        Draft base = new Draft(session.topic(), "TRANSCRIPT", "", "", List.of(),
-                List.of(), List.of(), "# " + session.topic(), "verbatim", Instant.now(), null);
-        Draft draft = AttributedTranscript.appendTo(base, utterances);
+        // Saved file leads with the summary and action points, then the full
+        // verbatim transcript. Drop the drafter's "Discussion" section — it just
+        // reflows the same words the appended transcript already carries.
+        Draft base = drafter.draft(session.topic(), transcript,
+                new DraftOptions(DraftOptions.ContentType.MEETING_NOTES, DraftOptions.Tone.PROFESSIONAL));
+        List<Draft.Section> topSections = base.sections().stream()
+                .filter(s -> !"Discussion".equals(s.heading()))
+                .toList();
+        Draft summary = new Draft(base.title(), base.contentType(), base.tone(),
+                base.summary(), topSections, base.keyPoints(), base.actionItems(),
+                base.fullText(), base.generatedBy(), base.generatedAt(), base.savedTo());
+        Draft draft = AttributedTranscript.appendTo(summary, utterances);
         Path saved = fileWriter.save(draft);
-        log.info("Meeting {} ended with {} utterances; transcript saved to {}",
+        log.info("Meeting {} ended with {} utterances; notes saved to {}",
                 sessionId, utterances.size(), saved);
         return saved == null ? draft : draft.withSavedTo(saved.toString());
     }
