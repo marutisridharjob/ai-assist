@@ -538,9 +538,9 @@ public class MeetingConsole {
                     setEditorStatus(summary
                             ? (styleRewriteService.llmAvailable()
                                 ? "Meeting summary with action points ready. Press Download to save it."
-                                : "Summary with action points ready (install local Ollama for a richer LLM summary).")
+                                : "Summary with action points ready (drop a local .gguf model next to the jar for a richer LLM summary).")
                             : (instructionsIgnored
-                                ? "Applied checked options (free-form instructions need the optional local Ollama)."
+                                ? "Applied checked options (free-form instructions need a local .gguf model next to the jar, or Ollama)."
                                 : "Applied. Press Download to save it to your Desktop."), false);
                 });
             } catch (Exception ex) {
@@ -1001,9 +1001,12 @@ public class MeetingConsole {
                 + "<h3 style='color:" + heading + ";'>Compose tab</h3>"
                 + "<p>Type or paste into the top box, tick communication styles (or <b>Meeting summary</b>), "
                 + "add optional <b>Instructions</b>, and press <b>Apply</b>; the rewritten text appears in "
-                + "the Modified box below. Free-form instructions and the richest summaries use the optional "
-                + "local <a href='https://ollama.com'>Ollama</a> LLM when it is enabled; otherwise everything "
-                + "runs on the built-in offline rules and drafter.</p>"
+                + "the Modified box below. Free-form instructions and the richest summaries and edits use a "
+                + "local LLM when you drop one in: put a single GGUF instruct model (see the models folder's "
+                + "notes) next to the jar and the summary, Editor and Compose run through it — in-process, "
+                + "offline, no server. Without a model (and without an optional local "
+                + "<a href='https://ollama.com'>Ollama</a>), everything runs on the built-in offline rules "
+                + "and drafter.</p>"
 
                 + "<h3 style='color:" + heading + ";'>Vosk — live speech recognition</h3>"
                 + "<p>Live captions are produced by <b>Vosk</b>, a lightweight offline speech-to-text engine. "
@@ -1036,8 +1039,9 @@ public class MeetingConsole {
                 + "<h3 style='color:" + heading + ";'>Technology stack</h3>"
                 + "<p>Java 21 &amp; Swing (desktop UI, no browser), Spring Boot (app wiring and an optional "
                 + "localhost REST API), Vosk (live captions), Whisper/whisper.cpp via whisper-jni (final "
-                + "transcript), and an optional local Ollama LLM for richer drafting. All processing is "
-                + "offline; the internet is used only to email this feedback.</p>"
+                + "transcript), and an optional in-process llama.cpp LLM (a dropped-in GGUF model, via "
+                + "de.kherud:llama) for richer summaries and edits. All processing is offline; the internet "
+                + "is used only to email this feedback.</p>"
 
                 + "<p style='color:" + link + ";'>Tip: use the Search box above to jump to any word on this page.</p>"
                 + "</body></html>";
@@ -1069,9 +1073,9 @@ public class MeetingConsole {
                     composeStatus.setText(summary
                             ? (styleRewriteService.llmAvailable()
                                 ? "Meeting summary with action points ready."
-                                : "Summary with action points ready (install local Ollama for a richer LLM summary).")
+                                : "Summary with action points ready (drop a local .gguf model next to the jar for a richer LLM summary).")
                             : (instructionsIgnored
-                                ? "Applied checked styles (free-form instructions need the optional local Ollama)."
+                                ? "Applied checked styles (free-form instructions need a local .gguf model next to the jar, or Ollama)."
                                 : "Applied."));
                 });
             } catch (Exception ex) {

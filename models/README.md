@@ -67,3 +67,37 @@ attach it as a **GitHub Release asset** on your own repo — release assets allo
 up to 2 GB per file, so no Git LFS and no 100 MB limit. Committing the binary
 into the repo tree will not work; the file is too large and the push is
 rejected.
+
+---
+
+# Optional: a local LLM for better summaries and editing
+
+The **summary**, the **Editor** tab, and the **Compose** tab can be powered by
+a small **local LLM** that runs *inside* the app (llama.cpp, MIT — no Ollama,
+no server, nothing leaves the machine). It is entirely optional: without a
+model the app uses its offline rule-based drafter; drop one in and the summary,
+Editor and Compose go through the model, and the free-form **Instructions**
+fields start working.
+
+Drop **one** GGUF *instruct* model here (or next to the jar). The app uses the
+first `*.gguf` it finds:
+
+| Model (GGUF, Q4) | ~Size | Notes |
+|------------------|-------|-------|
+| `qwen2.5-0.5b-instruct-q4_k_m.gguf` | ~400 MB | Tiny, fastest, lowest quality |
+| `llama-3.2-1b-instruct-q4_k_m.gguf` | ~800 MB | Tiny, better writing — good default |
+| `qwen2.5-1.5b-instruct-q4_k_m.gguf` | ~1.1 GB | Small, noticeably better |
+| `qwen2.5-3b-instruct-q4_k_m.gguf` | ~2 GB | Small+, best of the practical set on a laptop CPU |
+
+Notes:
+- **Any** GGUF instruct model works — pick one your machine can run. Bigger =
+  better writing but slower and more RAM (a Q4 model needs roughly its file
+  size in free RAM).
+- It runs **CPU-only**, so the first reply after a meeting takes a few seconds
+  on a tiny model, longer on bigger ones.
+- These GGUF files live on model hubs (e.g. Hugging Face's `*-GGUF` repos such
+  as `Qwen/Qwen2.5-1.5B-Instruct-GGUF` or `bartowski/*`). If you can only reach
+  GitHub, host the file as a Release asset on your own repo (up to 2 GB) and
+  download it from there.
+- The native LLM libraries are already bundled in the jar; you only supply the
+  model file.

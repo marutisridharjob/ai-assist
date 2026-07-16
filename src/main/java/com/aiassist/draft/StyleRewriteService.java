@@ -3,6 +3,7 @@ package com.aiassist.draft;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -83,21 +84,54 @@ public class StyleRewriteService {
 
     private static final Pattern SENTENCE_SPLIT = Pattern.compile("(?<=[.!?])\\s+|\\n+");
 
+    private static final int SUMMARY_TOKENS = 900;
+    private static final int REWRITE_TOKENS = 1200;
+
     private final TextRewriteService textRewrite;
     private final ObjectProvider<OllamaStyleRewriter> ollama;
     private final ContentDrafter drafter;
+    private final LocalLlmService localLlm;
 
     public StyleRewriteService(TextRewriteService textRewrite,
                                ObjectProvider<OllamaStyleRewriter> ollama,
-                               ContentDrafter drafter) {
+                               ContentDrafter drafter,
+                               LocalLlmService localLlm) {
         this.textRewrite = textRewrite;
         this.ollama = ollama;
         this.drafter = drafter;
+        this.localLlm = localLlm;
     }
 
-    /** True when the optional local LLM handles free-form instructions. */
+    /**
+     * True when an LLM can act on free-form instructions — either the
+     * in-process local model (a GGUF file next to the jar) or an enabled
+     * local Ollama. When false, only the offline rules run.
+     */
     public boolean llmAvailable() {
-        return ollama.getIfAvailable() != null;
+        return localLlm.isAvailable() || ollama.getIfAvailable() != null;
+    }
+
+    /**
+     * Runs an LLM instruction over the text: the in-process local model first
+     * (the user's dropped-in GGUF), then Ollama if enabled. Empty when neither
+     * is available or both fail, so callers fall back to the offline rules.
+     */
+    private Optional<String> runLlm(String instruction, String text, int maxTokens) {
+        Optional<String> local = localLlm.generate(instruction, text, maxTokens);
+        if (local.isPresent()) {
+            return local;
+        }
+        OllamaStyleRewriter o = ollama.getIfAvailable();
+        if (o != null) {
+            try {
+                return Optional.ofNullable(o.freeform(text, instruction))
+                        .map(String::strip)
+                        .filter(s -> !s.isBlank());
+            } catch (RuntimeException e) {
+                log.warn("Ollama request failed ({}); using the offline rules", e.getMessage());
+            }
+        }
+        return Optional.empty();
     }
 
     /**
@@ -111,21 +145,17 @@ public class StyleRewriteService {
         if (text == null || text.isBlank()) {
             return "";
         }
-        OllamaStyleRewriter llm = ollama.getIfAvailable();
-        if (llm != null) {
-            try {
-                StringBuilder request = new StringBuilder(
-                        "Write a detailed summary of this meeting. Start with a short overview "
-                        + "paragraph, then a 'Key points' section as a bulleted list, then an "
-                        + "'Action items' section as a bulleted list, each item naming the owner "
-                        + "and any due date when they are mentioned.");
-                if (instructions != null && !instructions.isBlank()) {
-                    request.append(" Also: ").append(instructions.strip());
-                }
-                return llm.freeform(text, request.toString());
-            } catch (RuntimeException e) {
-                log.warn("Ollama summary failed ({}); using the built-in drafter", e.getMessage());
-            }
+        StringBuilder request = new StringBuilder(
+                "You are a meeting-notes assistant. Write a clear summary of the following "
+                + "meeting transcript. Start with a short Overview paragraph, then a 'Key points' "
+                + "section as a bulleted list, then an 'Action items' section as a bulleted list "
+                + "with the owner and any due date when they are mentioned. Use plain text.");
+        if (instructions != null && !instructions.isBlank()) {
+            request.append(" Also: ").append(instructions.strip());
+        }
+        Optional<String> llm = runLlm(request.toString(), text, SUMMARY_TOKENS);
+        if (llm.isPresent()) {
+            return llm.get();
         }
         Draft draft = drafter.draft("Meeting notes", text,
                 new DraftOptions(DraftOptions.ContentType.MEETING_NOTES, DraftOptions.Tone.PROFESSIONAL));
@@ -146,20 +176,17 @@ public class StyleRewriteService {
         if (text == null || text.isBlank()) {
             return "";
         }
-        OllamaStyleRewriter llm = ollama.getIfAvailable();
-        if (llm != null) {
-            try {
-                StringBuilder request = new StringBuilder();
-                for (Style style : styles) {
-                    request.append("use a ").append(style.display()).append(" communication style; ");
-                }
-                if (instructions != null && !instructions.isBlank()) {
-                    request.append(instructions.strip());
-                }
-                return llm.freeform(text, request.isEmpty() ? "improve clarity" : request.toString());
-            } catch (RuntimeException e) {
-                log.warn("Ollama drafting failed ({}); using the rule-based recipes", e.getMessage());
-            }
+        StringBuilder request = new StringBuilder("Rewrite the text below. ");
+        for (Style style : styles) {
+            request.append("Use a ").append(style.display()).append(" communication style. ");
+        }
+        if (instructions != null && !instructions.isBlank()) {
+            request.append(instructions.strip()).append(". ");
+        }
+        request.append("Return only the rewritten text, no preamble.");
+        Optional<String> llm = runLlm(request.toString(), text, REWRITE_TOKENS);
+        if (llm.isPresent()) {
+            return llm.get();
         }
         String result = textRewrite.rewrite(text, TextRewriteService.Mode.GRAMMAR);
         for (Style style : styles) {
@@ -179,35 +206,32 @@ public class StyleRewriteService {
         if (text == null || text.isBlank()) {
             return "";
         }
-        OllamaStyleRewriter llm = ollama.getIfAvailable();
-        if (llm != null) {
-            try {
-                StringBuilder request = new StringBuilder();
-                if (grammar) {
-                    request.append("fix all grammar; ");
-                }
-                if (compact) {
-                    request.append("make it compact; ");
-                }
-                if (detailed) {
-                    request.append("make it more detailed; ");
-                }
-                if (professional) {
-                    request.append("use professional wording; ");
-                }
-                if (bullets) {
-                    request.append("format the key content as bullet points; ");
-                }
-                for (Style style : styles) {
-                    request.append("use a ").append(style.display()).append(" communication style; ");
-                }
-                if (instructions != null && !instructions.isBlank()) {
-                    request.append(instructions.strip());
-                }
-                return llm.freeform(text, request.isEmpty() ? "improve clarity" : request.toString());
-            } catch (RuntimeException e) {
-                log.warn("Ollama editing failed ({}); using the rule-based recipes", e.getMessage());
-            }
+        StringBuilder request = new StringBuilder("Edit the text below. ");
+        if (grammar) {
+            request.append("Fix all grammar, spelling and punctuation. ");
+        }
+        if (compact) {
+            request.append("Make it more concise. ");
+        }
+        if (detailed) {
+            request.append("Expand it with more detail. ");
+        }
+        if (professional) {
+            request.append("Use professional wording. ");
+        }
+        if (bullets) {
+            request.append("Format the key content as bullet points. ");
+        }
+        for (Style style : styles) {
+            request.append("Use a ").append(style.display()).append(" communication style. ");
+        }
+        if (instructions != null && !instructions.isBlank()) {
+            request.append(instructions.strip()).append(". ");
+        }
+        request.append("Return only the edited text, no preamble.");
+        Optional<String> llm = runLlm(request.toString(), text, REWRITE_TOKENS);
+        if (llm.isPresent()) {
+            return llm.get();
         }
         String result = text;
         if (grammar) {

@@ -10,7 +10,8 @@ class StyleRewriteServiceTest {
             new TextRewriteService(new TemplateContentDrafter()),
             new org.springframework.beans.factory.support.DefaultListableBeanFactory()
                     .getBeanProvider(OllamaStyleRewriter.class),
-            new TemplateContentDrafter());
+            new TemplateContentDrafter(),
+            new LocalLlmService());
 
     private static final String TEXT =
             "i think we should update the docs. don't forget the release notes. "

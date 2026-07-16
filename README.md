@@ -24,10 +24,11 @@ proprietary libraries, models, or cloud services anywhere:
 | Spring Boot, Jackson, Apache Commons Lang | Apache-2.0 |
 | Vosk speech engine (live captions) | Apache-2.0 |
 | Whisper / whisper.cpp + whisper-jni (final transcript) | MIT |
+| llama.cpp + de.kherud:llama (optional in-process LLM) | MIT |
 | JNA (native access) | Apache-2.0 / LGPL-2.1 dual |
 | Java runtime (use e.g. Eclipse Temurin) | GPLv2 + Classpath Exception |
 | BlackHole (optional macOS fallback) | GPL-3.0 |
-| Ollama + models (optional drafting) | MIT / open-weight |
+| Ollama + models (optional, alternative drafting) | MIT / open-weight |
 
 The only closed-source code involved is the operating system itself
 (Windows/macOS APIs and their bundled compilers), which no application can
@@ -119,17 +120,34 @@ of the 13 style checkboxes — Formal, Concise, Consultative, Diplomatic,
 Commanding, Persuasive, Empathetic, Transparent, Conversational, Casual,
 Direct, Analytical, Assertive — optionally add **Instructions**, and press
 **Apply**: the grammar-corrected result appears in the bottom **Modified**
-box (drag the divider to resize). Drafting is deterministic and offline: each style combines
-contraction handling, hedging, formal/casual word choice, framing lines,
-and structure. For free-form LLM-quality rewriting, enable the optional
-local [Ollama](https://ollama.com) integration (`ai-assist.ollama.enabled=true`)
-— style drafts then go through your local model, falling back to the
-rules automatically.
+box (drag the divider to resize). Without a model, drafting is deterministic
+and offline: each style combines contraction handling, hedging, formal/casual
+word choice, framing lines, and structure. For real LLM-quality rewriting —
+and to make the free-form **Instructions** work — drop in a local model (see
+below).
 
 Tick **Meeting summary** (next to Instructions) and Apply turns your content
 into a **detailed summary with action points** — the same overview / key
 points / **Action items** notes as the Editor tab, written by the local LLM
-when Ollama is enabled, or by the built-in drafter offline.
+when a model is installed, or by the built-in drafter offline.
+
+### Optional: a local LLM (better summaries and editing)
+
+The summary, Editor, and Compose can run through a small **local LLM inside the
+app** — [llama.cpp](https://github.com/ggerganov/llama.cpp) (MIT) via
+`de.kherud:llama`, with the native libraries already bundled in the jar. It is
+**in-process**: no Ollama, no server, no install, nothing leaves the machine.
+
+Drop **one** GGUF *instruct* model next to the jar (or in the `models/` folder)
+— the app uses the first `*.gguf` it finds. A tiny model such as
+`llama-3.2-1b-instruct-q4_k_m.gguf` (~800 MB) or
+`qwen2.5-1.5b-instruct-q4_k_m.gguf` (~1.1 GB) is a good start; any GGUF instruct
+model works, bigger being better but slower and heavier on RAM. With a model
+present, the **Instructions** fields on Editor/Compose start working and the
+summaries read like real prose. Remove the file and it silently falls back to
+the offline rules. See [`models/README.md`](models/README.md) for the model
+list and sources. (An optional local [Ollama](https://ollama.com) —
+`ai-assist.ollama.enabled=true` — is also supported as an alternative backend.)
 
 ### Help tab
 

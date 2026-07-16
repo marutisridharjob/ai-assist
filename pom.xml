@@ -61,6 +61,19 @@
             <artifactId>whisper-jni</artifactId>
             <version>1.7.1</version>
         </dependency>
+        <!--
+          llama.cpp (MIT) via de.kherud:llama — an in-process, CPU-only LLM.
+          Native libraries for macOS/Windows/Linux are bundled in the jar; the
+          model is one GGUF instruct file the user drops in the app folder.
+          Powers the summary, Editor and Compose when present; the app falls
+          back to the offline rules when no model is installed. No server,
+          no Ollama, nothing leaves the machine.
+        -->
+        <dependency>
+            <groupId>de.kherud</groupId>
+            <artifactId>llama</artifactId>
+            <version>4.1.0</version>
+        </dependency>
         <!-- Pinned to the version whose macOS resource lookup matches the vosk jar layout -->
         <dependency>
             <groupId>net.java.dev.jna</groupId>
