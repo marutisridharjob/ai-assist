@@ -133,6 +133,14 @@ public class MeetingConsole {
     private Timer refreshTimer;
     private int renderedUtterances;
     private String renderedSessionId;
+    // Serialises background note-drafting so Stop returns instantly and
+    // back-to-back meetings save their notes in order.
+    private final java.util.concurrent.ExecutorService notesExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "notes-finish");
+                t.setDaemon(true);
+                return t;
+            });
     private boolean meetingCompleted;
     private int silentCycles;
     private int detectorCountdown;
@@ -193,12 +201,13 @@ public class MeetingConsole {
 
     private void build() {
         try {
-            // FlatLaf: the same modern look on every OS (Windows, macOS, Linux)
-            // instead of each platform's native, differing look-and-feel. The
-            // Dark toggle swaps between its light and dark themes in applyTheme.
-            com.formdev.flatlaf.FlatLightLaf.setup();
+            // Swing's own built-in cross-platform look-and-feel (Metal): the
+            // same on Windows and macOS, no third-party UI dependency. It also
+            // honours the explicit colors we set for the Dark toggle.
+            javax.swing.UIManager.setLookAndFeel(
+                    javax.swing.UIManager.getCrossPlatformLookAndFeelClassName());
         } catch (Exception e) {
-            log.debug("FlatLaf look and feel unavailable: {}", e.getMessage());
+            log.debug("Cross-platform look and feel unavailable: {}", e.getMessage());
         }
         frame = new JFrame("ai-assist — meeting notes");
         var icons = java.util.List.of(notesIcon(16), notesIcon(32), notesIcon(64), notesIcon(128));
@@ -1305,20 +1314,6 @@ public class MeetingConsole {
     /** Light/dark palette applied to every part of the window. */
     private void applyTheme(boolean dark) {
         darkMode = dark;
-        // Swap the FlatLaf base theme first, then layer our explicit colors on
-        // top (FlatLaf keeps component colors we set). Same result on every OS.
-        try {
-            if (dark) {
-                com.formdev.flatlaf.FlatDarkLaf.setup();
-            } else {
-                com.formdev.flatlaf.FlatLightLaf.setup();
-            }
-            if (frame != null) {
-                javax.swing.SwingUtilities.updateComponentTreeUI(frame);
-            }
-        } catch (Exception e) {
-            log.debug("FlatLaf theme switch failed: {}", e.getMessage());
-        }
         java.awt.Color textBg = dark ? new java.awt.Color(0x1E1E1E) : java.awt.Color.WHITE;
         java.awt.Color textFg = dark ? new java.awt.Color(0xE6E6E6) : java.awt.Color.BLACK;
         java.awt.Color panelBg = dark ? new java.awt.Color(0x2B2B2B) : new java.awt.Color(0xF2F2F2);
@@ -1437,46 +1432,53 @@ public class MeetingConsole {
         if (choice != 0) {
             return;
         }
+        // Fast part: stop capture and grab the recording now, so the app is
+        // immediately ready for another meeting.
+        MeetingEndService.PendingNotes pending;
+        try {
+            pending = meetingEndService.stopCurrentCapture();
+        } catch (Exception e) {
+            String message = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
+            setStatus("Could not stop the meeting: " + message, true);
+            return;
+        }
         meetingCompleted = true;
         pauseButton.setEnabled(false);
         stopButton.setEnabled(false);
-        setStatus("Drafting final notes…", false);
-        new SwingWorker<Draft, Void>() {
-            @Override
-            protected Draft doInBackground() {
-                return meetingEndService.endCurrentLiveMeeting(null);
-            }
+        startButton.setEnabled(true);
+        startButton.setText("Start");
+        summaryArea.setText("Transcribing and drafting the notes in the background…");
+        setStatus("Meeting stopped — drafting notes in the background. You can start a new meeting now.", false);
 
-            @Override
-            protected void done() {
-                try {
-                    Draft draft = get();
-                    // Show the saved summary on the Meeting tab.
-                    summaryArea.setText(summaryText(draft));
-                    summaryArea.setCaretPosition(0);
-                    transcript.append("\n" + "=".repeat(60) + "\nMEETING COMPLETE — SAVED\n"
-                            + "=".repeat(60) + "\n");
-                    setStatus(draft.savedTo() != null
-                            ? "Notes saved to " + draft.savedTo()
-                            : "Meeting ended (file saving is disabled in configuration)", false);
-                    if (draft.savedTo() != null) {
-                        JOptionPane.showMessageDialog(frame, "Notes saved to:\n" + draft.savedTo(),
-                                "Meeting complete", JOptionPane.INFORMATION_MESSAGE);
+        // Slow part: transcribe + draft + save off the UI thread. Serialised so
+        // back-to-back meetings finish in order and share the Whisper/LLM engine.
+        notesExecutor.submit(() -> {
+            try {
+                Draft draft = meetingEndService.finishNotes(pending, null);
+                SwingUtilities.invokeLater(() -> {
+                    boolean anotherMeetingLive = liveTranscription.status().sessionId() != null;
+                    if (!anotherMeetingLive) {
+                        summaryArea.setText(summaryText(draft));
+                        summaryArea.setCaretPosition(0);
+                        setStatus(draft.savedTo() != null
+                                ? "Notes saved to " + draft.savedTo()
+                                : "Meeting ended (file saving is disabled in configuration)", false);
+                    } else {
+                        log.info("Previous meeting notes saved to {}", draft.savedTo());
                     }
-                } catch (Exception e) {
-                    meetingCompleted = false;
-                    pauseButton.setEnabled(true);
-                    stopButton.setEnabled(true);
-                    String message = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
-                    setStatus("Could not end the meeting: " + message, true);
-                    // Loud on purpose: Windows users reported "nothing saved"
-                    // with the reason hidden in the status line.
-                    JOptionPane.showMessageDialog(frame, "The notes were NOT saved:\n" + message,
-                            "Could not save", JOptionPane.ERROR_MESSAGE);
-                }
-                transcript.setCaretPosition(transcript.getDocument().getLength());
+                });
+            } catch (Exception e) {
+                String message = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
+                SwingUtilities.invokeLater(() -> {
+                    if (liveTranscription.status().sessionId() == null) {
+                        summaryArea.setText("Could not save the notes: " + message);
+                        setStatus("Could not save the notes: " + message, true);
+                    } else {
+                        log.warn("Could not save previous meeting notes: {}", message);
+                    }
+                });
             }
-        }.execute();
+        });
     }
 
     /** Summarizes the meeting so far and shows it in the summary area. */
@@ -1494,11 +1496,15 @@ public class MeetingConsole {
                 // produces the identical detailed summary with action points
                 // whichever tab it is pressed on.
                 String transcriptText = sessions.get(id).transcript();
-                String text = transcriptText == null || transcriptText.isBlank()
+                boolean empty = transcriptText == null || transcriptText.isBlank();
+                String text = empty
                         ? "Nothing has been captured yet."
                         : styleRewriteService.summarizeMeeting(transcriptText, null);
+                int words = empty ? 0 : transcriptText.trim().split("\\s+").length;
+                String footer = "\n\n———\n[LLM: " + styleRewriteService.llmReport()
+                        + " · transcript: " + words + " words]";
                 SwingUtilities.invokeLater(() -> {
-                    summaryArea.setText(text);
+                    summaryArea.setText(empty ? text : text + footer);
                     summaryArea.setCaretPosition(0);
                 });
             } catch (Exception e) {

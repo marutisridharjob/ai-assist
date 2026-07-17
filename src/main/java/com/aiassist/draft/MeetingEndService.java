@@ -5,6 +5,8 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import com.aiassist.audio.LiveTranscriptionService;
 import com.aiassist.audio.WhisperTranscriber;
@@ -34,51 +36,90 @@ public class MeetingEndService {
     private final SessionStore sessions;
     private final LiveTranscriptionService liveTranscription;
     private final WhisperTranscriber whisper;
-    private final ContentDrafter drafter;
+    private final StyleRewriteService styleRewrite;
     private final DraftFileWriter fileWriter;
 
     public MeetingEndService(SessionStore sessions, LiveTranscriptionService liveTranscription,
-                             WhisperTranscriber whisper, ContentDrafter drafter,
+                             WhisperTranscriber whisper, StyleRewriteService styleRewrite,
                              DraftFileWriter fileWriter) {
         this.sessions = sessions;
         this.liveTranscription = liveTranscription;
         this.whisper = whisper;
-        this.drafter = drafter;
+        this.styleRewrite = styleRewrite;
         this.fileWriter = fileWriter;
     }
 
-    public Draft endMeeting(String sessionId, DraftOptions options) {
-        ListeningSession session = sessions.get(sessionId);
+    /** The recording captured on Stop, to be transcribed and drafted later. */
+    public record PendingNotes(String sessionId, Map<String, Path> recordings) {
+    }
 
-        // Stop capture first so the recording is complete before we read it.
+    /**
+     * Fast, synchronous part of Stop: stops live capture, locks the session,
+     * and grabs the recorded audio files. Returns immediately so the UI can be
+     * ready for a new meeting while {@link #finishNotes} runs in the background.
+     */
+    public PendingNotes stopCapture(String sessionId) {
+        ListeningSession session = sessions.get(sessionId);
         if (sessionId.equals(liveTranscription.status().sessionId())) {
             liveTranscription.stop();
         }
         session.end();
+        // Detach the recording now so a new meeting's recorder can't clobber it.
+        Map<String, Path> recordings = liveTranscription.finishRecording(sessionId);
+        return new PendingNotes(sessionId, recordings);
+    }
 
-        List<Utterance> utterances = transcribeRecordingOrLive(session);
+    /** Stops whichever meeting the live capture is currently feeding. */
+    public PendingNotes stopCurrentCapture() {
+        String sessionId = liveTranscription.status().sessionId();
+        if (sessionId == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No live meeting is in progress");
+        }
+        return stopCapture(sessionId);
+    }
+
+    /**
+     * Slow, background part of Stop: transcribes the recording with Whisper,
+     * drafts the summary + action points (via the local LLM when installed,
+     * else the offline drafter), appends the full verbatim transcript, and
+     * saves the notes file.
+     */
+    public Draft finishNotes(PendingNotes pending, DraftOptions options) {
+        ListeningSession session = sessions.get(pending.sessionId());
+        List<Utterance> utterances = transcribeRecordingOrLive(session, pending.recordings());
         String transcript = utterances.stream().map(Utterance::text)
                 .reduce((a, b) -> a + "\n" + b).orElse("");
         if (transcript.isBlank()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "Meeting " + sessionId + " ended but nothing was captured, so there is nothing to save");
+                    "Meeting " + pending.sessionId()
+                    + " ended but nothing was captured, so there is nothing to save");
         }
-        // Saved file leads with the summary and action points, then the full
-        // verbatim transcript. Drop the drafter's "Discussion" section — it just
-        // reflows the same words the appended transcript already carries.
-        Draft base = drafter.draft(session.topic(), transcript,
-                new DraftOptions(DraftOptions.ContentType.MEETING_NOTES, DraftOptions.Tone.PROFESSIONAL));
-        List<Draft.Section> topSections = base.sections().stream()
-                .filter(s -> !"Discussion".equals(s.heading()))
-                .toList();
-        Draft summary = new Draft(base.title(), base.contentType(), base.tone(),
-                base.summary(), topSections, base.keyPoints(), base.actionItems(),
-                base.fullText(), base.generatedBy(), base.generatedAt(), base.savedTo());
-        Draft draft = AttributedTranscript.appendTo(summary, utterances);
+        // Summary + action points: the same path as the Meeting tab's Apply,
+        // so a dropped-in LLM writes them (falling back to the offline drafter).
+        String summaryText = stripMarkdownHeadings(styleRewrite.summarizeMeeting(transcript, null));
+        Draft notes = new Draft(session.topic(), "MEETING_NOTES", "PROFESSIONAL", "",
+                List.of(new Draft.Section("Summary", summaryText)),
+                List.of(), List.of(), summaryText, "summary", Instant.now(), null);
+        Draft draft = AttributedTranscript.appendTo(notes, utterances);
         Path saved = fileWriter.save(draft);
-        log.info("Meeting {} ended with {} utterances; notes saved to {}",
-                sessionId, utterances.size(), saved);
+        log.info("Meeting {} finished with {} utterances; notes saved to {}",
+                pending.sessionId(), utterances.size(), saved);
         return saved == null ? draft : draft.withSavedTo(saved.toString());
+    }
+
+    /** Synchronous end-to-end (used by the REST API): stop then finish. */
+    public Draft endMeeting(String sessionId, DraftOptions options) {
+        return finishNotes(stopCapture(sessionId), options);
+    }
+
+    /** Markdown headings (# / ##) render badly in RTF; strip them to plain lines. */
+    private static String stripMarkdownHeadings(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.lines()
+                .map(l -> l.replaceFirst("^\\s*#{1,6}\\s*", ""))
+                .collect(Collectors.joining("\n"));
     }
 
     /**
@@ -86,8 +127,7 @@ public class MeetingEndService {
      * ordered chronologically across sources; falls back to the live captions
      * when Whisper or the recording is unavailable. Deletes the recording.
      */
-    private List<Utterance> transcribeRecordingOrLive(ListeningSession session) {
-        var files = liveTranscription.finishRecording(session.id());
+    private List<Utterance> transcribeRecordingOrLive(ListeningSession session, Map<String, Path> files) {
         if (files.isEmpty() || !whisper.isAvailable()) {
             files.values().forEach(this::deleteQuietly);
             return session.utterances();

@@ -72,11 +72,15 @@ JDK — not a browser):
   on every tab, using the local Ollama LLM when enabled and the built-in
   drafter otherwise. Press it as often as you like; the running transcript
   keeps flowing above it. Nothing is saved — this is a live preview,
-- **Stop** — the meeting is complete: capture stops, the **summary** (meeting
-  notes) followed by the **full verbatim transcript** is saved as a
-  timestamped rich-text (.rtf) file in the **`meeting-notes`** folder inside
-  the app's own folder (e.g. `meeting-notes/2026-07-05_15-02-41_live-meeting-notes.rtf`),
-  and that same summary is shown in the Summary pane,
+- **Stop** — the meeting is complete: capture stops **immediately** and the app
+  is instantly ready for another meeting. The transcription (Whisper), the
+  **summary + action points** (the local LLM when installed, else the offline
+  drafter), and the save happen **in the background**; the finished notes —
+  summary followed by the **full verbatim transcript** — are written as a
+  timestamped rich-text (.rtf) file in the **`meeting-notes`** folder next to
+  the jar (e.g. `meeting-notes/2026-07-05_15-02-41_live-meeting-notes.rtf`) and
+  shown in the Summary pane when they're ready. You can start the next meeting
+  while the previous one is still being drafted,
 - **who said what**: every transcript line is tagged with its source —
   `[you]` is you / your side of the room, `[other]` is the other
   participants captured from the system audio. The tags appear live in the
