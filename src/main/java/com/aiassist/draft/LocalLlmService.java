@@ -120,9 +120,13 @@ public class LocalLlmService {
                     ? userContent.substring(0, MAX_INPUT_CHARS)
                     : userContent;
             long t0 = System.currentTimeMillis();
-            InferenceParameters params = new InferenceParameters("")
+            // Build the actual prompt from the chat messages using the model's
+            // own template — complete() generates from the "prompt", so the
+            // content must be baked into it (setMessages alone leaves it empty).
+            String prompt = model.applyTemplate(new InferenceParameters("")
                     .setMessages(systemPrompt, List.of(new Pair<>("user", content)))
-                    .setUseChatTemplate(true)
+                    .setUseChatTemplate(true));
+            InferenceParameters params = new InferenceParameters(prompt)
                     .setTemperature(0.2f)
                     .setTopP(0.9f)
                     .setRepeatPenalty(1.15f) // stop tiny models looping/repeating
