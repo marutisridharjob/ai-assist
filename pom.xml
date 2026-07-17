@@ -74,6 +74,16 @@
             <artifactId>llama</artifactId>
             <version>4.1.0</version>
         </dependency>
+        <!--
+          FlatLaf (Apache-2.0) — a pure-Java, cross-platform look-and-feel with
+          light and dark themes. Gives the same modern appearance on Windows
+          and macOS instead of each OS's native look, and drives the Dark toggle.
+        -->
+        <dependency>
+            <groupId>com.formdev</groupId>
+            <artifactId>flatlaf</artifactId>
+            <version>3.5.4</version>
+        </dependency>
         <!-- Pinned to the version whose macOS resource lookup matches the vosk jar layout -->
         <dependency>
             <groupId>net.java.dev.jna</groupId>

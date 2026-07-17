@@ -50,7 +50,9 @@ JDK — not a browser):
   `vosk-model-en-us-0.22-lgraph` (128 MB, compact and notably more accurate)
   or `vosk-model-en-us-0.22` (1.8 GB, most accurate),
 - a **Dark** toggle (top-right) switching the whole window between light and
-  dark mode; the choice is remembered across launches,
+  dark mode; the choice is remembered across launches. The UI uses a single
+  cross-platform look-and-feel (FlatLaf), so the window looks and behaves the
+  same on Windows and macOS,
 - a **scrolling text box** where the running transcript appears live, each
   line time-stamped and tagged `[you]` (your microphone) or `[other]` (the system audio),
 - a **live caption line** showing words as they are being recognized,

@@ -193,12 +193,12 @@ public class MeetingConsole {
 
     private void build() {
         try {
-            // Native look on each OS (Aqua on macOS, Windows LAF on Windows)
-            // instead of Swing's gray cross-platform default.
-            javax.swing.UIManager.setLookAndFeel(
-                    javax.swing.UIManager.getSystemLookAndFeelClassName());
+            // FlatLaf: the same modern look on every OS (Windows, macOS, Linux)
+            // instead of each platform's native, differing look-and-feel. The
+            // Dark toggle swaps between its light and dark themes in applyTheme.
+            com.formdev.flatlaf.FlatLightLaf.setup();
         } catch (Exception e) {
-            log.debug("System look and feel unavailable: {}", e.getMessage());
+            log.debug("FlatLaf look and feel unavailable: {}", e.getMessage());
         }
         frame = new JFrame("ai-assist — meeting notes");
         var icons = java.util.List.of(notesIcon(16), notesIcon(32), notesIcon(64), notesIcon(128));
@@ -1305,6 +1305,20 @@ public class MeetingConsole {
     /** Light/dark palette applied to every part of the window. */
     private void applyTheme(boolean dark) {
         darkMode = dark;
+        // Swap the FlatLaf base theme first, then layer our explicit colors on
+        // top (FlatLaf keeps component colors we set). Same result on every OS.
+        try {
+            if (dark) {
+                com.formdev.flatlaf.FlatDarkLaf.setup();
+            } else {
+                com.formdev.flatlaf.FlatLightLaf.setup();
+            }
+            if (frame != null) {
+                javax.swing.SwingUtilities.updateComponentTreeUI(frame);
+            }
+        } catch (Exception e) {
+            log.debug("FlatLaf theme switch failed: {}", e.getMessage());
+        }
         java.awt.Color textBg = dark ? new java.awt.Color(0x1E1E1E) : java.awt.Color.WHITE;
         java.awt.Color textFg = dark ? new java.awt.Color(0xE6E6E6) : java.awt.Color.BLACK;
         java.awt.Color panelBg = dark ? new java.awt.Color(0x2B2B2B) : new java.awt.Color(0xF2F2F2);
