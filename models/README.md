@@ -101,3 +101,22 @@ Notes:
   download it from there.
 - The native LLM libraries are already bundled in the jar; you only supply the
   model file.
+
+## Is the model actually being used?
+
+After you press **Apply** on the Editor or Compose tab, the status line ends
+with a **`[LLM: …]`** note that tells you exactly what happened:
+
+- `[LLM: used <model> (1234 ms)]` — the model ran. ✅
+- `[LLM: no .gguf model found (looked in: …)]` — the file isn't in a folder the
+  app searches. The paths it looked in are listed — put the `.gguf` in one of
+  them (the simplest is right next to the jar, or a `models/` folder next to
+  the jar). Note: "next to the jar" means the folder containing the
+  `ai-assist-<version>.jar` you actually launched, not the source checkout.
+- `[LLM: <model> failed to load/run: …]` — the file was found but couldn't be
+  loaded (a corrupt/partial download, or a GGUF too new for the bundled
+  llama.cpp). Re-download it, or try a different quant.
+
+If it says "no model found", check the listed paths first — the most common
+cause is the model sitting next to the source tree while the jar runs from
+somewhere else.

@@ -39,6 +39,8 @@ public class LocalLlmService {
     private LlamaModel model;
     private String loadedModel;
     private boolean libraryFailed;
+    /** Human-readable outcome of the last attempt, surfaced in the UI. */
+    private volatile String lastReport = "no request yet";
 
     /** The first *.gguf model found next to the app, if any. */
     public synchronized Optional<Path> findModel() {
@@ -66,40 +68,88 @@ public class LocalLlmService {
         return !libraryFailed && findModel().isPresent();
     }
 
+    /** One-line outcome of the last generate() call, for the UI/status line. */
+    public String report() {
+        return lastReport;
+    }
+
+    /** Where the app looked and what it found, without loading anything. */
+    public synchronized String describe() {
+        if (libraryFailed) {
+            return "local model disabled — native library failed to load (" + lastReport + ")";
+        }
+        Optional<Path> model = findModel();
+        if (model.isEmpty()) {
+            return "no .gguf model found. Put one next to the jar or in models/. Looked in: "
+                    + searchedPaths();
+        }
+        return "model found: " + model.get().getFileName()
+                + (loadedModel != null && loadedModel.equals(model.get().toString()) ? " (loaded)" : "");
+    }
+
+    private String searchedPaths() {
+        StringBuilder sb = new StringBuilder();
+        for (Path root : VoskModelManager.modelSearchRoots()) {
+            sb.append(sb.isEmpty() ? "" : "; ").append(root.toAbsolutePath());
+        }
+        return sb.toString();
+    }
+
     /**
      * Generates a reply for the given system instruction and user content,
      * using the model's own chat template. Returns empty (so the caller falls
      * back to the rules) when no model is installed or generation fails.
      */
     public synchronized Optional<String> generate(String systemPrompt, String userContent, int maxTokens) {
-        if (libraryFailed || userContent == null || userContent.isBlank()) {
+        if (userContent == null || userContent.isBlank()) {
+            return Optional.empty();
+        }
+        if (libraryFailed) {
+            lastReport = "native library unavailable on this OS; used the offline rules";
             return Optional.empty();
         }
         Optional<Path> modelPath = findModel();
         if (modelPath.isEmpty()) {
+            lastReport = "no .gguf model found (looked in: " + searchedPaths() + "); used the offline rules";
             return Optional.empty();
         }
+        String name = modelPath.get().getFileName().toString();
         try {
             ensureLoaded(modelPath.get());
             String content = userContent.length() > MAX_INPUT_CHARS
                     ? userContent.substring(0, MAX_INPUT_CHARS)
                     : userContent;
+            long t0 = System.currentTimeMillis();
             InferenceParameters params = new InferenceParameters("")
                     .setMessages(systemPrompt, List.of(new Pair<>("user", content)))
                     .setUseChatTemplate(true)
                     .setTemperature(0.3f)
                     .setNPredict(maxTokens);
             String out = model.complete(params);
-            return Optional.ofNullable(out).map(String::strip).filter(s -> !s.isBlank());
+            Optional<String> result = Optional.ofNullable(out).map(String::strip).filter(s -> !s.isBlank());
+            lastReport = result.isPresent()
+                    ? "used " + name + " (" + (System.currentTimeMillis() - t0) + " ms)"
+                    : name + " returned nothing; used the offline rules";
+            return result;
         } catch (Throwable t) {
             // UnsatisfiedLinkError / NoClassDefFoundError => unsupported platform:
             // disable for the rest of the run so we don't retry the native load.
             if (t instanceof UnsatisfiedLinkError || t instanceof NoClassDefFoundError) {
                 libraryFailed = true;
             }
-            log.warn("Local LLM unavailable, using the offline rules instead: {}", t.toString());
+            lastReport = name + " failed to load/run: " + rootCause(t);
+            log.warn("Local LLM unavailable ({}); using the offline rules instead", lastReport, t);
             return Optional.empty();
         }
+    }
+
+    private static String rootCause(Throwable t) {
+        Throwable c = t;
+        while (c.getCause() != null && c.getCause() != c) {
+            c = c.getCause();
+        }
+        String msg = c.getMessage();
+        return c.getClass().getSimpleName() + (msg == null ? "" : ": " + msg);
     }
 
     private void ensureLoaded(Path modelPath) {

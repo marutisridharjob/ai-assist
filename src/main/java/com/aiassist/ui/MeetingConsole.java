@@ -529,19 +529,11 @@ public class MeetingConsole {
                                 cbGrammar.isSelected(), cbCompact.isSelected(), cbDetailed.isSelected(),
                                 cbProfessional.isSelected(), cbBullets.isSelected(), styles,
                                 editorInstructions.getText());
-                boolean instructionsIgnored = !styleRewriteService.llmAvailable()
-                        && editorInstructions.getText() != null
-                        && !editorInstructions.getText().isBlank();
+                String llm = "  [LLM: " + styleRewriteService.llmReport() + "]";
                 SwingUtilities.invokeLater(() -> {
                     editorArea.setText(result);
                     editorArea.setCaretPosition(0);
-                    setEditorStatus(summary
-                            ? (styleRewriteService.llmAvailable()
-                                ? "Meeting summary with action points ready. Press Download to save it."
-                                : "Summary with action points ready (drop a local .gguf model next to the jar for a richer LLM summary).")
-                            : (instructionsIgnored
-                                ? "Applied checked options (free-form instructions need a local .gguf model next to the jar, or Ollama)."
-                                : "Applied. Press Download to save it to your Desktop."), false);
+                    setEditorStatus((summary ? "Summary ready." : "Applied.") + llm, false);
                 });
             } catch (Exception ex) {
                 SwingUtilities.invokeLater(() ->
@@ -1064,19 +1056,11 @@ public class MeetingConsole {
                 String result = summary
                         ? styleRewriteService.summarizeMeeting(feed, composeInstructions.getText())
                         : styleRewriteService.applyStyles(feed, styles, composeInstructions.getText());
-                boolean instructionsIgnored = !styleRewriteService.llmAvailable()
-                        && composeInstructions.getText() != null
-                        && !composeInstructions.getText().isBlank();
+                String llm = "  [LLM: " + styleRewriteService.llmReport() + "]";
                 SwingUtilities.invokeLater(() -> {
                     composeResult.setText(result);
                     composeResult.setCaretPosition(0);
-                    composeStatus.setText(summary
-                            ? (styleRewriteService.llmAvailable()
-                                ? "Meeting summary with action points ready."
-                                : "Summary with action points ready (drop a local .gguf model next to the jar for a richer LLM summary).")
-                            : (instructionsIgnored
-                                ? "Applied checked styles (free-form instructions need a local .gguf model next to the jar, or Ollama)."
-                                : "Applied."));
+                    composeStatus.setText((summary ? "Summary ready." : "Applied.") + llm);
                 });
             } catch (Exception ex) {
                 SwingUtilities.invokeLater(() ->

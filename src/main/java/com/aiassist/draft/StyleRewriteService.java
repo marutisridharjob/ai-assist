@@ -111,6 +111,16 @@ public class StyleRewriteService {
         return localLlm.isAvailable() || ollama.getIfAvailable() != null;
     }
 
+    /** One-line status of the local model after the last run (for the UI). */
+    public String llmReport() {
+        return localLlm.report();
+    }
+
+    /** Where the app looked for a model and what it found (for the UI). */
+    public String llmDescribe() {
+        return localLlm.describe();
+    }
+
     /**
      * Runs an LLM instruction over the text: the in-process local model first
      * (the user's dropped-in GGUF), then Ollama if enabled. Empty when neither

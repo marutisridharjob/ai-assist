@@ -93,6 +93,23 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <!--
+                      These dependencies carry native libraries. Unpacking them
+                      at runtime guarantees their loaders can extract the native
+                      binary from a real jar file, even inside this fat jar.
+                    -->
+                    <requiresUnpack>
+                        <dependency>
+                            <groupId>de.kherud</groupId>
+                            <artifactId>llama</artifactId>
+                        </dependency>
+                        <dependency>
+                            <groupId>io.github.givimad</groupId>
+                            <artifactId>whisper-jni</artifactId>
+                        </dependency>
+                    </requiresUnpack>
+                </configuration>
             </plugin>
         </plugins>
     </build>
