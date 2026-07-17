@@ -123,7 +123,9 @@ public class LocalLlmService {
             InferenceParameters params = new InferenceParameters("")
                     .setMessages(systemPrompt, List.of(new Pair<>("user", content)))
                     .setUseChatTemplate(true)
-                    .setTemperature(0.3f)
+                    .setTemperature(0.2f)
+                    .setTopP(0.9f)
+                    .setRepeatPenalty(1.15f) // stop tiny models looping/repeating
                     .setNPredict(maxTokens);
             String out = model.complete(params);
             Optional<String> result = Optional.ofNullable(out).map(String::strip).filter(s -> !s.isBlank());
