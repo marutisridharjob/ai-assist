@@ -92,22 +92,14 @@ public class MeetingConsole {
     private JLabel composeStatus;
     private javax.swing.JTextField composeInstructions;
     private javax.swing.JTextField editorInstructions;
-    private javax.swing.JCheckBox cbGrammar;
-    private javax.swing.JCheckBox cbCompact;
-    private javax.swing.JCheckBox cbDetailed;
-    private javax.swing.JCheckBox cbProfessional;
-    private javax.swing.JCheckBox cbBullets;
-    private javax.swing.JCheckBox cbEditorSummary;
-    private javax.swing.JCheckBox cbComposeSummary;
-    private final java.util.List<javax.swing.JCheckBox> styleCheckboxes = new java.util.ArrayList<>();
-    private final java.util.List<javax.swing.JCheckBox> editorStyleChecks = new java.util.ArrayList<>();
-    private JPanel editorStyleRow;
+    private OptionChecks editorChecks;
+    private OptionChecks composeChecks;
     private JPanel editorInstrRow;
     private JPanel editorOptionStack;
+    private JPanel composeInstrRow;
+    private JPanel composeOptionStack;
     private final java.util.List<javax.swing.JCheckBox> themedChecks = new java.util.ArrayList<>();
     private final java.util.List<JLabel> themedLabels = new java.util.ArrayList<>();
-    private JPanel composeStylesPanel;
-    private JPanel editorOptionsRow;
     private javax.swing.JSplitPane composeSplit;
     private JPanel composePanel;
     private JPanel composeTopPanel;
@@ -451,55 +443,35 @@ public class MeetingConsole {
         fileRow.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 8, 4, 8));
 
         editorStatus = new JLabel(" ");
-        cbGrammar = themedCheck("Fix grammar");
-        cbCompact = themedCheck("Make compact");
-        cbDetailed = themedCheck("Make detailed");
-        cbProfessional = themedCheck("Professional");
-        cbBullets = themedCheck("Bullet points");
-        cbEditorSummary = themedCheck("Meeting summary");
-        cbEditorSummary.setToolTipText("Turn the text into a detailed meeting summary with action points");
-        cbGrammar.setSelected(true);
+        editorChecks = new OptionChecks();
         editorInstructions = new javax.swing.JTextField(18);
-        // Row 1: the editing options.
-        JPanel options = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
-        for (var cb : java.util.List.of(cbGrammar, cbCompact, cbDetailed, cbProfessional, cbBullets, cbEditorSummary)) {
-            options.add(cb);
-        }
-        // Row 2: every communication style as a checkbox (combinable).
-        JPanel styleRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
-        styleRow.add(themedLabel("Styles:"));
-        for (var style : com.aiassist.draft.StyleRewriteService.Style.values()) {
-            var check = themedCheck(style.display());
-            check.putClientProperty("style", style);
-            editorStyleChecks.add(check);
-            styleRow.add(check);
-        }
-        // Row 3: free-form instructions.
         JPanel instrRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
         instrRow.add(themedLabel("Instructions:"));
         instrRow.add(editorInstructions);
         JPanel optionStack = new JPanel();
         optionStack.setLayout(new javax.swing.BoxLayout(optionStack, javax.swing.BoxLayout.Y_AXIS));
-        optionStack.add(options);
-        optionStack.add(styleRow);
+        optionStack.add(editorChecks.panel);
         optionStack.add(instrRow);
 
-        JButton applyButton = new JButton("Apply");
-        applyButton.setToolTipText("Apply every checked option and style plus the instructions to the text");
-        applyButton.addActionListener(e -> applyEditorOptions());
+        JButton clearButton = new JButton("Clear");
+        clearButton.setToolTipText("Clear the text and unselect all options");
+        clearButton.addActionListener(e -> clearEditor());
         JButton downloadButton = new JButton("Download");
-        downloadButton.setToolTipText("Save the corrected content to your Desktop with the same file name and format");
+        downloadButton.setToolTipText("Save the result to your Desktop with the same file name and format");
         downloadButton.addActionListener(e -> downloadEditorFile());
-        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        actions.add(applyButton);
+        JButton applyButton = new JButton("Apply");
+        applyButton.setToolTipText("Apply the checked options and instructions to the text");
+        applyButton.addActionListener(e -> applyEditorOptions());
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));
+        actions.add(clearButton);
         actions.add(downloadButton);
+        actions.add(applyButton);
 
         JPanel south = new JPanel(new BorderLayout());
         south.add(optionStack, BorderLayout.NORTH);
         south.add(editorStatus, BorderLayout.CENTER);
         south.add(actions, BorderLayout.EAST);
         south.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 8, 4, 8));
-        editorStyleRow = styleRow;
         editorInstrRow = instrRow;
         editorOptionStack = optionStack;
 
@@ -514,8 +486,15 @@ public class MeetingConsole {
         editorFileRow = fileRow;
         editorActionsRow = actions;
         editorSouthRow = south;
-        editorOptionsRow = options;
         return editorPanel;
+    }
+
+    private void clearEditor() {
+        editorArea.setText("");
+        filePathField.setText("");
+        editorInstructions.setText("");
+        editorChecks.clear();
+        setEditorStatus(" ", false);
     }
 
     private void applyEditorOptions() {
@@ -524,20 +503,11 @@ public class MeetingConsole {
             setEditorStatus("Load a file or paste some text first.", true);
             return;
         }
-        boolean summary = cbEditorSummary.isSelected();
-        var styles = editorStyleChecks.stream()
-                .filter(javax.swing.AbstractButton::isSelected)
-                .map(cb -> (com.aiassist.draft.StyleRewriteService.Style) cb.getClientProperty("style"))
-                .toList();
+        boolean summary = editorChecks.summary.isSelected();
         setEditorStatus(summary ? "Summarizing…" : "Applying…", false);
         new Thread(() -> {
             try {
-                String result = summary
-                        ? styleRewriteService.summarizeMeeting(text, editorInstructions.getText())
-                        : styleRewriteService.applyEditor(text,
-                                cbGrammar.isSelected(), cbCompact.isSelected(), cbDetailed.isSelected(),
-                                cbProfessional.isSelected(), cbBullets.isSelected(), styles,
-                                editorInstructions.getText());
+                String result = runOptions(editorChecks, text, editorInstructions.getText());
                 String llm = "  [LLM: " + styleRewriteService.llmReport() + "]";
                 SwingUtilities.invokeLater(() -> {
                     editorArea.setText(result);
@@ -585,6 +555,63 @@ public class MeetingConsole {
         check.setOpaque(true);
         themedChecks.add(check);
         return check;
+    }
+
+    /**
+     * The rewrite options shared by the Editor and Compose tabs: the editing
+     * toggles, the communication styles, and Summary — all in one panel, laid
+     * out in a tidy grid and sorted alphabetically.
+     */
+    private final class OptionChecks {
+        final JPanel panel = new JPanel(new java.awt.GridLayout(0, 4, 12, 2));
+        final javax.swing.JCheckBox grammar = themedCheck("Fix grammar");
+        final javax.swing.JCheckBox compact = themedCheck("Compact");
+        final javax.swing.JCheckBox detailed = themedCheck("Detailed");
+        final javax.swing.JCheckBox professional = themedCheck("Professional");
+        final javax.swing.JCheckBox bullets = themedCheck("Bullet points");
+        final javax.swing.JCheckBox summary = themedCheck("Summary");
+        final java.util.List<javax.swing.JCheckBox> styles = new java.util.ArrayList<>();
+
+        OptionChecks() {
+            summary.setToolTipText("Summarise the text as an overview, key points and action items");
+            java.util.List<javax.swing.JCheckBox> all = new java.util.ArrayList<>(java.util.List.of(
+                    grammar, compact, detailed, professional, bullets, summary));
+            for (var style : com.aiassist.draft.StyleRewriteService.Style.values()) {
+                var cb = themedCheck(style.display());
+                cb.putClientProperty("style", style);
+                styles.add(cb);
+                all.add(cb);
+            }
+            all.sort(java.util.Comparator.comparing(
+                    javax.swing.AbstractButton::getText, String.CASE_INSENSITIVE_ORDER));
+            all.forEach(panel::add);
+        }
+
+        java.util.List<com.aiassist.draft.StyleRewriteService.Style> selectedStyles() {
+            return styles.stream().filter(javax.swing.AbstractButton::isSelected)
+                    .map(cb -> (com.aiassist.draft.StyleRewriteService.Style) cb.getClientProperty("style"))
+                    .toList();
+        }
+
+        void clear() {
+            grammar.setSelected(false);
+            compact.setSelected(false);
+            detailed.setSelected(false);
+            professional.setSelected(false);
+            bullets.setSelected(false);
+            summary.setSelected(false);
+            styles.forEach(cb -> cb.setSelected(false));
+        }
+    }
+
+    /** Runs the chosen options over the text: Summary, else the editing pipeline. */
+    private String runOptions(OptionChecks o, String text, String instructions) {
+        if (o.summary.isSelected()) {
+            return styleRewriteService.summarizeMeeting(text, instructions);
+        }
+        return styleRewriteService.applyEditor(text, o.grammar.isSelected(), o.compact.isSelected(),
+                o.detailed.isSelected(), o.professional.isSelected(), o.bullets.isSelected(),
+                o.selectedStyles(), instructions);
     }
 
     private JLabel themedLabel(String text) {
@@ -646,32 +673,35 @@ public class MeetingConsole {
         composeResult = multiLineArea();
         composeFeed = multiLineArea();
 
-        // One checkbox per communication style; several can combine.
-        JPanel styleChecks = new JPanel(new java.awt.GridLayout(0, 5, 4, 0));
-        for (var style : com.aiassist.draft.StyleRewriteService.Style.values()) {
-            var check = themedCheck(style.display());
-            check.putClientProperty("style", style);
-            styleCheckboxes.add(check);
-            styleChecks.add(check);
-        }
-        cbComposeSummary = themedCheck("Meeting summary");
-        cbComposeSummary.setToolTipText("Turn your content into a detailed meeting summary with action points");
+        // The same consolidated, sorted options as the Editor tab.
+        composeChecks = new OptionChecks();
         composeInstructions = new javax.swing.JTextField(18);
+        JPanel instrRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        instrRow.add(themedLabel("Instructions:"));
+        instrRow.add(composeInstructions);
+        JPanel optionStack = new JPanel();
+        optionStack.setLayout(new javax.swing.BoxLayout(optionStack, javax.swing.BoxLayout.Y_AXIS));
+        optionStack.add(composeChecks.panel);
+        optionStack.add(instrRow);
+
+        JButton clearButton = new JButton("Clear");
+        clearButton.setToolTipText("Clear both boxes and unselect all options");
+        clearButton.addActionListener(e -> clearCompose());
         JButton applyButton = new JButton("Apply");
-        applyButton.setToolTipText("Apply every checked style and the instructions to your content");
+        applyButton.setToolTipText("Apply the checked options and instructions to your content");
         applyButton.addActionListener(e -> composeApply());
         composeStatus = new JLabel(" ");
-
-        JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
-        controls.add(cbComposeSummary);
-        controls.add(themedLabel("Instructions:"));
-        controls.add(composeInstructions);
+        JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));
+        controls.add(clearButton);
         controls.add(applyButton);
+
         JPanel south = new JPanel(new BorderLayout());
-        south.add(styleChecks, BorderLayout.NORTH);
+        south.add(optionStack, BorderLayout.NORTH);
         south.add(composeStatus, BorderLayout.CENTER);
         south.add(controls, BorderLayout.EAST);
         south.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 8, 4, 8));
+        composeInstrRow = instrRow;
+        composeOptionStack = optionStack;
 
         // Your content on TOP, the modified result below it.
         JPanel top = new JPanel(new BorderLayout());
@@ -694,8 +724,15 @@ public class MeetingConsole {
         composeBottomPanel = bottom;
         composeSouthPanel = south;
         composeControlsPanel = controls;
-        composeStylesPanel = styleChecks;
         return composePanel;
+    }
+
+    private void clearCompose() {
+        composeFeed.setText("");
+        composeResult.setText("");
+        composeInstructions.setText("");
+        composeChecks.clear();
+        composeStatus.setText(" ");
     }
 
     private javax.swing.JTextArea multiLineArea() {
@@ -748,11 +785,18 @@ public class MeetingConsole {
         JPanel ratingRow = leftRow(themedLabel("Rating:"), ratingCombo);
         panel.add(ratingRow);
 
+        JButton feedbackClear = new JButton("Clear");
+        feedbackClear.setToolTipText("Clear the feedback box and reset the rating");
+        feedbackClear.addActionListener(e -> {
+            feedbackArea.setText("");
+            ratingCombo.setSelectedIndex(0);
+            feedbackStatus.setText(" ");
+        });
         feedbackSubmit = new JButton("Submit");
         feedbackSubmit.addActionListener(e -> submitFeedback());
         feedbackStatus = new JLabel(" ");
         themedLabels.add(feedbackStatus);
-        panel.add(leftRow(feedbackSubmit, feedbackStatus));
+        panel.add(leftRow(feedbackClear, feedbackSubmit, feedbackStatus));
 
         helpPanel = panel;
         JPanel wrap = new JPanel(new BorderLayout());
@@ -995,12 +1039,12 @@ public class MeetingConsole {
                 + "<h3 style='color:" + heading + ";'>Editor tab</h3>"
                 + "<p>Paste text or press <b>Load</b> to open a file. Tick any of <b>Fix grammar</b>, "
                 + "<b>Make compact</b>, <b>Make detailed</b>, <b>Professional</b>, <b>Bullet points</b>, "
-                + "the communication styles, or <b>Meeting summary</b>, optionally type free-form "
-                + "<b>Instructions</b>, then press <b>Apply</b>. <b>Meeting summary</b> turns the text into "
+                + "the communication styles, or <b>Summary</b>, optionally type free-form "
+                + "<b>Instructions</b>, then press <b>Apply</b>. <b>Summary</b> turns the text into "
                 + "a detailed summary with action points. <b>Download</b> saves the result to your Desktop.</p>"
 
                 + "<h3 style='color:" + heading + ";'>Compose tab</h3>"
-                + "<p>Type or paste into the top box, tick communication styles (or <b>Meeting summary</b>), "
+                + "<p>Type or paste into the top box, tick communication styles (or <b>Summary</b>), "
                 + "add optional <b>Instructions</b>, and press <b>Apply</b>; the rewritten text appears in "
                 + "the Modified box below. Free-form instructions and the richest summaries and edits use a "
                 + "local LLM when you drop one in: put a single GGUF instruct model (see the models folder's "
@@ -1054,17 +1098,11 @@ public class MeetingConsole {
             composeStatus.setText("Type or paste content into the top box first.");
             return;
         }
-        boolean summary = cbComposeSummary.isSelected();
-        var styles = styleCheckboxes.stream()
-                .filter(javax.swing.AbstractButton::isSelected)
-                .map(cb -> (com.aiassist.draft.StyleRewriteService.Style) cb.getClientProperty("style"))
-                .toList();
+        boolean summary = composeChecks.summary.isSelected();
         composeStatus.setText(summary ? "Summarizing…" : "Applying…");
         new Thread(() -> {
             try {
-                String result = summary
-                        ? styleRewriteService.summarizeMeeting(feed, composeInstructions.getText())
-                        : styleRewriteService.applyStyles(feed, styles, composeInstructions.getText());
+                String result = runOptions(composeChecks, feed, composeInstructions.getText());
                 String llm = "  [LLM: " + styleRewriteService.llmReport() + "]";
                 SwingUtilities.invokeLater(() -> {
                     composeResult.setText(result);
@@ -1331,10 +1369,11 @@ public class MeetingConsole {
         titleField.setForeground(textFg);
         titleField.setCaretColor(textFg);
         for (JPanel panel : java.util.List.of(topPanel, bottomPanel, buttonsPanel, controlsPanel,
-                editorPanel, editorFileRow, editorActionsRow, editorSouthRow, editorOptionsRow,
-                editorStyleRow, editorInstrRow, editorOptionStack,
+                editorPanel, editorFileRow, editorActionsRow, editorSouthRow,
+                editorChecks.panel, editorInstrRow, editorOptionStack,
                 composePanel, composeTopPanel, composeBottomPanel, composeSouthPanel,
-                composeControlsPanel, composeStylesPanel, indicatorPanel, southWrapPanel)) {
+                composeChecks.panel, composeInstrRow, composeOptionStack,
+                composeControlsPanel, indicatorPanel, southWrapPanel)) {
             // Aqua only honors panel backgrounds when the panel is opaque.
             panel.setOpaque(true);
             panel.setBackground(panelBg);

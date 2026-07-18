@@ -96,23 +96,21 @@ pick a file with the native file dialog (Finder on macOS, Explorer on
 Windows), then apply an offline transformation — all deterministic and
 identical on both platforms:
 
-Tick any combination of **Fix grammar**, **Make compact**, **Make detailed**,
-**Professional**, **Bullet points**, and any of the 13 communication-style
-checkboxes, optionally type free-form **Instructions** (these need the
-optional local Ollama), and press **Apply** — every checked option and the
-instructions are applied together and the corrected content replaces the text (document view with vertical and
-horizontal scroll bars). **Download** saves the result to your **Desktop**
-with the same file name and format (a "-edited" suffix is added if the name
-is taken).
+Tick any combination of the options — **Fix grammar**, **Compact**,
+**Detailed**, **Professional**, **Bullet points**, **Summary**, and the
+communication styles — shown as one alphabetically sorted grid, optionally
+type free-form **Instructions**, and press **Apply**. Every checked option and
+the instructions are applied together and the result replaces the text.
+**Clear** empties the text and unticks every option; **Download** saves the
+result to your **Desktop** with the same file name and format (a "-edited"
+suffix is added if the name is taken).
 
-Tick **Meeting summary** to turn the text into a **detailed summary with
-action points** instead: press **Apply** and the content (a transcript,
-pasted notes, anything) is rewritten as meeting notes — an overview, key
-points, and an **Action items** list. With the optional local Ollama enabled
-the summary is written by the LLM (and honours your **Instructions**);
-without it, the built-in drafter produces the structured notes offline. When
-**Meeting summary** is checked it takes over the Apply button, so the other
-editing options are skipped for that run.
+Tick **Summary** to turn the text into a **detailed summary with action
+points** instead: press **Apply** and the content (a transcript, pasted notes,
+anything) becomes an overview, key points, and an **Action items** list.
+The Editor and Compose tabs offer the **same** options. Free-form instructions
+and the best rewrites use the local LLM when a model is installed (see below);
+without one, the built-in offline drafter is used.
 
 While a meeting is running, the Editor and
 Compose tabs hide the meeting controls and show a blinking
@@ -121,18 +119,16 @@ restores the title row, status, and buttons.
 
 ### Compose tab
 
-Type or paste into the **top** box (*Your content*), tick any combination
-of the 13 style checkboxes — Formal, Concise, Consultative, Diplomatic,
-Commanding, Persuasive, Empathetic, Transparent, Conversational, Casual,
-Direct, Analytical, Assertive — optionally add **Instructions**, and press
-**Apply**: the grammar-corrected result appears in the bottom **Modified**
-box (drag the divider to resize). Without a model, drafting is deterministic
-and offline: each style combines contraction handling, hedging, formal/casual
-word choice, framing lines, and structure. For real LLM-quality rewriting —
-and to make the free-form **Instructions** work — drop in a local model (see
-below).
+Type or paste into the **top** box (*Your content*), tick any of the **same
+consolidated, sorted options as the Editor tab** (editing toggles, the
+communication styles, and **Summary**), optionally add **Instructions**, and
+press **Apply**: the result appears in the bottom **Modified** box (drag the
+divider to resize). **Clear** empties both boxes and unticks every option.
+Without a model, drafting is deterministic and offline; for real LLM-quality
+rewriting — and to make the free-form **Instructions** work — drop in a local
+model (see below).
 
-Tick **Meeting summary** (next to Instructions) and Apply turns your content
+Tick **Summary** and Apply turns your content
 into a **detailed summary with action points** — the same overview / key
 points / **Action items** notes as the Editor tab, written by the local LLM
 when a model is installed, or by the built-in drafter offline.
