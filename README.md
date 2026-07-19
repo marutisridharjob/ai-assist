@@ -67,10 +67,10 @@ JDK — not a browser):
 - **Apply** — summarize the meeting *so far* without ending it: a detailed
   summary with action points is drafted from everything captured up to this
   point and shown in a **Summary** pane below the live transcript (drag the
-  divider to resize). This is the *same* summary the **Meeting summary**
-  checkbox produces on the Editor and Compose tabs — Apply behaves identically
-  on every tab, using the local Ollama LLM when enabled and the built-in
-  drafter otherwise. Press it as often as you like; the running transcript
+  divider to resize). This is the *same* summary the **Summary** option
+  produces on the Assist tab — Apply behaves identically on every tab, using
+  the local LLM when a model is installed and the built-in drafter otherwise.
+  Press it as often as you like; the running transcript
   keeps flowing above it. Nothing is saved — this is a live preview,
 - **Stop** — the meeting is complete: capture stops **immediately** and the app
   is instantly ready for another meeting. The transcription (Whisper), the
@@ -89,49 +89,30 @@ JDK — not a browser):
 - the **close button in the top corner** — if a meeting is still running you
   are asked whether to save before closing.
 
-### Editor tab
+### Assist tab
 
-A second tab next to the meeting view: paste any text, or press **Load** to
-pick a file with the native file dialog (Finder on macOS, Explorer on
-Windows), then apply an offline transformation — all deterministic and
-identical on both platforms:
+A second tab next to the meeting view (it merges the old Editor and Compose):
+type or paste text into the **top** box, or press **Load** to pick a file with
+the native file dialog (Finder on macOS, Explorer on Windows). Tick any of the
+options — **Fix grammar**, **Compact**, **Detailed**, **Professional**,
+**Bullet points**, **Summary**, and the communication styles — shown as one
+alphabetically sorted grid, optionally type free-form **Instructions**, and
+press **Apply**. The rewritten (or summarised) result appears in the **bottom**
+box; drag the divider to resize.
 
-Tick any combination of the options — **Fix grammar**, **Compact**,
-**Detailed**, **Professional**, **Bullet points**, **Summary**, and the
-communication styles — shown as one alphabetically sorted grid, optionally
-type free-form **Instructions**, and press **Apply**. Every checked option and
-the instructions are applied together and the result replaces the text.
-**Clear** empties the text and unticks every option; **Download** saves the
-result to your **Desktop** with the same file name and format (a "-edited"
-suffix is added if the name is taken).
+- **Summary** turns the content (a transcript, pasted notes, anything) into an
+  overview, key points, and an **Action items** list.
+- **Download** saves the result to your **Desktop** (the loaded file's name is
+  reused, with a "-edited" suffix if it is taken).
+- **Clear** empties both boxes and unticks every option.
 
-Tick **Summary** to turn the text into a **detailed summary with action
-points** instead: press **Apply** and the content (a transcript, pasted notes,
-anything) becomes an overview, key points, and an **Action items** list.
-The Editor and Compose tabs offer the **same** options. Free-form instructions
-and the best rewrites use the local LLM when a model is installed (see below);
-without one, the built-in offline drafter is used.
+The rewriting uses the local LLM when a model is installed (see below); without
+one, the built-in offline drafter is used. All processing — Apply, Load, and
+Download — runs in the background so the window stays responsive.
 
-While a meeting is running, the Editor and
-Compose tabs hide the meeting controls and show a blinking
-**● MEETING IN PROGRESS** banner instead; switching back to the Meeting tab
-restores the title row, status, and buttons.
-
-### Compose tab
-
-Type or paste into the **top** box (*Your content*), tick any of the **same
-consolidated, sorted options as the Editor tab** (editing toggles, the
-communication styles, and **Summary**), optionally add **Instructions**, and
-press **Apply**: the result appears in the bottom **Modified** box (drag the
-divider to resize). **Clear** empties both boxes and unticks every option.
-Without a model, drafting is deterministic and offline; for real LLM-quality
-rewriting — and to make the free-form **Instructions** work — drop in a local
-model (see below).
-
-Tick **Summary** and Apply turns your content
-into a **detailed summary with action points** — the same overview / key
-points / **Action items** notes as the Editor tab, written by the local LLM
-when a model is installed, or by the built-in drafter offline.
+While a meeting is running, the Assist tab hides the meeting controls and shows
+a blinking **● MEETING IN PROGRESS** banner instead; switching back to the
+Meeting tab restores the title row, status, and buttons.
 
 ### Optional: a local LLM (better summaries and editing)
 

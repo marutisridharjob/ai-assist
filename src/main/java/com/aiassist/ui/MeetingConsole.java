@@ -80,22 +80,13 @@ public class MeetingConsole {
     private JLabel extractionLabel;
     private boolean modelsAvailable = true;
     private javax.swing.JTabbedPane tabs;
-    private JTextArea editorArea;
     private javax.swing.JTextField filePathField;
-    private JLabel editorStatus;
-    private JPanel editorPanel;
-    private JPanel editorFileRow;
-    private JPanel editorActionsRow;
-    private JPanel editorSouthRow;
+    private JPanel editorFileRow; // the Assist tab's file row
     private JTextArea composeResult;
     private JTextArea composeFeed;
     private JLabel composeStatus;
     private javax.swing.JTextField composeInstructions;
-    private javax.swing.JTextField editorInstructions;
-    private OptionChecks editorChecks;
     private OptionChecks composeChecks;
-    private JPanel editorInstrRow;
-    private JPanel editorOptionStack;
     private JPanel composeInstrRow;
     private JPanel composeOptionStack;
     private final java.util.List<javax.swing.JCheckBox> themedChecks = new java.util.ArrayList<>();
@@ -374,8 +365,7 @@ public class MeetingConsole {
         frame.add(topStackPanel, BorderLayout.NORTH);
         tabs = new javax.swing.JTabbedPane();
         tabs.addTab("Meeting", meetingSplit);
-        tabs.addTab("Editor", buildEditorTab());
-        tabs.addTab("Compose", buildComposeTab());
+        tabs.addTab("Assist", buildAssistTab());
         tabs.addTab("Help", buildHelpTab());
         frame.add(tabs, BorderLayout.CENTER);
 
@@ -418,136 +408,38 @@ public class MeetingConsole {
             java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
                     .withZone(java.time.ZoneId.systemDefault());
 
-    /**
-     * Editor tab: paste content (or load a file by path), then apply an
-     * offline transformation — grammar tidy, compact, or detailed rewrite.
-     * Save writes back to the given path, keeping a .bak of the original.
-     */
-    private JPanel buildEditorTab() {
-        editorArea = new JTextArea();
-        editorArea.setLineWrap(true);
-        editorArea.setWrapStyleWord(true);
-        editorArea.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
-        editorArea.setMargin(new java.awt.Insets(8, 8, 8, 8));
-
-        filePathField = new javax.swing.JTextField();
-        filePathField.setToolTipText("Optional: full path of a text file to load and save (e.g. C:\\notes.txt or /Users/me/notes.txt)");
-        JButton loadButton = new JButton("Load");
-        loadButton.addActionListener(e -> loadEditorFile());
-        JPanel fileRow = new JPanel(new BorderLayout(6, 0));
-        fileRow.add(themedLabel("File:"), BorderLayout.WEST);
-        fileRow.add(filePathField, BorderLayout.CENTER);
-        JPanel fileButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
-        fileButtons.add(loadButton);
-        fileRow.add(fileButtons, BorderLayout.EAST);
-        fileRow.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 8, 4, 8));
-
-        editorStatus = new JLabel(" ");
-        editorChecks = new OptionChecks();
-        editorInstructions = new javax.swing.JTextField(18);
-        JPanel instrRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
-        instrRow.add(themedLabel("Instructions:"));
-        instrRow.add(editorInstructions);
-        JPanel optionStack = new JPanel();
-        optionStack.setLayout(new javax.swing.BoxLayout(optionStack, javax.swing.BoxLayout.Y_AXIS));
-        optionStack.add(editorChecks.panel);
-        optionStack.add(instrRow);
-
-        JButton clearButton = new JButton("Clear");
-        clearButton.setToolTipText("Clear the text and unselect all options");
-        clearButton.addActionListener(e -> clearEditor());
-        JButton downloadButton = new JButton("Download");
-        downloadButton.setToolTipText("Save the result to your Desktop with the same file name and format");
-        downloadButton.addActionListener(e -> downloadEditorFile());
-        JButton applyButton = new JButton("Apply");
-        applyButton.setToolTipText("Apply the checked options and instructions to the text");
-        applyButton.addActionListener(e -> applyEditorOptions());
-        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));
-        actions.add(clearButton);
-        actions.add(downloadButton);
-        actions.add(applyButton);
-
-        JPanel south = new JPanel(new BorderLayout());
-        south.add(optionStack, BorderLayout.NORTH);
-        south.add(editorStatus, BorderLayout.CENTER);
-        south.add(actions, BorderLayout.EAST);
-        south.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 8, 4, 8));
-        editorInstrRow = instrRow;
-        editorOptionStack = optionStack;
-
-        editorPanel = new JPanel(new BorderLayout());
-        editorPanel.add(fileRow, BorderLayout.NORTH);
-        // Document-like view: no soft wrapping, real horizontal + vertical scroll bars.
-        editorArea.setLineWrap(false);
-        editorPanel.add(new JScrollPane(editorArea,
-                JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED),
-                BorderLayout.CENTER);
-        editorPanel.add(south, BorderLayout.SOUTH);
-        editorFileRow = fileRow;
-        editorActionsRow = actions;
-        editorSouthRow = south;
-        return editorPanel;
-    }
-
-    private void clearEditor() {
-        editorArea.setText("");
-        filePathField.setText("");
-        editorInstructions.setText("");
-        editorChecks.clear();
-        setEditorStatus(" ", false);
-    }
-
-    private void applyEditorOptions() {
-        String text = editorArea.getText();
-        if (text == null || text.isBlank()) {
-            setEditorStatus("Load a file or paste some text first.", true);
-            return;
-        }
-        boolean summary = editorChecks.summary.isSelected();
-        setEditorStatus(summary ? "Summarizing…" : "Applying…", false);
-        new Thread(() -> {
-            try {
-                String result = runOptions(editorChecks, text, editorInstructions.getText());
-                String llm = "  [LLM: " + styleRewriteService.llmReport() + "]";
-                SwingUtilities.invokeLater(() -> {
-                    editorArea.setText(result);
-                    editorArea.setCaretPosition(0);
-                    setEditorStatus((summary ? "Summary ready." : "Applied.") + llm, false);
-                });
-            } catch (Exception ex) {
-                SwingUtilities.invokeLater(() ->
-                        setEditorStatus("Could not apply: " + ex.getMessage(), true));
-            }
-        }, "editor-apply").start();
-    }
-
-    /** Writes the corrected content to the Desktop, same name and format. */
-    private void downloadEditorFile() {
-        String content = editorArea.getText();
+    /** Writes the modified content to the Desktop, off the UI thread. */
+    private void downloadAssistFile() {
+        String content = composeResult.getText();
         if (content == null || content.isBlank()) {
-            setEditorStatus("Nothing to download yet.", true);
+            composeStatus.setText("Nothing to download yet — press Apply first.");
             return;
         }
-        try {
-            String sourcePath = filePathField.getText();
-            String fileName = sourcePath == null || sourcePath.isBlank()
-                    ? "edited.txt"
-                    : java.nio.file.Path.of(sourcePath.strip()).getFileName().toString();
-            java.nio.file.Path desktop = java.nio.file.Path.of(
-                    System.getProperty("user.home"), "Desktop");
-            java.nio.file.Files.createDirectories(desktop);
-            java.nio.file.Path target = desktop.resolve(fileName);
-            if (java.nio.file.Files.exists(target)) {
-                int dot = fileName.lastIndexOf('.');
-                target = desktop.resolve(dot > 0
-                        ? fileName.substring(0, dot) + "-edited" + fileName.substring(dot)
-                        : fileName + "-edited");
+        String sourcePath = filePathField.getText();
+        composeStatus.setText("Saving…");
+        notesExecutor.submit(() -> {
+            try {
+                String fileName = sourcePath == null || sourcePath.isBlank()
+                        ? "assist.txt"
+                        : java.nio.file.Path.of(sourcePath.strip()).getFileName().toString();
+                java.nio.file.Path desktop = java.nio.file.Path.of(
+                        System.getProperty("user.home"), "Desktop");
+                java.nio.file.Files.createDirectories(desktop);
+                java.nio.file.Path target = desktop.resolve(fileName);
+                if (java.nio.file.Files.exists(target)) {
+                    int dot = fileName.lastIndexOf('.');
+                    target = desktop.resolve(dot > 0
+                            ? fileName.substring(0, dot) + "-edited" + fileName.substring(dot)
+                            : fileName + "-edited");
+                }
+                java.nio.file.Files.writeString(target, content);
+                final java.nio.file.Path saved = target;
+                SwingUtilities.invokeLater(() -> composeStatus.setText("Downloaded to " + saved));
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() ->
+                        composeStatus.setText("Could not download: " + e.getMessage()));
             }
-            java.nio.file.Files.writeString(target, content);
-            setEditorStatus("Downloaded to " + target, false);
-        } catch (Exception e) {
-            setEditorStatus("Could not download: " + e.getMessage(), true);
-        }
+        });
     }
 
     private javax.swing.JCheckBox themedCheck(String text) {
@@ -642,38 +534,53 @@ public class MeetingConsole {
         return new java.io.File(dialog.getDirectory(), dialog.getFile()).getAbsolutePath();
     }
 
-    private void loadEditorFile() {
+    private void loadAssistFile() {
         String path = chooseFile(false);
         if (path == null) {
             return;
         }
         filePathField.setText(path);
-        try {
-            editorArea.setText(java.nio.file.Files.readString(java.nio.file.Path.of(path)));
-            editorArea.setCaretPosition(0);
-            setEditorStatus("Loaded " + path, false);
-        } catch (Exception e) {
-            setEditorStatus("Could not load: " + e.getMessage(), true);
-        }
-    }
-
-    private void setEditorStatus(String message, boolean error) {
-        editorStatus.setText(message);
-        editorStatus.setForeground(error
-                ? (darkMode ? new java.awt.Color(0xFF6B6B) : new java.awt.Color(0xB00020))
-                : (darkMode ? new java.awt.Color(0xC8C8C8) : java.awt.Color.DARK_GRAY));
+        composeStatus.setText("Loading…");
+        notesExecutor.submit(() -> {
+            try {
+                String text = java.nio.file.Files.readString(java.nio.file.Path.of(path));
+                SwingUtilities.invokeLater(() -> {
+                    composeFeed.setText(text);
+                    composeFeed.setCaretPosition(0);
+                    composeStatus.setText("Loaded " + path);
+                });
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() ->
+                        composeStatus.setText("Could not load: " + e.getMessage()));
+            }
+        });
     }
 
     /**
-     * Compose tab: paste content into the bottom box, pick a communication
-     * style, hit Draft — the styled, grammar-corrected result appears in the
-     * top box. The divider between the boxes is draggable.
+     * Assist tab (merges the old Editor and Compose): type or paste content —
+     * or Load a file — into the top box, tick options and/or write
+     * instructions, press Apply, and the rewritten/summarised result appears in
+     * the bottom box. Download saves that result. All processing runs off the
+     * UI thread. The divider between the boxes is draggable.
      */
-    private JPanel buildComposeTab() {
+    private JPanel buildAssistTab() {
         composeResult = multiLineArea();
         composeFeed = multiLineArea();
 
-        // The same consolidated, sorted options as the Editor tab.
+        // File row: optional load of a text file into the content box.
+        filePathField = new javax.swing.JTextField();
+        filePathField.setToolTipText("A text file to load; the file name is reused when you Download");
+        JButton loadButton = new JButton("Load");
+        loadButton.setToolTipText("Load a text file into the content box");
+        loadButton.addActionListener(e -> loadAssistFile());
+        JPanel fileRow = new JPanel(new BorderLayout(6, 0));
+        fileRow.add(themedLabel("File:"), BorderLayout.WEST);
+        fileRow.add(filePathField, BorderLayout.CENTER);
+        JPanel fileButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        fileButtons.add(loadButton);
+        fileRow.add(fileButtons, BorderLayout.EAST);
+        fileRow.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 8, 4, 8));
+
         composeChecks = new OptionChecks();
         composeInstructions = new javax.swing.JTextField(18);
         JPanel instrRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
@@ -687,12 +594,16 @@ public class MeetingConsole {
         JButton clearButton = new JButton("Clear");
         clearButton.setToolTipText("Clear both boxes and unselect all options");
         clearButton.addActionListener(e -> clearCompose());
+        JButton downloadButton = new JButton("Download");
+        downloadButton.setToolTipText("Save the result to your Desktop");
+        downloadButton.addActionListener(e -> downloadAssistFile());
         JButton applyButton = new JButton("Apply");
         applyButton.setToolTipText("Apply the checked options and instructions to your content");
         applyButton.addActionListener(e -> composeApply());
         composeStatus = new JLabel(" ");
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));
         controls.add(clearButton);
+        controls.add(downloadButton);
         controls.add(applyButton);
 
         JPanel south = new JPanel(new BorderLayout());
@@ -705,12 +616,12 @@ public class MeetingConsole {
 
         // Your content on TOP, the modified result below it.
         JPanel top = new JPanel(new BorderLayout());
-        top.add(themedLabel("  Your content (type or paste here):"), BorderLayout.NORTH);
+        top.add(themedLabel("  Your content (type, paste, or Load a file):"), BorderLayout.NORTH);
         top.add(new JScrollPane(composeFeed,
                 JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER),
                 BorderLayout.CENTER);
         JPanel bottom = new JPanel(new BorderLayout());
-        bottom.add(themedLabel("  Modified:"), BorderLayout.NORTH);
+        bottom.add(themedLabel("  Result:"), BorderLayout.NORTH);
         bottom.add(new JScrollPane(composeResult,
                 JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER),
                 BorderLayout.CENTER);
@@ -718,12 +629,14 @@ public class MeetingConsole {
         composeSplit.setResizeWeight(0.5);
 
         composePanel = new JPanel(new BorderLayout());
+        composePanel.add(fileRow, BorderLayout.NORTH);
         composePanel.add(composeSplit, BorderLayout.CENTER);
         composePanel.add(south, BorderLayout.SOUTH);
         composeTopPanel = top;
         composeBottomPanel = bottom;
         composeSouthPanel = south;
         composeControlsPanel = controls;
+        editorFileRow = fileRow;
         return composePanel;
     }
 
@@ -1036,22 +949,18 @@ public class MeetingConsole {
                 + "transcript as a timestamped rich-text file on your Desktop. <b>Clear</b> empties the "
                 + "box. Pick the speech model from the dropdown; the choice is remembered.</p>"
 
-                + "<h3 style='color:" + heading + ";'>Editor tab</h3>"
-                + "<p>Paste text or press <b>Load</b> to open a file. Tick any of <b>Fix grammar</b>, "
-                + "<b>Make compact</b>, <b>Make detailed</b>, <b>Professional</b>, <b>Bullet points</b>, "
-                + "the communication styles, or <b>Summary</b>, optionally type free-form "
-                + "<b>Instructions</b>, then press <b>Apply</b>. <b>Summary</b> turns the text into "
-                + "a detailed summary with action points. <b>Download</b> saves the result to your Desktop.</p>"
-
-                + "<h3 style='color:" + heading + ";'>Compose tab</h3>"
-                + "<p>Type or paste into the top box, tick communication styles (or <b>Summary</b>), "
-                + "add optional <b>Instructions</b>, and press <b>Apply</b>; the rewritten text appears in "
-                + "the Modified box below. Free-form instructions and the richest summaries and edits use a "
-                + "local LLM when you drop one in: put a single GGUF instruct model (see the models folder's "
-                + "notes) next to the jar and the summary, Editor and Compose run through it — in-process, "
+                + "<h3 style='color:" + heading + ";'>Assist tab</h3>"
+                + "<p>Type or paste into the top box, or press <b>Load</b> to open a text file. Tick any of "
+                + "the options — <b>Fix grammar</b>, <b>Compact</b>, <b>Detailed</b>, <b>Professional</b>, "
+                + "<b>Bullet points</b>, <b>Summary</b>, and the communication styles — optionally type "
+                + "free-form <b>Instructions</b>, then press <b>Apply</b>; the result appears in the bottom "
+                + "box. <b>Summary</b> turns the text into an overview, key points and action items. "
+                + "<b>Download</b> saves the result to your Desktop and <b>Clear</b> resets everything. "
+                + "The rewriting uses a local LLM when you drop one in: put a single GGUF instruct model "
+                + "(see the models folder's notes) next to the jar and Assist runs through it — in-process, "
                 + "offline, no server. Without a model (and without an optional local "
                 + "<a href='https://ollama.com'>Ollama</a>), everything runs on the built-in offline rules "
-                + "and drafter.</p>"
+                + "and drafter. All processing runs in the background.</p>"
 
                 + "<h3 style='color:" + heading + ";'>Vosk — live speech recognition</h3>"
                 + "<p>Live captions are produced by <b>Vosk</b>, a lightweight offline speech-to-text engine. "
@@ -1369,8 +1278,7 @@ public class MeetingConsole {
         titleField.setForeground(textFg);
         titleField.setCaretColor(textFg);
         for (JPanel panel : java.util.List.of(topPanel, bottomPanel, buttonsPanel, controlsPanel,
-                editorPanel, editorFileRow, editorActionsRow, editorSouthRow,
-                editorChecks.panel, editorInstrRow, editorOptionStack,
+                editorFileRow,
                 composePanel, composeTopPanel, composeBottomPanel, composeSouthPanel,
                 composeChecks.panel, composeInstrRow, composeOptionStack,
                 composeControlsPanel, indicatorPanel, southWrapPanel)) {
@@ -1393,11 +1301,9 @@ public class MeetingConsole {
             panel.setOpaque(true);
             panel.setBackground(panelBg);
         }
-        for (javax.swing.JTextField field : java.util.List.of(editorInstructions, composeInstructions)) {
-            field.setBackground(textBg);
-            field.setForeground(textFg);
-            field.setCaretColor(textFg);
-        }
+        composeInstructions.setBackground(textBg);
+        composeInstructions.setForeground(textFg);
+        composeInstructions.setCaretColor(textFg);
         // Every static label and checkbox follows the theme (Aqua does not
         // restyle them by itself, which left labels dark-on-dark on macOS).
         for (JLabel label : themedLabels) {
@@ -1413,13 +1319,9 @@ public class MeetingConsole {
         modelCombo.setForeground(textFg);
         tabs.setBackground(panelBg);
         tabs.setForeground(textFg);
-        editorArea.setBackground(textBg);
-        editorArea.setForeground(textFg);
-        editorArea.setCaretColor(textFg);
         filePathField.setBackground(textBg);
         filePathField.setForeground(textFg);
         filePathField.setCaretColor(textFg);
-        setEditorStatus(editorStatus.getText(), false);
         frame.getContentPane().setBackground(panelBg);
         titleLabel.setForeground(textFg);
         captionLabel.setForeground(muted);
