@@ -228,7 +228,7 @@ public class MeetingConsole {
         summaryArea.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
         summaryArea.setMargin(new java.awt.Insets(8, 8, 8, 8));
         JPanel summaryPane = new JPanel(new BorderLayout());
-        summaryPane.add(new JLabel("  Summary (press Apply):"), BorderLayout.NORTH);
+        summaryPane.add(themedLabel("  Summary (press Apply):"), BorderLayout.NORTH);
         summaryPane.add(new JScrollPane(summaryArea,
                 JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER),
                 BorderLayout.CENTER);
@@ -389,10 +389,10 @@ public class MeetingConsole {
             frame.repaint();
         });
         frame.add(southWrap, BorderLayout.SOUTH);
-        frame.setSize(760, 540);
-        frame.setMinimumSize(new java.awt.Dimension(520, 380));
+        frame.setSize(940, 640);
+        frame.setMinimumSize(new java.awt.Dimension(720, 520));
         frame.setResizable(true);
-        frame.setLocationByPlatform(true);
+        frame.setLocationRelativeTo(null); // center on screen instead of the corner
 
         darkModeToggle.setSelected(prefs.getBoolean("darkMode", false));
         applyTheme(darkModeToggle.isSelected());
@@ -956,25 +956,17 @@ public class MeetingConsole {
                 + "free-form <b>Instructions</b>, then press <b>Apply</b>; the result appears in the bottom "
                 + "box. <b>Summary</b> turns the text into an overview, key points and action items. "
                 + "<b>Download</b> saves the result to your Desktop and <b>Clear</b> resets everything. "
-                + "The rewriting uses a local LLM when you drop one in: put a single GGUF instruct model "
-                + "(see the models folder's notes) next to the jar and Assist runs through it — in-process, "
-                + "offline, no server. Without a model (and without an optional local "
-                + "<a href='https://ollama.com'>Ollama</a>), everything runs on the built-in offline rules "
-                + "and drafter. All processing runs in the background.</p>"
+                + "When an on-device AI model is present in the <code>models</code> folder, the rewriting "
+                + "runs through it; otherwise it falls back to the built-in offline rules. Either way "
+                + "everything runs locally — nothing leaves your machine — and all processing happens in "
+                + "the background.</p>"
 
-                + "<h3 style='color:" + heading + ";'>Vosk — live speech recognition</h3>"
-                + "<p>Live captions are produced by <b>Vosk</b>, a lightweight offline speech-to-text engine. "
-                + "Drop a Vosk model (a folder or its .zip) next to the app and it is loaded automatically. "
-                + "Models and details: <a href='https://alphacephei.com/vosk/'>alphacephei.com/vosk</a> and "
-                + "<a href='https://alphacephei.com/vosk/models'>alphacephei.com/vosk/models</a>.</p>"
-
-                + "<h3 style='color:" + heading + ";'>ggml / whisper.cpp — accurate transcript</h3>"
-                + "<p>On <b>Stop</b>, the recorded audio can be re-transcribed by <b>Whisper</b> "
-                + "(whisper.cpp) for an accurate, complete-conversation transcript. It needs one "
-                + "<code>ggml-*.bin</code> model in the app folder (see the <code>models/</code> folder's "
-                + "download scripts). About the format and models: "
-                + "<a href='https://github.com/ggerganov/whisper.cpp'>github.com/ggerganov/whisper.cpp</a>. "
-                + "Everything runs 100% locally — no audio ever leaves the machine.</p>"
+                + "<h3 style='color:" + heading + ";'>Models</h3>"
+                + "<p>ai-assist ships with no models. Place your speech, transcription and (optional) AI "
+                + "model files in the <code>models</code> folder next to the app; they are picked up "
+                + "automatically. Live captions and the accurate transcript need a speech model; the richer "
+                + "summaries and rewrites need an AI model. Everything runs 100% offline — no audio or text "
+                + "ever leaves the machine.</p>"
 
                 + "<h3 style='color:" + heading + ";'>Open-source licenses</h3>"
                 + "<ul>"
@@ -989,13 +981,6 @@ public class MeetingConsole {
                 + "<li>Java runtime (OpenJDK) — GPLv2 with Classpath Exception</li>"
                 + "<li>ai-assist application code — open source</li>"
                 + "</ul>"
-
-                + "<h3 style='color:" + heading + ";'>Technology stack</h3>"
-                + "<p>Java 21 &amp; Swing (desktop UI, no browser), Spring Boot (app wiring and an optional "
-                + "localhost REST API), Vosk (live captions), Whisper/whisper.cpp via whisper-jni (final "
-                + "transcript), and an optional in-process llama.cpp LLM (a dropped-in GGUF model, via "
-                + "de.kherud:llama) for richer summaries and edits. All processing is offline; the internet "
-                + "is used only to email this feedback.</p>"
 
                 + "<p style='color:" + link + ";'>Tip: use the Search box above to jump to any word on this page.</p>"
                 + "</body></html>";

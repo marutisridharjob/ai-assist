@@ -10,7 +10,6 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
 /**
@@ -107,20 +106,52 @@ public class TemplateContentDrafter implements ContentDrafter {
         for (String raw : SENTENCE_SPLIT.split(transcript)) {
             String s = raw.strip();
             if (!s.isEmpty()) {
-                sentences.add(StringUtils.capitalize(s));
+                sentences.add(capitalize(s));
             }
         }
         return sentences;
     }
 
     private String buildTitle(String topic, List<String> sentences) {
-        if (StringUtils.isNotBlank(topic) && !"Untitled".equalsIgnoreCase(topic)) {
-            return StringUtils.capitalize(topic.strip());
+        if (topic != null && !topic.isBlank() && !"Untitled".equalsIgnoreCase(topic)) {
+            return capitalize(topic.strip());
         }
         if (!sentences.isEmpty()) {
-            return StringUtils.abbreviate(StringUtils.removeEnd(sentences.getFirst(), "."), 80);
+            return abbreviate(removeEnd(sentences.getFirst(), "."), 80);
         }
         return "Draft";
+    }
+
+    /** Uppercases the first character, leaving the rest unchanged. */
+    private static String capitalize(String s) {
+        if (s == null || s.isEmpty()) {
+            return s;
+        }
+        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
+
+    /** Lowercases the first character, leaving the rest unchanged. */
+    private static String uncapitalize(String s) {
+        if (s == null || s.isEmpty()) {
+            return s;
+        }
+        return Character.toLowerCase(s.charAt(0)) + s.substring(1);
+    }
+
+    /** Trims a trailing suffix if present. */
+    private static String removeEnd(String s, String suffix) {
+        if (s != null && s.endsWith(suffix)) {
+            return s.substring(0, s.length() - suffix.length());
+        }
+        return s;
+    }
+
+    /** Shortens to at most maxWidth characters, ending with "..." when cut. */
+    private static String abbreviate(String s, int maxWidth) {
+        if (s == null || s.length() <= maxWidth) {
+            return s;
+        }
+        return s.substring(0, Math.max(0, maxWidth - 3)) + "...";
     }
 
     /** Sentences that express a commitment or open with an imperative verb. */
@@ -247,7 +278,7 @@ public class TemplateContentDrafter implements ContentDrafter {
             }
             case BLOG_POST -> {
                 sections.add(new Draft.Section("Introduction",
-                        "In this post we take a detailed look at " + StringUtils.uncapitalize(title) + "."));
+                        "In this post we take a detailed look at " + uncapitalize(title) + "."));
                 sections.add(new Draft.Section("Main content", body));
                 if (!keyPoints.isEmpty()) {
                     sections.add(new Draft.Section("Key takeaways", bulleted(keyPoints)));
@@ -261,7 +292,7 @@ public class TemplateContentDrafter implements ContentDrafter {
             }
             case DOCUMENT -> {
                 sections.add(new Draft.Section("Overview",
-                        "This document elaborates on " + StringUtils.uncapitalize(title)
+                        "This document elaborates on " + uncapitalize(title)
                                 + ", based on the notes captured during the listening session."));
                 sections.add(new Draft.Section("Details", body));
                 if (!keyPoints.isEmpty()) {

@@ -21,7 +21,7 @@ proprietary libraries, models, or cloud services anywhere:
 | Component | License |
 |---|---|
 | ai-assist code and its native helper sources | this repository |
-| Spring Boot, Jackson, Apache Commons Lang | Apache-2.0 |
+| Spring Boot, Jackson | Apache-2.0 |
 | Vosk speech engine (live captions) | Apache-2.0 |
 | Whisper / whisper.cpp + whisper-jni (final transcript) | MIT |
 | llama.cpp + de.kherud:llama (optional in-process LLM) | MIT |
@@ -50,8 +50,8 @@ JDK — not a browser):
   `vosk-model-en-us-0.22-lgraph` (128 MB, compact and notably more accurate)
   or `vosk-model-en-us-0.22` (1.8 GB, most accurate),
 - a **Dark** toggle (top-right) switching the whole window between light and
-  dark mode; the choice is remembered across launches. The UI uses a single
-  cross-platform look-and-feel (FlatLaf), so the window looks and behaves the
+  dark mode; the choice is remembered across launches. The UI uses the
+  JDK's own cross-platform look-and-feel, so the window looks and behaves the
   same on Windows and macOS,
 - a **scrolling text box** where the running transcript appears live, each
   line time-stamped and tagged `[you]` (your microphone) or `[other]` (the system audio),
@@ -422,6 +422,4 @@ mvn package                 # self-contained jar (model ships in resources)
 ## Stack
 
 Java 21 · Spring Boot 3.5 · Swing (JDK-built-in window) · Java Sound API ·
-[Vosk](https://alphacephei.com/vosk/) small English model (Apache-2.0,
-embedded) · Apache Commons Lang · optional local
-[Ollama](https://ollama.com) drafting (off by default).
+[Vosk](https://alphacephei.com/vosk/) English speech models (Apache-2.0).
