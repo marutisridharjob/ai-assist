@@ -957,6 +957,29 @@ public class MeetingConsole {
         buildModelNoticeDialog(status);
     }
 
+    /**
+     * Recheck: unpack any dropped model archives (synchronously, off the UI
+     * thread), then re-scan and refresh the notice. Gives visible feedback so
+     * the button clearly does something even when a large model is unpacking.
+     */
+    private void runRecheck(JButton recheck) {
+        recheck.setEnabled(false);
+        modelNoticePane.setText("<html><body style='font-family:sans-serif;font-size:12px;'>"
+                + "<p>Checking… unpacking any model archives you added. This can take a minute "
+                + "for a large model.</p></body></html>");
+        new Thread(() -> {
+            try {
+                liveTranscription.unpackDroppedModelsNow();
+            } catch (Exception ex) {
+                log.warn("Recheck could not unpack dropped models: {}", ex.getMessage());
+            }
+            SwingUtilities.invokeLater(() -> {
+                recheck.setEnabled(true);
+                maybeShowModelNotice(true);
+            });
+        }, "model-recheck").start();
+    }
+
     private void buildModelNoticeDialog(com.aiassist.setup.ModelCatalog.Status status) {
         modelNoticeDialog = new javax.swing.JDialog(frame, "ai-assist — set up your models", false);
         modelNoticePane = new JEditorPane("text/html", modelNoticeHtml(status));
@@ -974,10 +997,7 @@ public class MeetingConsole {
         openFolder.addActionListener(e -> openFolder(com.aiassist.setup.UserPaths.modelsDir()));
         JButton recheck = new JButton("Recheck");
         recheck.setToolTipText("Unpack any dropped .zip models and check again");
-        recheck.addActionListener(e -> {
-            liveTranscription.rescanModelZips(); // unpack any newly dropped zips
-            maybeShowModelNotice(true);
-        });
+        recheck.addActionListener(e -> runRecheck(recheck));
         JButton close = new JButton("Close");
         close.addActionListener(e -> modelNoticeDialog.dispose());
         JPanel buttons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT));
@@ -1058,36 +1078,54 @@ public class MeetingConsole {
         return "<html><body style='font-family:sans-serif;font-size:12px;color:" + fg
                 + ";margin:10px;'>"
                 + "<h2 style='color:" + heading + ";'>ai-assist — how to use it</h2>"
+                + "<p>Follow these steps in order the first time. Each one is a small, self-contained step.</p>"
 
-                + "<h3 style='color:" + heading + ";'>Meeting tab</h3>"
-                + "<p>Press <b>Start</b> to begin capturing the meeting — your microphone "
-                + "(<b>[you]</b>) and the computer's own audio (<b>[other]</b>, what the other "
-                + "participants say) are transcribed live. <b>Pause</b> suspends listening without "
-                + "ending the meeting; <b>Start</b> resumes it. The live caption line under the box "
-                + "shows words as they are recognized; finished phrases drop into the transcript box. "
-                + "<b>Apply</b> shows a detailed summary with action points so far, without ending the "
-                + "meeting. <b>Stop</b> ends the meeting and saves the summary plus the full verbatim "
-                + "transcript as a timestamped rich-text file on your Desktop. <b>Clear</b> empties the "
-                + "box. Pick the speech model from the dropdown; the choice is remembered.</p>"
+                + "<h3 style='color:" + heading + ";'>Step group A — first-time setup (do once)</h3>"
+                + "<ol>"
+                + "<li>When the app opens, read the <b>Set up your models</b> notice.</li>"
+                + "<li>Click <b>Open models folder</b> to see where model files go.</li>"
+                + "<li>In the notice, click the <b>Download</b> link next to the <b>required</b> speech "
+                + "model. Your browser downloads a <code>.zip</code> file.</li>"
+                + "<li>Move that <code>.zip</code> into the models folder from step 2.</li>"
+                + "<li>Come back to the app and press <b>Recheck</b>. The app unpacks the model and moves "
+                + "the <code>.zip</code> into <code>Documents/meeting-notes/model-backups</code>.</li>"
+                + "<li>(Optional) Repeat steps 3–5 for the <b>recommended</b> models to get a more accurate "
+                + "transcript and richer summaries.</li>"
+                + "<li>When the notice says the models are ready, close it. You are set up.</li>"
+                + "</ol>"
 
-                + "<h3 style='color:" + heading + ";'>Assist tab</h3>"
-                + "<p>Type or paste into the top box, or press <b>Load</b> to open a text file. Tick any of "
-                + "the options — <b>Fix grammar</b>, <b>Compact</b>, <b>Detailed</b>, <b>Professional</b>, "
-                + "<b>Bullet points</b>, <b>Summary</b>, and the communication styles — optionally type "
-                + "free-form <b>Instructions</b>, then press <b>Apply</b>; the result appears in the bottom "
-                + "box. <b>Summary</b> turns the text into an overview, key points and action items. "
-                + "<b>Download</b> saves the result to your Desktop and <b>Clear</b> resets everything. "
-                + "When an on-device AI model is present in the <code>models</code> folder, the rewriting "
-                + "runs through it; otherwise it falls back to the built-in offline rules. Either way "
-                + "everything runs locally — nothing leaves your machine — and all processing happens in "
-                + "the background.</p>"
+                + "<h3 style='color:" + heading + ";'>Step group B — record a meeting (Meeting tab)</h3>"
+                + "<ol>"
+                + "<li>Open the <b>Meeting</b> tab.</li>"
+                + "<li>(Optional) Type a <b>Title</b> at the top — it becomes the notes file name.</li>"
+                + "<li>Pick a speech model from the dropdown (top-right). Your choice is remembered.</li>"
+                + "<li>Press <b>Start</b>. Your voice shows as <b>[you]</b> and the other participants as "
+                + "<b>[other]</b>; live words appear under the box, finished lines drop into it.</li>"
+                + "<li>Need a pause? Press <b>Pause</b>, then <b>Start</b> again to resume.</li>"
+                + "<li>Want a summary so far without stopping? Press <b>Apply</b>.</li>"
+                + "<li>When the meeting ends, press <b>Stop</b>, then choose <b>Save</b>.</li>"
+                + "<li>Find your notes in <code>Documents/meeting-notes</code> as a timestamped file.</li>"
+                + "</ol>"
 
-                + "<h3 style='color:" + heading + ";'>Models</h3>"
-                + "<p>ai-assist ships with no models. Place your speech, transcription and (optional) AI "
-                + "model files in the <code>models</code> folder next to the app; they are picked up "
-                + "automatically. Live captions and the accurate transcript need a speech model; the richer "
-                + "summaries and rewrites need an AI model. Everything runs 100% offline — no audio or text "
-                + "ever leaves the machine.</p>"
+                + "<h3 style='color:" + heading + ";'>Step group C — improve or summarize text (Assist tab)</h3>"
+                + "<ol>"
+                + "<li>Open the <b>Assist</b> tab.</li>"
+                + "<li>Type or paste text into the top box, or press <b>Load</b> to open a text file.</li>"
+                + "<li>Tick the options you want — e.g. <b>Fix grammar</b>, <b>Professional</b>, "
+                + "<b>Bullet points</b>, <b>Summary</b>, or a communication style.</li>"
+                + "<li>(Optional) Type free-form <b>Instructions</b> for anything the tick-boxes don't cover.</li>"
+                + "<li>Press <b>Apply</b>. The result appears in the bottom box.</li>"
+                + "<li>Press <b>Download</b> to save the result, or <b>Clear</b> to start over.</li>"
+                + "</ol>"
+
+                + "<h3 style='color:" + heading + ";'>Good to know</h3>"
+                + "<ul>"
+                + "<li>Everything runs on your machine — no audio or text ever leaves it.</li>"
+                + "<li>With a speech model you get live captions and notes; add the recommended models for "
+                + "a more accurate transcript and richer AI summaries.</li>"
+                + "<li>Slow steps (transcribing, drafting, saving) run in the background, so the app stays "
+                + "responsive.</li>"
+                + "</ul>"
 
                 + "<h3 style='color:" + heading + ";'>Open-source licenses</h3>"
                 + "<ul>"

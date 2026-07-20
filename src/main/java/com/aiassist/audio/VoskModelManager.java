@@ -64,6 +64,16 @@ public class VoskModelManager {
         unzipper.start();
     }
 
+    /**
+     * Unpacks any dropped model zips and returns only when finished (unlike the
+     * background {@link #rescanDroppedZips()}). Used by the Recheck button so
+     * the model list reflects newly added archives immediately. Call off the UI
+     * thread — a large model takes a while to unpack.
+     */
+    public void unpackDroppedZipsNow() {
+        unpackDroppedZips();
+    }
+
     private static String topLevelDirOf(Path zip) {
         try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(zip))) {
             ZipEntry first = zis.getNextEntry();
@@ -105,7 +115,10 @@ public class VoskModelManager {
     }
 
     private void unpackDroppedZips() {
-        Path target = appHome().resolve("models");
+        // Unpack into the user-writable models folder (Documents), which is
+        // where the app tells users to put models and is writable even when the
+        // app is installed under /Applications or Program Files.
+        Path target = com.aiassist.setup.UserPaths.modelsDir();
         for (Path root : modelRoots()) {
             if (!Files.isDirectory(root)) {
                 continue;

@@ -285,6 +285,11 @@ public class LiveTranscriptionService {
         modelManager.rescanDroppedZips();
     }
 
+    /** Unpacks dropped model zips and blocks until done (call off the UI thread). */
+    public void unpackDroppedModelsNow() {
+        modelManager.unpackDroppedZipsNow();
+    }
+
     private final java.util.prefs.Preferences prefs =
             java.util.prefs.Preferences.userNodeForPackage(LiveTranscriptionService.class);
 

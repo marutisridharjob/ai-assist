@@ -74,16 +74,17 @@ public final class ModelCatalog {
                             + "for you. Larger, more accurate models are listed at "
                             + "https://alphacephei.com/vosk/models",
                     dir -> hasVoskModel(dir)),
-            new ModelSpec("whisper", "Whisper transcription model (ggml-*.bin)", Tier.RECOMMENDED,
+            new ModelSpec("whisper", "Whisper transcription model (ggml-base.bin)", Tier.RECOMMENDED,
                     "an accurate, complete transcript when you press Stop",
-                    "https://github.com/ggerganov/whisper.cpp/tree/master/models",
-                    "Fetch a ggml model with the scripts in the app's models/README (no Hugging Face "
-                            + "account needed), then place the ggml-*.bin file in the models folder.",
+                    "https://github.com/NoMercy-Entertainment/nomercy-whisper-models/releases/latest/download/ggml-base.bin",
+                    "Click Download to save ggml-base.bin from the GitHub mirror (no Hugging Face account "
+                            + "needed), then place the .bin file in the models folder.",
                     dir -> hasFile(dir, "ggml-", ".bin")),
             new ModelSpec("llm", "Instruct LLM model (*.gguf)", Tier.RECOMMENDED,
                     "richer AI summaries and rewrites",
-                    "https://github.com/ggml-org/llama.cpp#description",
-                    "Place any single GGUF instruct model (e.g. a small 1–2B model) in the models folder.",
+                    "https://github.com/marutisridharjob/ai-assist/blob/main/models/README.md",
+                    "Optional. Follow the models guide, then drop any single GGUF instruct model into the "
+                            + "models folder.",
                     dir -> hasFile(dir, "", ".gguf")));
 
     /** The outcome of checking the catalogue against the model folders. */
