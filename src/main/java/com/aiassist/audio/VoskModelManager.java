@@ -92,6 +92,9 @@ public class VoskModelManager {
     /** Everywhere a user might reasonably put a model folder. */
     private static java.util.List<Path> modelRoots() {
         return java.util.List.copyOf(new java.util.LinkedHashSet<>(java.util.List.of(
+                // The installed app's user-writable models folder (Documents),
+                // then the folders next to the jar / working directory.
+                com.aiassist.setup.UserPaths.documents().resolve("ai-assist").resolve("models"),
                 appHome().resolve("models"), appHome(),
                 Path.of("models").toAbsolutePath(), Path.of("").toAbsolutePath())));
     }
@@ -138,6 +141,9 @@ public class VoskModelManager {
                     } finally {
                         unpacking.remove(dirName);
                     }
+                    // Keep the original download: move the .zip into the
+                    // Documents backup folder now that it is unpacked.
+                    moveToBackup(zip);
                     log.info("Model {} ready; reopen the model dropdown to pick it", dirName);
                 }
             } catch (IOException e) {
@@ -271,6 +277,24 @@ public class VoskModelManager {
         }
         try (InputStream in = response.body()) {
             Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    /** Moves an unpacked model .zip into the Documents backup folder. */
+    private void moveToBackup(Path zip) {
+        try {
+            Path backupDir = com.aiassist.setup.UserPaths.modelBackupDir();
+            Path target = backupDir.resolve(zip.getFileName().toString());
+            try {
+                Files.move(zip, target, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException crossDevice) {
+                // Backup may be on a different filesystem than the source.
+                Files.copy(zip, target, StandardCopyOption.REPLACE_EXISTING);
+                Files.deleteIfExists(zip);
+            }
+            log.info("Backed up model archive to {}", target);
+        } catch (IOException e) {
+            log.warn("Could not back up model archive {} ({}); leaving it in place", zip, e.getMessage());
         }
     }
 

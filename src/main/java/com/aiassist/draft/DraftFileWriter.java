@@ -64,7 +64,8 @@ public class DraftFileWriter {
         if (configured != null && !configured.isBlank()) {
             return Path.of(configured);
         }
-        return com.aiassist.audio.VoskModelManager.appHome().resolve("meeting-notes");
+        // Default: the installed app saves notes into the user's Documents.
+        return com.aiassist.setup.UserPaths.meetingNotesDir();
     }
 
     /** Renders the structured draft as a simple RTF document. */

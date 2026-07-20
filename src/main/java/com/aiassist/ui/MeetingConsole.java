@@ -56,6 +56,8 @@ public class MeetingConsole {
     private final com.aiassist.draft.TextRewriteService rewriteService;
     private final com.aiassist.draft.StyleRewriteService styleRewriteService;
     private final com.aiassist.feedback.FeedbackMailSender feedbackMailSender;
+    private javax.swing.JDialog modelNoticeDialog;
+    private javax.swing.JEditorPane modelNoticePane;
 
     private final java.util.prefs.Preferences prefs =
             java.util.prefs.Preferences.userNodeForPackage(MeetingConsole.class);
@@ -400,6 +402,12 @@ public class MeetingConsole {
         darkModeToggle.setSelected(prefs.getBoolean("darkMode", false));
         applyTheme(darkModeToggle.isSelected());
         frame.setVisible(true);
+
+        // Make sure the installed app's user folders exist, then tell the user
+        // which models still need downloading.
+        com.aiassist.setup.UserPaths.meetingNotesDir();
+        com.aiassist.setup.UserPaths.modelsDir();
+        maybeShowModelNotice(false);
 
         // 250 ms so the live caption line keeps up with Vosk's partial results;
         // a 1 s poll missed most partials (they reset the moment a phrase is final).
@@ -927,6 +935,118 @@ public class MeetingConsole {
             Thread.sleep(millis);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * Shows the model-setup notice: which models are still missing, with
+     * download links and where to put them. Skipped silently when everything
+     * is already in place (unless {@code force}, from the Recheck button).
+     */
+    private void maybeShowModelNotice(boolean force) {
+        com.aiassist.setup.ModelCatalog.Status status =
+                com.aiassist.setup.ModelCatalog.scan(com.aiassist.audio.VoskModelManager.modelSearchRoots());
+        if (!force && status.allRequiredPresent() && status.missingRecommended().isEmpty()) {
+            return;
+        }
+        if (modelNoticeDialog != null && modelNoticeDialog.isShowing()) {
+            modelNoticePane.setText(modelNoticeHtml(status));
+            modelNoticePane.setCaretPosition(0);
+            return;
+        }
+        buildModelNoticeDialog(status);
+    }
+
+    private void buildModelNoticeDialog(com.aiassist.setup.ModelCatalog.Status status) {
+        modelNoticeDialog = new javax.swing.JDialog(frame, "ai-assist — set up your models", false);
+        modelNoticePane = new JEditorPane("text/html", modelNoticeHtml(status));
+        modelNoticePane.setEditable(false);
+        modelNoticePane.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 8, 4, 8));
+        modelNoticePane.addHyperlinkListener(e -> {
+            if (e.getEventType() == javax.swing.event.HyperlinkEvent.EventType.ACTIVATED && e.getURL() != null) {
+                openInBrowser(e.getURL().toString());
+            }
+        });
+        JScrollPane scroll = new JScrollPane(modelNoticePane);
+        scroll.setPreferredSize(new java.awt.Dimension(560, 380));
+
+        JButton openFolder = new JButton("Open models folder");
+        openFolder.addActionListener(e -> openFolder(com.aiassist.setup.UserPaths.modelsDir()));
+        JButton recheck = new JButton("Recheck");
+        recheck.setToolTipText("Unpack any dropped .zip models and check again");
+        recheck.addActionListener(e -> {
+            liveTranscription.rescanModelZips(); // unpack any newly dropped zips
+            maybeShowModelNotice(true);
+        });
+        JButton close = new JButton("Close");
+        close.addActionListener(e -> modelNoticeDialog.dispose());
+        JPanel buttons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT));
+        buttons.add(openFolder);
+        buttons.add(recheck);
+        buttons.add(close);
+
+        modelNoticeDialog.getContentPane().setLayout(new BorderLayout());
+        modelNoticeDialog.getContentPane().add(scroll, BorderLayout.CENTER);
+        modelNoticeDialog.getContentPane().add(buttons, BorderLayout.SOUTH);
+        modelNoticeDialog.pack();
+        modelNoticeDialog.setLocationRelativeTo(frame);
+        modelNoticeDialog.setVisible(true);
+    }
+
+    private String modelNoticeHtml(com.aiassist.setup.ModelCatalog.Status status) {
+        String modelsDir = com.aiassist.setup.UserPaths.modelsDir().toString();
+        StringBuilder b = new StringBuilder("<html><body style='font-family:sans-serif;font-size:12px;'>");
+        if (status.allRequiredPresent()) {
+            b.append("<h2>Models ready</h2><p>All required models are in place. ")
+                    .append("The recommended models below are optional upgrades.</p>");
+        } else {
+            b.append("<h2>Set up your models</h2>")
+                    .append("<p>ai-assist ships with no models. It needs at least the required model ")
+                    .append("below to produce live captions and notes.</p>");
+        }
+        b.append("<p>Put model files in this folder:<br><b>").append(escapeHtml(modelsDir)).append("</b></p>");
+        appendModelList(b, "Required — still needed", status.missingRequired());
+        appendModelList(b, "Recommended — optional upgrades", status.missingRecommended());
+        if (!status.present().isEmpty()) {
+            b.append("<h3>Already installed</h3><ul>");
+            for (var m : status.present()) {
+                b.append("<li>").append(escapeHtml(m.title())).append("</li>");
+            }
+            b.append("</ul>");
+        }
+        b.append("<p style='color:#666;'>Tip: drop a Vosk <code>.zip</code> straight into the models folder — ")
+                .append("the app unpacks it and moves the <code>.zip</code> to ")
+                .append("<b>Documents/meeting-notes/model-backups</b> for safekeeping. ")
+                .append("Press <b>Recheck</b> after adding files.</p>");
+        return b.append("</body></html>").toString();
+    }
+
+    private void appendModelList(StringBuilder b, String heading, java.util.List<com.aiassist.setup.ModelCatalog.ModelSpec> models) {
+        if (models.isEmpty()) {
+            return;
+        }
+        b.append("<h3>").append(heading).append("</h3><ul>");
+        for (var m : models) {
+            b.append("<li><b>").append(escapeHtml(m.title())).append("</b> — ").append(escapeHtml(m.purpose()))
+                    .append(".<br><a href='").append(m.downloadUrl()).append("'>Download</a> — ")
+                    .append(escapeHtml(m.instructions())).append("</li>");
+        }
+        b.append("</ul>");
+    }
+
+    private static String escapeHtml(String s) {
+        return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    /** Opens a folder in the OS file manager, best-effort. */
+    private void openFolder(java.nio.file.Path dir) {
+        try {
+            if (java.awt.Desktop.isDesktopSupported()
+                    && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.OPEN)) {
+                java.awt.Desktop.getDesktop().open(dir.toFile());
+            }
+        } catch (Exception e) {
+            log.warn("Could not open the folder {}: {}", dir, e.getMessage());
         }
     }
 
