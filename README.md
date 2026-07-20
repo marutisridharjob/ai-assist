@@ -416,6 +416,22 @@ ai-assist:
     start-tls: true            # upgrade to TLS with STARTTLS when the server offers it
 ```
 
+**Keep SMTP credentials out of the repo.** Leave `username`/`password` blank in
+the committed `application.yml`. To use a relay, supply them at runtime where
+they are never version-controlled — either as JVM system properties:
+
+```bash
+java -Dai-assist.feedback.relay-host=smtp.example.com \
+     -Dai-assist.feedback.username=you@example.com \
+     -Dai-assist.feedback.password=app-password \
+     -jar ai-assist-<version>.jar
+```
+
+or in an `application.yml` you place next to the jar (or in a `config/`
+subfolder) and add to `.gitignore`. Spring Boot loads that external file over
+the packaged defaults, so the secret stays on your machine only. Prefer a
+provider **app password** over your real account password.
+
 ## Platforms
 
 | Platform | Support |
