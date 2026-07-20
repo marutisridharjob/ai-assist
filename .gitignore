@@ -8,3 +8,10 @@ drafts/
 .vscode/
 .DS_Store
 meeting-notes/
+# Native installer outputs from packaging/ (the ready-built jar in dist/ is kept)
+dist/*.deb
+dist/*.rpm
+dist/*.dmg
+dist/*.pkg
+dist/*.msi
+dist/*.exe

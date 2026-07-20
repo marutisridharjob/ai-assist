@@ -303,6 +303,15 @@ headphones, your options without installing anything are:
 
 ## Getting the app
 
+**Native installer (recommended)**: download the installer for your OS from the
+project's GitHub Releases — `.dmg` (macOS), `.msi` (Windows), or `.deb`/`.rpm`
+(Linux). Each **bundles its own Java runtime** (no separate Java install),
+installs into Applications/Program Files, and adds a shortcut. On first run the
+app creates `~/Documents/meeting-notes` and `~/Documents/ai-assist/models`, then
+shows a notice with **download links for the models** you still need. See
+[`packaging/README.md`](packaging/README.md) to build the installers yourself
+(or push a `v*` tag to build all three via GitHub Actions).
+
 **Ready-built**: `dist/ai-assist-<version>.jar` in this repository is the
 app (no model bundled). Put it in a folder, then download one or more Vosk
 English models from [alphacephei.com/vosk/models](https://alphacephei.com/vosk/models)

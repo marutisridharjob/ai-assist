@@ -1,0 +1,83 @@
+name: Package installers
+
+# Builds native installers for macOS, Windows, and Linux on their own runners
+# (jpackage cannot cross-build). Run manually, or push a tag like v0.1.0 to also
+# publish them as a GitHub Release.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux-deb
+            artifact: "dist/*.deb"
+          - os: macos-latest
+            name: macos-dmg
+            artifact: "dist/*.dmg"
+          - os: windows-latest
+            name: windows-msi
+            artifact: "dist/*.msi"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin, includes jpackage)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Install Linux packaging tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y fakeroot binutils
+
+      - name: Install WiX (Windows msi/exe)
+        if: runner.os == 'Windows'
+        run: choco install wixtoolset -y --no-progress
+
+      - name: Build installer (Linux)
+        if: runner.os == 'Linux'
+        run: bash packaging/build-linux.sh deb
+
+      - name: Build installer (macOS)
+        if: runner.os == 'macOS'
+        run: bash packaging/build-macos.sh dmg
+
+      - name: Build installer (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./packaging/build-windows.ps1 -Type msi
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-assist-${{ matrix.name }}
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
+
+  release:
+    # Publish all three installers when a version tag is pushed.
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all installers
+        uses: actions/download-artifact@v4
+        with:
+          path: installers
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installers/**/*
+          generate_release_notes: true

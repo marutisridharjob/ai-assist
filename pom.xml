@@ -108,6 +108,36 @@
 
     <profiles>
         <!--
+          Release hardening: strip debug information (line numbers, local
+          variable tables, source-file names) from the compiled classes so a
+          decompiler produces far less readable output. Method parameter names
+          are kept (parameters=true) because Spring's binding relies on them.
+          This does not make bytecode un-decompilable — nothing can for the
+          JVM — but it removes the metadata that makes decompiled code easy to
+          read. Used by the packaging scripts:  mvn -Pharden package
+        -->
+        <profile>
+            <id>harden</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <!-- Strip line numbers, local variables, and the
+                                 source-file name so decompiled output is far
+                                 less readable; keep parameter names for Spring. -->
+                            <debug>false</debug>
+                            <parameters>true</parameters>
+                            <compilerArgs combine.children="append">
+                                <arg>-g:none</arg>
+                            </compilerArgs>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!--
           Optional convenience for developers: fetch the small English model
           into ./models next to the build so you can run the app immediately.
           The shipped app bundles NO model — users drop their own model .zip
