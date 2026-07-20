@@ -55,6 +55,7 @@ public class MeetingConsole {
     private final SessionStore sessions;
     private final com.aiassist.draft.TextRewriteService rewriteService;
     private final com.aiassist.draft.StyleRewriteService styleRewriteService;
+    private final com.aiassist.feedback.FeedbackMailSender feedbackMailSender;
 
     private final java.util.prefs.Preferences prefs =
             java.util.prefs.Preferences.userNodeForPackage(MeetingConsole.class);
@@ -135,12 +136,14 @@ public class MeetingConsole {
     public MeetingConsole(LiveTranscriptionService liveTranscription,
                           MeetingEndService meetingEndService, SessionStore sessions,
                           com.aiassist.draft.TextRewriteService rewriteService,
-                          com.aiassist.draft.StyleRewriteService styleRewriteService) {
+                          com.aiassist.draft.StyleRewriteService styleRewriteService,
+                          com.aiassist.feedback.FeedbackMailSender feedbackMailSender) {
         this.liveTranscription = liveTranscription;
         this.meetingEndService = meetingEndService;
         this.sessions = sessions;
         this.rewriteService = rewriteService;
         this.styleRewriteService = styleRewriteService;
+        this.feedbackMailSender = feedbackMailSender;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -657,11 +660,9 @@ public class MeetingConsole {
         return area;
     }
 
-    private static final String FEEDBACK_TO = "marutisridhar.job@gmail.com";
-
     /**
      * Help tab: About, a Help link that opens the instructions window, and a
-     * Feedback form that composes an email to the author.
+     * Feedback form that sends an email to the author.
      */
     private JPanel buildHelpTab() {
         JPanel panel = new JPanel();
@@ -697,6 +698,9 @@ public class MeetingConsole {
         ratingCombo = new javax.swing.JComboBox<>(new Integer[] {0, 1, 2, 3, 4, 5});
         JPanel ratingRow = leftRow(themedLabel("Rating:"), ratingCombo);
         panel.add(ratingRow);
+
+        // A couple of lines of breathing room between the rating and the buttons.
+        panel.add(javax.swing.Box.createVerticalStrut(24));
 
         JButton feedbackClear = new JButton("Clear");
         feedbackClear.setToolTipText("Clear the feedback box and reset the rating");
@@ -851,11 +855,23 @@ public class MeetingConsole {
                 });
                 return;
             }
+            boolean sent;
             try {
                 String subject = "Feedback on ai-assist with rating " + rate;
-                openMailClient(FEEDBACK_TO, subject, feedbackBody(message, rate));
+                feedbackMailSender.send(subject, feedbackBody(message, rate));
+                sent = true;
             } catch (Exception e) {
-                log.warn("Could not open the mail client: {}", e.getMessage());
+                log.warn("Could not send the feedback email: {}", e.getMessage());
+                sent = false;
+            }
+            if (!sent) {
+                SwingUtilities.invokeLater(() -> feedbackStatus.setText("Send failed"));
+                sleepQuietly(2500);
+                SwingUtilities.invokeLater(() -> {
+                    feedbackStatus.setText(" ");
+                    setFeedbackControlsEnabled(true);
+                });
+                return;
             }
             SwingUtilities.invokeLater(() -> feedbackStatus.setText("Submitted"));
             sleepQuietly(1000);
@@ -904,21 +920,6 @@ public class MeetingConsole {
             }
         }
         return false;
-    }
-
-    private void openMailClient(String to, String subject, String body) throws Exception {
-        String uri = "mailto:" + to + "?subject=" + urlEncode(subject) + "&body=" + urlEncode(body);
-        if (java.awt.Desktop.isDesktopSupported()
-                && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.MAIL)) {
-            java.awt.Desktop.getDesktop().mail(new java.net.URI(uri));
-        } else {
-            openInBrowser(uri);
-        }
-    }
-
-    private static String urlEncode(String value) {
-        return java.net.URLEncoder.encode(value == null ? "" : value.replace("\r", ""),
-                java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20");
     }
 
     private static void sleepQuietly(long millis) {
@@ -1349,15 +1350,19 @@ public class MeetingConsole {
         if (meetingCompleted) {
             return;
         }
-        // Explicit button labels: the plain confirm dialog rendered without
-        // visible buttons for some users on Windows.
-        Object[] choices = {"Yes — save notes", "Cancel"};
+        // Save / No / Cancel: Save ends and writes the notes file, No ends
+        // without saving, Cancel keeps the meeting running. Explicit button
+        // labels because the plain confirm dialog rendered without visible
+        // buttons for some users on Windows.
+        Object[] choices = {"Save", "No", "Cancel"};
         int choice = JOptionPane.showOptionDialog(frame,
-                "End the meeting and save the notes file to your Desktop?", "Meeting complete",
-                JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, null, choices, choices[0]);
-        if (choice != 0) {
-            return;
+                "End the meeting? Save writes the notes file to your Desktop; No ends without saving.",
+                "Meeting complete", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE,
+                null, choices, choices[0]);
+        if (choice == 2 || choice == JOptionPane.CLOSED_OPTION) {
+            return; // Cancel — keep the meeting running
         }
+        boolean save = (choice == 0);
         // Fast part: stop capture and grab the recording now, so the app is
         // immediately ready for another meeting.
         MeetingEndService.PendingNotes pending;
@@ -1373,6 +1378,16 @@ public class MeetingConsole {
         stopButton.setEnabled(false);
         startButton.setEnabled(true);
         startButton.setText("Start");
+
+        if (!save) {
+            // No — end the meeting and discard the recording, nothing is written.
+            summaryArea.setText("Meeting ended — notes were not saved.");
+            setStatus("Meeting ended — notes were not saved. You can start a new meeting now.", false);
+            MeetingEndService.PendingNotes toDiscard = pending;
+            notesExecutor.submit(() -> meetingEndService.discardNotes(toDiscard));
+            return;
+        }
+
         summaryArea.setText("Transcribing and drafting the notes in the background…");
         setStatus("Meeting stopped — drafting notes in the background. You can start a new meeting now.", false);
 

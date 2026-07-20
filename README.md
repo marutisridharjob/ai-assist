@@ -144,12 +144,16 @@ A fourth tab with three sections:
   technology stack. Type a word and press **Search** to highlight every match;
   **Close** (bottom-right) dismisses the window.
 - **Feedback** — type a note, pick a **Rating** (0–5), and press **Submit**.
-  This composes an email to the author (subject *Feedback on ai-assist with
-  rating N*, body = your note plus your rating, machine IP, user name, and
-  time zone/region) in your default mail client — no mail credentials are
-  embedded in the app, so you send it with one click. On success the form
-  greys out, shows **Submitted**, then clears. With no internet it greys out,
-  shows **No Internet** for two seconds, and re-enables.
+  The app sends the email itself, directly over SMTP (subject *Feedback on
+  ai-assist with rating N*, body = your note plus your rating, machine IP, user
+  name, and time zone/region) — **no desktop mail app is opened** and, by
+  default, no account sits in the middle: the message is delivered straight to
+  the recipient's mail server (found via its MX records) on port 25, upgrading
+  to TLS with STARTTLS when offered. On success the form greys out, shows
+  **Submitted**, then clears; if delivery fails it shows **Send failed**, and
+  with no internet it shows **No Internet**, then re-enables. Direct delivery
+  needs outbound port 25 open and the receiving server to accept the mail;
+  where that is blocked, set an SMTP relay under `ai-assist.feedback` (below).
 
 ### How a meeting is processed — two engines, both offline
 
@@ -402,6 +406,14 @@ ai-assist:
     model-name: vosk-model-small-en-us-0.15  # English; embedded in the jar
     allow-download: false      # keep false: no runtime network access
     preferred-device: ""       # optional explicit meeting-audio device
+  feedback:
+    from: noreply@ai-assist.com   # From address on the feedback email
+    to: marutisridhar.job@gmail.com  # where feedback is delivered
+    relay-host: ""             # blank = deliver directly to the recipient's mail server
+    relay-port: 587            # used only when relay-host is set
+    username: ""               # relay credentials, if the relay requires auth
+    password: ""
+    start-tls: true            # upgrade to TLS with STARTTLS when the server offers it
 ```
 
 ## Platforms

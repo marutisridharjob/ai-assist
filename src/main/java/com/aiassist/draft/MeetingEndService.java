@@ -112,6 +112,16 @@ public class MeetingEndService {
         return finishNotes(stopCapture(sessionId), options);
     }
 
+    /**
+     * Ends the meeting without drafting or saving any notes: the captured
+     * recording is simply discarded. Used when the user chooses "No" (do not
+     * save) on Stop.
+     */
+    public void discardNotes(PendingNotes pending) {
+        pending.recordings().values().forEach(this::deleteQuietly);
+        log.info("Meeting {} ended without saving; recording discarded", pending.sessionId());
+    }
+
     /** Markdown headings (# / ##) render badly in RTF; strip them to plain lines. */
     private static String stripMarkdownHeadings(String text) {
         if (text == null) {
