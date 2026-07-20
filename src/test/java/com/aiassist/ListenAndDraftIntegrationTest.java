@@ -10,7 +10,10 @@ import com.aiassist.listen.Utterance;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.web.client.RestTemplateCustomizer;
+import org.springframework.context.annotation.Bean;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
@@ -20,9 +23,25 @@ import static org.assertj.core.api.Assertions.assertThat;
         properties = {
                 // keep tests hands-off: no audio capture, no window, no scheduling side effects
                 "ai-assist.auto.start-capture=false",
-                "ai-assist.output.dir=target/test-drafts"
+                "ai-assist.output.dir=target/test-drafts",
+                // fixed API token so the test client can authenticate against the auth filter
+                "ai-assist.security.api-token=" + ListenAndDraftIntegrationTest.TEST_TOKEN
         })
 class ListenAndDraftIntegrationTest {
+
+    static final String TEST_TOKEN = "integration-test-token";
+
+    /** Sends the bearer token on every TestRestTemplate call. */
+    @TestConfiguration
+    static class ApiTokenTestConfig {
+        @Bean
+        RestTemplateCustomizer apiTokenCustomizer() {
+            return template -> template.getInterceptors().add((request, body, execution) -> {
+                request.getHeaders().set("Authorization", "Bearer " + TEST_TOKEN);
+                return execution.execute(request, body);
+            });
+        }
+    }
 
     @Autowired
     private TestRestTemplate rest;

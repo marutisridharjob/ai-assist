@@ -395,8 +395,25 @@ never reachable from other machines on the network. A request filter adds
 defence-in-depth for the browser threat model: it rejects requests whose
 `Host` is not a loopback name (blocking DNS-rebinding) and cross-origin
 browser requests (checking `Origin`/`Referer`), and sets conservative security
-headers. Error responses never include stack traces or messages. Authentication
-is planned as a follow-up; until then, treat the API as local-only.
+headers. Error responses never include stack traces or messages.
+
+**API token.** Every API call must present a bearer token. On first run the app
+generates a 256-bit random token and stores it in a user-private file
+(`~/.ai-assist/api-token`, owner read/write only on POSIX), so the value
+survives restarts and any local client the user trusts can read it. Present it
+as `Authorization: Bearer <token>` or `X-API-Token: <token>`; calls without a
+valid token get `401`. Example:
+
+```bash
+TOKEN=$(cat ~/.ai-assist/api-token)
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/live/status
+```
+
+Configure it under `ai-assist.security`: set `api-token` to pin a fixed value,
+`token-file` to relocate the file, or `api-token-required: false` to disable the
+check (not recommended). This shared-secret step is the first stage of
+authentication and can be extended later (per-client tokens, user login)
+without changing the header contract.
 
 ## Configuration (`application.yml`)
 
@@ -422,6 +439,10 @@ ai-assist:
     username: ""               # relay credentials, if the relay requires auth
     password: ""
     start-tls: true            # upgrade to TLS with STARTTLS when the server offers it
+  security:
+    api-token: ""              # blank = auto-generate & persist to ~/.ai-assist/api-token
+    api-token-required: true   # require a bearer token on every API call
+    token-file: ""             # blank = ~/.ai-assist/api-token
 ```
 
 **Keep SMTP credentials out of the repo.** Leave `username`/`password` blank in

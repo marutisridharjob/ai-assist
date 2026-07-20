@@ -69,3 +69,10 @@ ai-assist:
     username: ""
     password: ""
     start-tls: true
+  # Local REST API authentication. A bearer token is generated on first run and
+  # stored in ~/.ai-assist/api-token (owner-only). Present it as
+  # "Authorization: Bearer <token>" or "X-API-Token: <token>".
+  security:
+    api-token: ""           # blank = auto-generate and persist; set to pin a fixed value
+    api-token-required: true # require a valid token on every API call
+    token-file: ""          # blank = ~/.ai-assist/api-token
