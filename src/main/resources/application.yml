@@ -4,6 +4,22 @@ spring:
 
 server:
   port: 8080
+  # Bind the local REST API to the loopback interface only, so it is never
+  # reachable from other machines on the network (office LAN, shared Wi-Fi).
+  # Everything the app needs runs on this one machine.
+  address: 127.0.0.1
+  # Never leak stack traces, exception messages, or binding details to callers.
+  error:
+    include-stacktrace: never
+    include-message: never
+    include-binding-errors: never
+  # Do not advertise the server implementation/version in responses.
+  server-header: ""
+  # Bound request sizes to blunt trivial memory-exhaustion attempts.
+  max-http-request-header-size: 16KB
+  tomcat:
+    max-http-form-post-size: 512KB
+    max-swallow-size: 512KB
 
 ai-assist:
   output:
@@ -41,9 +57,15 @@ ai-assist:
     base-url: http://localhost:11434
     model: llama3.2
     timeout-seconds: 120
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info
+  # Feedback email delivery. Defaults send directly with no account in the
+  # middle; set relay-* to route through an SMTP relay. Never commit real
+  # credentials — supply username/password at runtime (JVM -D properties or an
+  # external, git-ignored application.yml). See README "Configuration".
+  feedback:
+    from: noreply@ai-assist.com
+    to: marutisridhar.job@gmail.com
+    relay-host: ""
+    relay-port: 587
+    username: ""
+    password: ""
+    start-tls: true

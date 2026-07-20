@@ -142,6 +142,7 @@ public class FeedbackMailSender {
             String ehloHost = localHostName();
             List<String> caps = ehlo(in, out, ehloHost);
 
+            boolean secure = false;
             if (advertises(caps, "STARTTLS")) {
                 send(out, "STARTTLS");
                 expect(in, 220);
@@ -149,9 +150,15 @@ public class FeedbackMailSender {
                 in = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
                 out = socket.getOutputStream();
                 caps = ehlo(in, out, ehloHost);
+                secure = true;
             }
 
             if (props.hasRelay() && props.username() != null && !props.username().isBlank()) {
+                if (!secure) {
+                    // Never put credentials on the wire in the clear.
+                    throw new IOException("relay requires authentication but did not offer STARTTLS; "
+                            + "refusing to send credentials over an unencrypted connection");
+                }
                 authLogin(in, out);
             }
 
@@ -199,6 +206,12 @@ public class FeedbackMailSender {
         SSLSocket ssl = (SSLSocket) factory.createSocket(socket, host, port, true);
         ssl.setUseClientMode(true);
         ssl.setSoTimeout(READ_TIMEOUT_MS);
+        // Verify the server certificate matches the host we connected to, so a
+        // network attacker cannot intercept the STARTTLS session (and, on the
+        // relay path, steal the credentials sent after it).
+        javax.net.ssl.SSLParameters params = ssl.getSSLParameters();
+        params.setEndpointIdentificationAlgorithm("HTTPS");
+        ssl.setSSLParameters(params);
         ssl.startHandshake();
         return ssl;
     }

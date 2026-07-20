@@ -390,6 +390,14 @@ meeting end (`/api/live/end`, `/api/sessions/{id}/end` — the only calls that
 write the notes file), previews (`/api/draft`, `/api/sessions/{id}/draft`),
 and device listing (`/api/audio/devices`).
 
+The API is **bound to the loopback interface (`127.0.0.1`) only**, so it is
+never reachable from other machines on the network. A request filter adds
+defence-in-depth for the browser threat model: it rejects requests whose
+`Host` is not a loopback name (blocking DNS-rebinding) and cross-origin
+browser requests (checking `Origin`/`Referer`), and sets conservative security
+headers. Error responses never include stack traces or messages. Authentication
+is planned as a follow-up; until then, treat the API as local-only.
+
 ## Configuration (`application.yml`)
 
 ```yaml
