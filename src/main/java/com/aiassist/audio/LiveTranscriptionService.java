@@ -419,6 +419,16 @@ public class LiveTranscriptionService {
         private static final int MIN_SPEECH_LEVEL = 3;
         private volatile int phrasePeak;
         private Thread thread;
+        // Recognition runs on its own thread, fed by this bounded queue, so a
+        // slow model (e.g. a large Vosk model that can't decode in real time)
+        // never stalls the capture loop. If the queue backs up we drop the
+        // oldest audio rather than let the capture line overflow — that keeps
+        // the saved recording complete and the live captions from turning to
+        // garbage. ~16 chunks ≈ 2 s of headroom before dropping.
+        private Thread recognitionThread;
+        private final java.util.concurrent.BlockingQueue<byte[]> recognitionQueue =
+                new java.util.concurrent.ArrayBlockingQueue<>(16);
+        private volatile long droppedChunks;
 
         private CaptureWorker(ListeningSession session, AudioDeviceService.DeviceSelection selection,
                               List<String> deviceLabels) {
@@ -464,8 +474,10 @@ public class LiveTranscriptionService {
                     selection.displayName(), selection.label(),
                     (int) deviceRate, stereo ? "stereo" : "mono", session.id());
             // The model runs at 16 kHz; always recognize at 16 kHz for accuracy,
-            // resampling whatever rate the OS granted.
-            try (SpeechRecognizer recognizer = newRecognizer(16000f)) {
+            // resampling whatever rate the OS granted. Recognition happens on a
+            // separate thread so it can never stall this capture loop.
+            startRecognition();
+            try {
                 byte[] buffer = new byte[BUFFER_BYTES * format.getFrameSize()];
                 while (running) {
                     int n = line.read(buffer, 0, buffer.length);
@@ -475,10 +487,10 @@ public class LiveTranscriptionService {
                     int monoLen = stereo ? downmixToMono(buffer, n) : n;
                     level = peakPercent(buffer, monoLen);
                     byte[] pcm16k = resampleTo16k(buffer, monoLen, deviceRate);
-                    feed(recognizer, pcm16k, pcm16k.length);
+                    recordAndQueue(pcm16k);
                 }
-                appendResult(recognizer.finalResult());
-                partialText = "";
+            } finally {
+                finishRecognition();
             }
         }
 
@@ -508,7 +520,8 @@ public class LiveTranscriptionService {
             markListening();
             log.info("Capturing system audio via native tap at {} Hz → 16 kHz into session {}",
                     (int) sampleRate, session.id());
-            try (SpeechRecognizer recognizer = newRecognizer(16000f)) {
+            startRecognition();
+            try {
                 byte[] buffer = new byte[BUFFER_BYTES];
                 while (running) {
                     int n = pcm.read(buffer, 0, buffer.length);
@@ -520,10 +533,10 @@ public class LiveTranscriptionService {
                     }
                     level = peakPercent(buffer, n);
                     byte[] pcm16k = resampleTo16k(buffer, n, sampleRate);
-                    feed(recognizer, pcm16k, pcm16k.length);
+                    recordAndQueue(pcm16k);
                 }
-                appendResult(recognizer.finalResult());
-                partialText = "";
+            } finally {
+                finishRecognition();
             }
             if (running && !process.isAlive() && process.exitValue() != 0) {
                 throw new java.io.IOException("system-audio helper exited with code "
@@ -532,15 +545,76 @@ public class LiveTranscriptionService {
         }
 
         /**
-         * Feeds 16 kHz mono PCM to the recognizer. A phrase is committed only
-         * when the speaker pauses (Vosk's own end-of-phrase detection); until
-         * then it grows as live-caption partial text and is never cut off.
+         * Capture-thread step: save the audio for the offline transcript, then
+         * hand a copy to the recognition thread. Never blocks — if recognition
+         * is behind, the oldest queued chunk is dropped so the capture line
+         * can't overflow (which would corrupt the live captions).
          */
-        private void feed(SpeechRecognizer recognizer, byte[] pcm, int length) {
+        private void recordAndQueue(byte[] pcm16k) {
             MeetingRecorder rec = recorder;
             if (rec != null) {
-                rec.record(selection.label(), pcm, length);
+                rec.record(selection.label(), pcm16k, pcm16k.length);
             }
+            // A copy, because the capture buffer is reused on the next read.
+            byte[] chunk = java.util.Arrays.copyOf(pcm16k, pcm16k.length);
+            if (!recognitionQueue.offer(chunk)) {
+                recognitionQueue.poll(); // drop the oldest so we stay near real time
+                recognitionQueue.offer(chunk);
+                droppedChunks++;
+                if (droppedChunks % 50 == 1) {
+                    log.warn("Recognition on '{}' can't keep up (dropped {} audio chunks so far); "
+                            + "use a lighter Vosk model (small or lgraph) for live captions",
+                            selection.displayName(), droppedChunks);
+                }
+            }
+        }
+
+        private void startRecognition() {
+            recognitionThread = new Thread(this::recognitionLoop, "recognize-" + selection.label());
+            recognitionThread.setDaemon(true);
+            recognitionThread.start();
+        }
+
+        /** Drains the queue into the recognizer; ends after capture stops and the queue empties. */
+        private void recognitionLoop() {
+            try (SpeechRecognizer recognizer = newRecognizer(16000f)) {
+                while (running || !recognitionQueue.isEmpty()) {
+                    byte[] chunk;
+                    try {
+                        chunk = recognitionQueue.poll(100, java.util.concurrent.TimeUnit.MILLISECONDS);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                    if (chunk != null) {
+                        recognize(recognizer, chunk, chunk.length);
+                    }
+                }
+                appendResult(recognizer.finalResult());
+                partialText = "";
+            } catch (Throwable t) {
+                log.warn("Recognition on '{}' failed: {}", selection.displayName(), t.getMessage());
+            }
+        }
+
+        private void finishRecognition() {
+            Thread t = recognitionThread;
+            if (t != null) {
+                try {
+                    t.join(5000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                recognitionThread = null;
+            }
+        }
+
+        /**
+         * Recognition-thread step: feed 16 kHz mono PCM to Vosk. A phrase is
+         * committed only when the speaker pauses (Vosk's own end-of-phrase
+         * detection); until then it grows as live-caption partial text.
+         */
+        private void recognize(SpeechRecognizer recognizer, byte[] pcm, int length) {
             if (level > phrasePeak) {
                 phrasePeak = level; // track the loudest moment of this phrase
             }

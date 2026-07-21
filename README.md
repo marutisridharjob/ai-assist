@@ -45,10 +45,15 @@ JDK — not a browser):
 - a **model dropdown** (top-right): the built-in small English model by
   default, plus any Vosk model you unzip into a `models/` folder next to the
   jar; the model you pick is remembered as your default across launches — switching mid-meeting pauses briefly and resumes with the new model.
-  Recommended for noisy rooms (from
-  [alphacephei.com/vosk/models](https://alphacephei.com/vosk/models)):
-  `vosk-model-en-us-0.22-lgraph` (128 MB, compact and notably more accurate)
-  or `vosk-model-en-us-0.22` (1.8 GB, most accurate),
+  For live captions pick a **real-time (streaming) model** — the recognizer
+  must decode faster than you speak, on two audio streams at once. Good choices
+  (from [alphacephei.com/vosk/models](https://alphacephei.com/vosk/models)):
+  `vosk-model-small-en-us-0.15` (40 MB, fastest) or
+  `vosk-model-en-us-0.22-lgraph` (128 MB, real-time and more accurate).
+  The full `vosk-model-en-us-0.22` (1.8 GB) is the most accurate but is **too
+  heavy for real-time** on most CPUs and will drop most live captions; the saved
+  transcript is produced by Whisper regardless, so a lighter live model does not
+  reduce your notes' quality,
 - a **Dark** toggle (top-right) switching the whole window between light and
   dark mode; the choice is remembered across launches. The UI uses the
   JDK's own cross-platform look-and-feel, so the window looks and behaves the

@@ -261,10 +261,16 @@ public class MeetingConsole {
         // Model picker: built-in default plus any Vosk model unpacked into
         // the ./models folder next to the app. Reloaded each time it opens.
         modelCombo = new javax.swing.JComboBox<>();
-        modelCombo.setToolTipText("<html>Speech model. Built-in: small English (fast, 40 MB).<br>"
-                + "For better accuracy in noise, download from alphacephei.com/vosk/models and unzip into ./models:<br>"
-                + "· vosk-model-en-us-0.22-lgraph (128 MB, compact + notably more accurate)<br>"
-                + "· vosk-model-en-us-0.22 (1.8 GB, most accurate)</html>");
+        modelCombo.setToolTipText("<html><b>Live-caption speech model — pick one built for real time.</b><br>"
+                + "Live captions must decode faster than you speak (two streams at once), so use a "
+                + "streaming model:<br>"
+                + "· <b>vosk-model-small-en-us-0.15</b> (40 MB) — fastest, great on most machines<br>"
+                + "· <b>vosk-model-en-us-0.22-lgraph</b> (128 MB) — real-time and more accurate "
+                + "(recommended)<br>"
+                + "· vosk-model-en-us-0.22 (1.8 GB) — most accurate but <b>too heavy for real-time</b> "
+                + "on most CPUs; it drops most live captions. The accurate saved transcript uses "
+                + "Whisper regardless, so a lighter live model here does not reduce your notes' quality."
+                + "</html>");
         populateModels();
         modelCombo.addPopupMenuListener(new javax.swing.event.PopupMenuListener() {
             @Override
