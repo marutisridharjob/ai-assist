@@ -8,7 +8,8 @@ drafts/
 .vscode/
 .DS_Store
 meeting-notes/
-# Native installer outputs from packaging/ (the ready-built jar in dist/ is kept)
+# Build/installer outputs — large and rebuildable; not committed
+dist/*.jar
 dist/*.deb
 dist/*.rpm
 dist/*.dmg

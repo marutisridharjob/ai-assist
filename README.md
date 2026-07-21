@@ -317,16 +317,19 @@ shows a notice with **download links for the models** you still need. See
 [`packaging/README.md`](packaging/README.md) to build the installers yourself
 (or push a `v*` tag to build all three via GitHub Actions).
 
-**Ready-built**: `dist/ai-assist-<version>.jar` in this repository is the
-app (no model bundled). Put it in a folder, then download one or more Vosk
-English models from [alphacephei.com/vosk/models](https://alphacephei.com/vosk/models)
-and drop the `.zip` files into the **same folder**. On first start each zip
-is extracted (a progress bar shows) and appears in the model dropdown.
-Recommended: `vosk-model-en-us-0.22-lgraph` (128 MB) or, for the smallest,
+**Runnable jar**: build it yourself with `mvn package` — the result is
+`target/ai-assist-<version>.jar` (no model bundled). Put it in a folder, then
+download one or more Vosk English models from
+[alphacephei.com/vosk/models](https://alphacephei.com/vosk/models) and drop the
+`.zip` files into the **same folder**. On first start each zip is extracted
+(a progress bar shows) and appears in the model dropdown. Recommended:
+`vosk-model-en-us-0.22-lgraph` (128 MB) or, for the smallest,
 `vosk-model-small-en-us-0.15` (40 MB).
 
-To rebuild the app: `mvn package`. To also fetch the small model into
-`./models` at build time: `mvn package -Pfetch-model`.
+The built jar is **not committed** to the repo (it is large and rebuildable);
+distributables are published as release assets by the packaging workflow
+instead. To also fetch the small model into `./models` at build time:
+`mvn package -Pfetch-model`.
 
 To refresh the model archive from upstream, build with `-Pfetch-model`.
 
