@@ -18,6 +18,18 @@ class StyleRewriteServiceTest {
             + "maybe you could get the team to help with this.";
 
     @Test
+    void doesNotSummarizeNearEmptyInput() {
+        // A tiny model must never be handed one or two stray words to "summarize".
+        assertThat(service.summarizeMeeting("", null)).isEmpty();
+        assertThat(service.summarizeMeeting("   ", null)).isEmpty();
+        assertThat(service.summarizeMeeting("the", null)).isEqualTo("Not enough was captured to summarize.");
+        assertThat(service.summarizeMeeting("okay great sure", null))
+                .isEqualTo("Not enough was captured to summarize.");
+        assertThat(StyleRewriteService.wordCount("hello there friend")).isEqualTo(3);
+        assertThat(StyleRewriteService.wordCount("  ")).isZero();
+    }
+
+    @Test
     void everyStyleProducesOutput() {
         for (StyleRewriteService.Style style : StyleRewriteService.Style.values()) {
             assertThat(service.draft(TEXT, style))

@@ -407,11 +407,14 @@ public class LiveTranscriptionService {
         private volatile Process tapProcess;
         private volatile int level;
         private volatile String partialText = "";
-        // When the caption (partial) stops growing for this long, the phrase is
-        // committed to the transcript ourselves — Vosk's own end-of-phrase
-        // detection can keep a phrase open indefinitely on some inputs, leaving
-        // the box empty while the live caption keeps scrolling.
-        private static final long PARTIAL_FLUSH_MS = 900;
+        // When the caption (partial) stops growing for this long, we commit the
+        // phrase ourselves — Vosk can otherwise keep a phrase open indefinitely,
+        // leaving the box empty while the live caption scrolls. This forced
+        // commit RESETS the recognizer, so it must only fire on a genuine pause:
+        // firing during a brief mid-sentence hesitation resets the acoustic
+        // context and drops the words around the boundary. Vosk still commits
+        // phrases on its own end-of-phrase detection, so this is only a fallback.
+        private static final long PARTIAL_FLUSH_MS = 2500;
         private long lastPartialGrewAt;
         // Loudest sample seen (0-100) since the last committed phrase. A phrase
         // whose audio never rose above near-silence is dropped, so a quiet room

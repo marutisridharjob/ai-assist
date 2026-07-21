@@ -151,9 +151,23 @@ public class StyleRewriteService {
      * drafter produces the structured meeting notes (overview, decisions and
      * highlights, action items). Free-form instructions refine the LLM path.
      */
+    /** Below this many words there is nothing to summarize; a small model would just hallucinate. */
+    public static final int MIN_WORDS_TO_SUMMARIZE = 6;
+
+    /** Word count of a transcript, 0 when blank. */
+    public static int wordCount(String text) {
+        String t = text == null ? "" : text.strip();
+        return t.isEmpty() ? 0 : t.split("\\s+").length;
+    }
+
     public String summarizeMeeting(String text, String instructions) {
         if (text == null || text.isBlank()) {
             return "";
+        }
+        if (wordCount(text) < MIN_WORDS_TO_SUMMARIZE) {
+            // Too little to summarize meaningfully — never hand a stray word or
+            // two to the model, which would invent an unrelated "summary".
+            return "Not enough was captured to summarize.";
         }
         StringBuilder request = new StringBuilder(
                 "You are a meeting-notes assistant. Write a clear summary of the following "

@@ -128,6 +128,7 @@ public class MeetingConsole {
                 return t;
             });
     private boolean meetingCompleted;
+    private volatile boolean savingNotes;
     private int silentCycles;
     private int detectorCountdown;
     private String detectedMeetingApp;
@@ -349,8 +350,11 @@ public class MeetingConsole {
         stopButton.addActionListener(e -> stopMeeting());
 
         JButton clearButton = new JButton("Clear");
-        clearButton.setToolTipText("Clear the transcript display (captured content is kept for the notes)");
-        clearButton.addActionListener(e -> transcript.setText(""));
+        clearButton.setToolTipText("Clear the transcript and summary display (captured content is kept for the notes)");
+        clearButton.addActionListener(e -> {
+            transcript.setText("");
+            summaryArea.setText("");
+        });
 
         JButton applyButton = new JButton("Apply");
         applyButton.setToolTipText("Summarize the meeting so far and show it below");
@@ -1304,7 +1308,11 @@ public class MeetingConsole {
         };
     }
 
-    /** Blinking banner on the Editor/Compose tabs while a meeting is live. */
+    /**
+     * Status banner: a blinking "saving notes" indicator (shown on every tab
+     * while the notes file is being written in the background), or the
+     * meeting-in-progress / paused banner on the non-meeting tabs.
+     */
     private void updateMeetingIndicator(LiveTranscriptionService.Status status) {
         boolean onMeetingTab = tabs.getSelectedIndex() == 0;
         boolean active = !meetingCompleted
@@ -1312,7 +1320,9 @@ public class MeetingConsole {
                     || status.state() == LiveTranscriptionService.State.PREPARING);
         boolean paused = !meetingCompleted
                 && status.state() == LiveTranscriptionService.State.PAUSED;
-        boolean show = !onMeetingTab && (active || paused);
+        boolean saving = savingNotes;
+        boolean meetingBanner = !onMeetingTab && (active || paused);
+        boolean show = saving || meetingBanner;
         if (indicatorPanel.isVisible() != show) {
             indicatorPanel.setVisible(show);
             frame.revalidate();
@@ -1320,7 +1330,14 @@ public class MeetingConsole {
         if (!show) {
             return;
         }
-        if (active) {
+        if (saving) {
+            // Highest priority: tell the user the notes are still being written.
+            blinkOn = !blinkOn;
+            meetingIndicator.setText("⏳ Saving meeting notes…");
+            meetingIndicator.setForeground(blinkOn
+                    ? new java.awt.Color(0x2D6CDF)
+                    : (darkMode ? new java.awt.Color(0x2A3A5A) : new java.awt.Color(0xAEC4EC)));
+        } else if (active) {
             blinkOn = !blinkOn;
             meetingIndicator.setText("● MEETING IN PROGRESS");
             meetingIndicator.setForeground(blinkOn
@@ -1555,6 +1572,7 @@ public class MeetingConsole {
 
         summaryArea.setText("Transcribing and drafting the notes in the background…");
         setStatus("Meeting stopped — drafting notes in the background. You can start a new meeting now.", false);
+        savingNotes = true; // drives the "⏳ Saving meeting notes…" indicator
 
         // Slow part: transcribe + draft + save off the UI thread. Serialised so
         // back-to-back meetings finish in order and share the Whisper/LLM engine.
@@ -1562,6 +1580,7 @@ public class MeetingConsole {
             try {
                 Draft draft = meetingEndService.finishNotes(pending, null);
                 SwingUtilities.invokeLater(() -> {
+                    savingNotes = false;
                     boolean anotherMeetingLive = liveTranscription.status().sessionId() != null;
                     String savedMsg = draft.savedTo() != null
                             ? "Notes saved to " + draft.savedTo()
@@ -1583,6 +1602,7 @@ public class MeetingConsole {
             } catch (Exception e) {
                 String message = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
                 SwingUtilities.invokeLater(() -> {
+                    savingNotes = false;
                     if (liveTranscription.status().sessionId() == null) {
                         summaryArea.setText("Could not save the notes: " + message);
                         setStatus("Could not save the notes: " + message, true);
@@ -1628,15 +1648,17 @@ public class MeetingConsole {
                 // produces the identical detailed summary with action points
                 // whichever tab it is pressed on.
                 String transcriptText = sessions.get(id).transcript();
-                boolean empty = transcriptText == null || transcriptText.isBlank();
-                String text = empty
-                        ? "Nothing has been captured yet."
+                int words = com.aiassist.draft.StyleRewriteService.wordCount(transcriptText);
+                // Guard: a tiny model will happily invent a "summary" from one
+                // or two stray words. Only summarize when there is real content.
+                boolean tooLittle = words < com.aiassist.draft.StyleRewriteService.MIN_WORDS_TO_SUMMARIZE;
+                String text = tooLittle
+                        ? "Not enough has been captured to summarize yet — press Start, speak, then Apply."
                         : styleRewriteService.summarizeMeeting(transcriptText, null);
-                int words = empty ? 0 : transcriptText.trim().split("\\s+").length;
-                String footer = "\n\n———\n[LLM: " + styleRewriteService.llmReport()
+                String footer = tooLittle ? "" : "\n\n———\n[LLM: " + styleRewriteService.llmReport()
                         + " · transcript: " + words + " words]";
                 SwingUtilities.invokeLater(() -> {
-                    summaryArea.setText(empty ? text : text + footer);
+                    summaryArea.setText(text + footer);
                     summaryArea.setCaretPosition(0);
                 });
             } catch (Exception e) {
