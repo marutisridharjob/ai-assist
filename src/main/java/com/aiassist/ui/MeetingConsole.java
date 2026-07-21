@@ -1520,7 +1520,8 @@ public class MeetingConsole {
         // buttons for some users on Windows.
         Object[] choices = {"Save", "No", "Cancel"};
         int choice = JOptionPane.showOptionDialog(frame,
-                "End the meeting? Save writes the notes file to your Desktop; No ends without saving.",
+                "End the meeting? Save writes the notes file to your Documents/meeting-notes folder; "
+                        + "No ends without saving.",
                 "Meeting complete", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE,
                 null, choices, choices[0]);
         if (choice == 2 || choice == JOptionPane.CLOSED_OPTION) {
@@ -1562,14 +1563,21 @@ public class MeetingConsole {
                 Draft draft = meetingEndService.finishNotes(pending, null);
                 SwingUtilities.invokeLater(() -> {
                     boolean anotherMeetingLive = liveTranscription.status().sessionId() != null;
+                    String savedMsg = draft.savedTo() != null
+                            ? "Notes saved to " + draft.savedTo()
+                            : "Meeting ended (file saving is disabled in configuration)";
                     if (!anotherMeetingLive) {
                         summaryArea.setText(summaryText(draft));
                         summaryArea.setCaretPosition(0);
-                        setStatus(draft.savedTo() != null
-                                ? "Notes saved to " + draft.savedTo()
-                                : "Meeting ended (file saving is disabled in configuration)", false);
+                        setStatus(savedMsg, false);
                     } else {
+                        // A new meeting is already running; don't disturb its
+                        // live view, but still tell the user where the previous
+                        // meeting's notes went (a non-blocking popup).
                         log.info("Previous meeting notes saved to {}", draft.savedTo());
+                        if (draft.savedTo() != null) {
+                            showBackgroundNote("Previous meeting notes saved to:\n" + draft.savedTo(), false);
+                        }
                     }
                 });
             } catch (Exception e) {
@@ -1579,11 +1587,30 @@ public class MeetingConsole {
                         summaryArea.setText("Could not save the notes: " + message);
                         setStatus("Could not save the notes: " + message, true);
                     } else {
+                        // Never let a failed save vanish silently just because a
+                        // new meeting is running.
                         log.warn("Could not save previous meeting notes: {}", message);
+                        showBackgroundNote("The previous meeting's notes could not be saved:\n" + message
+                                + "\n\nThis meeting is still running.", true);
                     }
                 });
             }
         });
+    }
+
+    /**
+     * Shows a non-modal popup so a background result (e.g. a previous meeting's
+     * notes finishing while a new meeting runs) is always seen, without
+     * blocking the live meeting.
+     */
+    private void showBackgroundNote(String message, boolean error) {
+        JOptionPane pane = new JOptionPane(message,
+                error ? JOptionPane.WARNING_MESSAGE : JOptionPane.INFORMATION_MESSAGE);
+        javax.swing.JDialog dialog = pane.createDialog(frame,
+                error ? "ai-assist — notes not saved" : "ai-assist — notes saved");
+        dialog.setModal(false);
+        dialog.setAlwaysOnTop(true);
+        dialog.setVisible(true);
     }
 
     /** Summarizes the meeting so far and shows it in the summary area. */
