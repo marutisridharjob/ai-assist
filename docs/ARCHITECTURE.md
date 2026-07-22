@@ -2,8 +2,10 @@
 
 This document describes the architecture of **ai-assist**: features, the
 technologies behind each part, the runtime data flow, and the meeting
-sequence. All diagrams are [Mermaid](https://mermaid.js.org/) and render on
-GitHub.
+sequence. The diagrams below are [Mermaid](https://mermaid.js.org/) and render
+on GitHub. An **editable draw.io** version (component architecture + data flow)
+is at [`ai-assist-architecture.drawio`](ai-assist-architecture.drawio) — open it
+at [diagrams.net](https://app.diagrams.net/).
 
 - Repository: <https://github.com/marutisridharjob/ai-assist>
 - Everything runs **100% locally and offline** — no cloud, no account, nothing
