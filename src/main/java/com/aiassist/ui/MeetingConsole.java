@@ -103,6 +103,14 @@ public class MeetingConsole {
     private JLabel meetingIndicator;
     private JPanel indicatorPanel;
     private JPanel southWrapPanel;
+    // Opt-in auto-start: when a meeting app is detected, a cancelable countdown
+    // begins and then starts capture. Off by default.
+    private javax.swing.JCheckBox autoStartToggle;
+    private JPanel autoStartPanel;
+    private JLabel autoStartLabel;
+    private long autoStartDeadline;      // 0 = no countdown running
+    private String autoStartHandledApp;  // app already prompted for this episode
+    private long autoStartCooldownUntil;  // don't re-prompt before this time
     // Help tab.
     private JPanel helpPanel;
     private final java.util.List<JPanel> helpPanels = new java.util.ArrayList<>();
@@ -309,8 +317,23 @@ public class MeetingConsole {
         // from the saved preference — so the previous choice shows on launch.
 
         titleLabel = new JLabel("Title:");
+        autoStartToggle = new javax.swing.JCheckBox("Auto-start");
+        autoStartToggle.setToolTipText("<html>Start recording automatically when a meeting app "
+                + "(Microsoft Teams, Webex, Zoom, Slack) is detected — a short, cancelable countdown "
+                + "appears first, so you can stop a false alarm with one click.<br>"
+                + "Works best with apps that launch per meeting (Webex, Zoom). Teams and Slack run in "
+                + "the background, so you may need to dismiss one prompt at launch.<br>"
+                + "It never starts from your microphone alone.</html>");
+        autoStartToggle.setSelected(prefs.getBoolean("autoStart", false));
+        autoStartToggle.addActionListener(e -> {
+            prefs.putBoolean("autoStart", autoStartToggle.isSelected());
+            if (!autoStartToggle.isSelected()) {
+                cancelAutoStartPrompt();
+            }
+        });
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         controls.add(modelCombo);
+        controls.add(autoStartToggle);
         controls.add(darkModeToggle);
         JPanel top = new JPanel(new BorderLayout(6, 0));
         top.add(titleLabel, BorderLayout.WEST);
@@ -391,9 +414,26 @@ public class MeetingConsole {
         indicatorPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
         indicatorPanel.add(meetingIndicator);
         indicatorPanel.setVisible(false);
+        // Cancelable auto-start countdown bar (hidden unless armed and a meeting
+        // app is detected).
+        autoStartLabel = themedLabel(" ");
+        autoStartLabel.setFont(autoStartLabel.getFont().deriveFont(Font.BOLD));
+        JButton autoStartNow = new JButton("Start now");
+        autoStartNow.addActionListener(e -> {
+            cancelAutoStartPrompt();
+            startMeeting();
+        });
+        JButton autoStartNotNow = new JButton("Not now");
+        autoStartNotNow.addActionListener(e -> dismissAutoStart());
+        autoStartPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        autoStartPanel.add(autoStartLabel);
+        autoStartPanel.add(autoStartNow);
+        autoStartPanel.add(autoStartNotNow);
+        autoStartPanel.setVisible(false);
         JPanel southWrap = new JPanel();
         southWrap.setLayout(new javax.swing.BoxLayout(southWrap, javax.swing.BoxLayout.Y_AXIS));
         southWrap.add(bottom);
+        southWrap.add(autoStartPanel);
         southWrap.add(indicatorPanel);
         southWrapPanel = southWrap;
         tabs.addChangeListener(e -> {
@@ -1239,6 +1279,7 @@ public class MeetingConsole {
                         .orElse(" "));
         LiveTranscriptionService.Status status = liveTranscription.status();
         updateMeetingIndicator(status);
+        updateAutoStart(status);
         if (!meetingCompleted) {
             setStatus(switch (status.state()) {
                 case PREPARING -> status.detail() != null ? status.detail() : "Preparing speech model…";
@@ -1445,7 +1486,7 @@ public class MeetingConsole {
         titleField.setForeground(textFg);
         titleField.setCaretColor(textFg);
         for (JPanel panel : java.util.List.of(topPanel, bottomPanel, buttonsPanel, controlsPanel,
-                editorFileRow,
+                editorFileRow, autoStartPanel,
                 composePanel, composeTopPanel, composeBottomPanel, composeSouthPanel,
                 composeChecks.panel, composeInstrRow, composeOptionStack,
                 composeControlsPanel, indicatorPanel, southWrapPanel)) {
@@ -1494,6 +1535,8 @@ public class MeetingConsole {
         captionLabel.setForeground(muted);
         darkModeToggle.setBackground(panelBg);
         darkModeToggle.setForeground(textFg);
+        autoStartToggle.setBackground(panelBg);
+        autoStartToggle.setForeground(textFg);
         // Start/Pause/Stop keep their green/red action colors in both themes.
         setStatus(lastStatusMessage, lastStatusWasError);
         frame.repaint();
@@ -1560,6 +1603,11 @@ public class MeetingConsole {
         stopButton.setEnabled(false);
         startButton.setEnabled(true);
         startButton.setText("Start");
+        // Re-arm auto-start for the next meeting, but stay quiet for a cooldown
+        // so it doesn't immediately re-prompt while a background app (Teams) is
+        // still running right after this meeting ends.
+        autoStartHandledApp = null;
+        autoStartCooldownUntil = System.currentTimeMillis() + AUTO_START_COOLDOWN_MS;
 
         if (!save) {
             // No — end the meeting and discard the recording, nothing is written.
@@ -1616,6 +1664,72 @@ public class MeetingConsole {
                 });
             }
         });
+    }
+
+    private static final long AUTO_START_COUNTDOWN_MS = 10_000;
+    private static final long AUTO_START_COOLDOWN_MS = 10 * 60_000;
+
+    /**
+     * Opt-in hands-free start: when a meeting app is detected and the app is
+     * idle, run a short cancelable countdown and then start capture. Never
+     * triggers from the microphone — only from a detected meeting app.
+     */
+    private void updateAutoStart(LiveTranscriptionService.Status status) {
+        if (autoStartToggle == null || !autoStartToggle.isSelected()) {
+            if (autoStartDeadline > 0) {
+                cancelAutoStartPrompt();
+            }
+            return;
+        }
+        String app = detectedMeetingApp;
+        // Per-meeting apps (Webex/Zoom) disappear between calls; re-arm then.
+        if (app == null) {
+            autoStartHandledApp = null;
+        }
+        boolean idle = !meetingCompleted
+                && !savingNotes
+                && status.sessionId() == null
+                && status.state() == LiveTranscriptionService.State.IDLE
+                && modelsAvailable;
+
+        if (autoStartDeadline > 0) {
+            long remaining = autoStartDeadline - System.currentTimeMillis();
+            if (!idle || app == null) {
+                cancelAutoStartPrompt(); // conditions changed (or the app closed)
+                return;
+            }
+            if (remaining <= 0) {
+                cancelAutoStartPrompt();
+                startMeeting(); // hands-free start
+                return;
+            }
+            autoStartLabel.setText("▶ " + app + " detected — starting in "
+                    + (remaining / 1000 + 1) + "s");
+            return;
+        }
+        // Not counting down: should we begin?
+        if (idle && app != null
+                && System.currentTimeMillis() >= autoStartCooldownUntil
+                && !app.equals(autoStartHandledApp)) {
+            autoStartHandledApp = app;
+            autoStartDeadline = System.currentTimeMillis() + AUTO_START_COUNTDOWN_MS;
+            autoStartPanel.setVisible(true);
+            frame.revalidate();
+        }
+    }
+
+    private void cancelAutoStartPrompt() {
+        autoStartDeadline = 0;
+        if (autoStartPanel != null && autoStartPanel.isVisible()) {
+            autoStartPanel.setVisible(false);
+            frame.revalidate();
+        }
+    }
+
+    /** "Not now": hide the prompt and stay quiet for a while. */
+    private void dismissAutoStart() {
+        autoStartCooldownUntil = System.currentTimeMillis() + AUTO_START_COOLDOWN_MS;
+        cancelAutoStartPrompt();
     }
 
     /**

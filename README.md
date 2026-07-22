@@ -54,6 +54,14 @@ JDK — not a browser):
   heavy for real-time** on most CPUs and will drop most live captions; the saved
   transcript is produced by Whisper regardless, so a lighter live model does not
   reduce your notes' quality,
+- an **Auto-start** toggle (top-right, off by default): when on, the app
+  watches for a meeting application (Microsoft Teams, Webex, Zoom, Slack) and,
+  when one is detected, shows a short **cancelable countdown**
+  (*"Zoom detected — starting in 10s"* with **Start now** / **Not now**) before
+  it begins recording — so you never forget to press Start. It never triggers
+  from your microphone alone. It works best with apps launched per meeting
+  (Webex, Zoom); Teams and Slack run in the background, so you may need to
+  dismiss one prompt at launch. The choice is remembered across launches,
 - a **Dark** toggle (top-right) switching the whole window between light and
   dark mode; the choice is remembered across launches. The UI uses the
   JDK's own cross-platform look-and-feel, so the window looks and behaves the
