@@ -3,7 +3,15 @@ spring:
     name: ai-assist
 
 server:
-  port: 8080
+  # The port is chosen by the launcher (AiAssistApplication): a dedicated
+  # 1234 by default (not the widely-contended 8080), falling back to a free
+  # OS-assigned port if 1234 is already taken — so ai-assist never blocks
+  # another app. Override the preference with -Dai-assist.port=N.
+  #
+  # Deliberately NOT set here: the launcher supplies server.port at startup.
+  # A value in this file would override the launcher's free-port fallback and
+  # make the app crash (instead of stepping aside) when 1234 is already taken.
+  #
   # Bind the local REST API to the loopback interface only, so it is never
   # reachable from other machines on the network (office LAN, shared Wi-Fi).
   # Everything the app needs runs on this one machine.

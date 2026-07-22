@@ -86,7 +86,7 @@ public class LocalApiSecurityFilter extends OncePerRequestFilter {
             return "";
         }
         String host = hostHeader.trim();
-        if (host.startsWith("[")) { // IPv6 literal, e.g. [::1]:8080
+        if (host.startsWith("[")) { // IPv6 literal, e.g. [::1]:1234
             int close = host.indexOf(']');
             return close > 0 ? host.substring(0, close + 1).toLowerCase(Locale.ROOT) : host.toLowerCase(Locale.ROOT);
         }

@@ -430,6 +430,11 @@ meeting end (`/api/live/end`, `/api/sessions/{id}/end` — the only calls that
 write the notes file), previews (`/api/draft`, `/api/sessions/{id}/draft`),
 and device listing (`/api/audio/devices`).
 
+The API listens on a **dedicated local port `1234`** (not the widely-used
+8080). If `1234` is already taken it automatically falls back to a free
+OS-assigned port, so ai-assist never blocks another application; the chosen
+port is printed in the log. Override the preference with `-Dai-assist.port=N`.
+
 The API is **bound to the loopback interface (`127.0.0.1`) only**, so it is
 never reachable from other machines on the network. A request filter adds
 defence-in-depth for the browser threat model: it rejects requests whose
@@ -446,7 +451,7 @@ valid token get `401`. Example:
 
 ```bash
 TOKEN=$(cat ~/.ai-assist/api-token)
-curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/live/status
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:1234/api/live/status
 ```
 
 Configure it under `ai-assist.security`: set `api-token` to pin a fixed value,
