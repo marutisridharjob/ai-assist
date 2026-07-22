@@ -63,7 +63,7 @@ public class MeetingConsole {
             java.util.prefs.Preferences.userNodeForPackage(MeetingConsole.class);
 
     private JFrame frame;
-    private JTextArea transcript;
+    private javax.swing.JTextPane transcript;
     private JTextArea summaryArea;
     private javax.swing.JSplitPane meetingSplit;
     private JPanel meetingSummaryPane;
@@ -106,7 +106,6 @@ public class MeetingConsole {
     // Opt-in auto-start: when a meeting app is detected, a cancelable countdown
     // begins and then starts capture. Off by default.
     private javax.swing.JCheckBox autoStartToggle;
-    private javax.swing.JCheckBox audioGateToggle; // stronger mode: wait for meeting audio
     private JPanel autoStartPanel;
     private JLabel autoStartLabel;
     private long autoStartDeadline;      // 0 = no countdown running
@@ -127,9 +126,19 @@ public class MeetingConsole {
     private javax.swing.JComboBox<Integer> ratingCombo;
     private JButton feedbackSubmit;
     private JLabel feedbackStatus;
+    private JLabel feedbackCount;
+    private JTextArea submittedArea;   // read-only copy of the last submitted feedback
+    private JPanel submittedPanel;
+    private static final int FEEDBACK_MAX_CHARS = 1000;
     private boolean blinkOn;
     private JPanel bottomPanel;
     private JPanel buttonsPanel;
+    private JLabel notesLink;                   // clickable link to the just-saved notes file
+    private java.nio.file.Path lastSavedNotes;  // shown until the next meeting starts / app closes
+    private JPanel statusStackPanel;
+    private java.util.List<JPanel> meetingButtonRows = java.util.List.of();
+    /** One button size across the whole app, so every button matches. */
+    private static final java.awt.Dimension BUTTON_SIZE = new java.awt.Dimension(122, 30);
     private JButton startButton;
     private JButton pauseButton;
     private JButton stopButton;
@@ -215,7 +224,7 @@ public class MeetingConsole {
         } catch (Exception e) {
             log.debug("Cross-platform look and feel unavailable: {}", e.getMessage());
         }
-        frame = new JFrame("ai-assist — meeting notes");
+        frame = new JFrame("ai-assist — Meeting");
         var icons = java.util.List.of(notesIcon(16), notesIcon(32), notesIcon(64), notesIcon(128));
         frame.setIconImages(icons);
         try {
@@ -234,10 +243,8 @@ public class MeetingConsole {
             }
         });
 
-        transcript = new JTextArea();
+        transcript = new javax.swing.JTextPane();
         transcript.setEditable(false);
-        transcript.setLineWrap(true);
-        transcript.setWrapStyleWord(true);
         transcript.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
         transcript.setMargin(new java.awt.Insets(8, 8, 8, 8));
         JScrollPane scroll = new JScrollPane(transcript,
@@ -260,8 +267,8 @@ public class MeetingConsole {
         meetingSummaryPane = summaryPane;
 
         // Editable meeting title — becomes the notes file name.
-        titleField = new javax.swing.JTextField();
-        titleField.setToolTipText("Meeting title — used for the notes file name");
+        titleField = new javax.swing.JTextField("Minutes of meeting");
+        titleField.setToolTipText("Meeting title — used for the notes file name (a timestamp is added on save)");
         titleField.addActionListener(e -> applyTitle());
         titleField.addFocusListener(new java.awt.event.FocusAdapter() {
             @Override
@@ -327,40 +334,26 @@ public class MeetingConsole {
 
         titleLabel = new JLabel("Title:");
         autoStartToggle = new javax.swing.JCheckBox("Auto-start");
-        autoStartToggle.setToolTipText("<html>Start recording automatically when a meeting app "
-                + "(Microsoft Teams, Webex, Zoom, Slack) is detected — a short, cancelable countdown "
-                + "appears first, so you can stop a false alarm with one click.<br>"
-                + "Works best with apps that launch per meeting (Webex, Zoom). Teams and Slack run in "
-                + "the background, so you may need to dismiss one prompt at launch.<br>"
-                + "It never starts from your microphone alone.</html>");
-        autoStartToggle.setSelected(prefs.getBoolean("autoStart", false));
-        audioGateToggle = new javax.swing.JCheckBox("on meeting audio");
-        audioGateToggle.setToolTipText("<html>Stronger mode: wait until the meeting is actually "
-                + "<b>playing audio</b> (the other participants talking) before starting — not just when "
-                + "the app is open. Uses the system audio, never your microphone.<br>"
-                + "Needs a system-audio source (the built-in tap on macOS/Windows, or a loopback/monitor "
-                + "device); if none is available it falls back to app detection.</html>");
-        audioGateToggle.setSelected(prefs.getBoolean("autoStartAudioGate", false));
-        audioGateToggle.setEnabled(autoStartToggle.isSelected());
+        autoStartToggle.setToolTipText("<html>Start recording automatically when you join a meeting: "
+                + "the app watches for a meeting application (Microsoft Teams, Webex, Zoom, Slack) and "
+                + "waits until the meeting is actually <b>playing audio</b> (the other participants "
+                + "talking) before a short, cancelable countdown starts capture.<br>"
+                + "It uses the system audio only — never your microphone. It listens on the built-in "
+                + "tap (macOS/Windows) or a loopback/monitor device (Linux); if no system-audio source "
+                + "exists it falls back to app detection.</html>");
+        autoStartToggle.setSelected(prefs.getBoolean("autoStart", true));
         autoStartToggle.addActionListener(e -> {
             prefs.putBoolean("autoStart", autoStartToggle.isSelected());
-            audioGateToggle.setEnabled(autoStartToggle.isSelected());
             if (!autoStartToggle.isSelected()) {
                 cancelAutoStartPrompt();
                 setMonitorWanted(false);
             }
         });
-        audioGateToggle.addActionListener(e -> {
-            prefs.putBoolean("autoStartAudioGate", audioGateToggle.isSelected());
-            if (!audioGateToggle.isSelected()) {
-                setMonitorWanted(false);
-            }
-        });
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        controls.add(themedLabel("Model:"));
         controls.add(modelCombo);
         controls.add(autoStartToggle);
-        controls.add(audioGateToggle);
-        controls.add(darkModeToggle);
+        // Dark mode now lives on the Help tab (see buildHelpTab).
         JPanel top = new JPanel(new BorderLayout(6, 0));
         top.add(titleLabel, BorderLayout.WEST);
         top.add(titleField, BorderLayout.CENTER);
@@ -409,18 +402,42 @@ public class MeetingConsole {
         applyButton.setToolTipText("Summarize the meeting so far and show it below");
         applyButton.addActionListener(e -> applyMeetingSummary());
 
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        buttons.add(clearButton);
-        buttons.add(applyButton);
-        buttons.add(startButton);
-        buttons.add(pauseButton);
-        buttons.add(stopButton);
+        // Two rows: Clear/Apply on top, Start/Pause/Stop below, with a gap.
+        JPanel buttonsTop = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        buttonsTop.add(sized(clearButton));
+        buttonsTop.add(sized(applyButton));
+        JPanel buttonsBottom = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        buttonsBottom.add(sized(startButton));
+        buttonsBottom.add(sized(pauseButton));
+        buttonsBottom.add(sized(stopButton));
+        JPanel buttons = new JPanel();
+        buttons.setLayout(new javax.swing.BoxLayout(buttons, javax.swing.BoxLayout.Y_AXIS));
+        buttons.add(buttonsTop);
+        buttons.add(javax.swing.Box.createVerticalStrut(14));
+        buttons.add(buttonsBottom);
         buttonsPanel = buttons;
+        meetingButtonRows = java.util.List.of(buttonsTop, buttonsBottom);
         // Caption, then status/errors, each on their own full-width line ABOVE
         // the buttons, wrapping instead of crowding into the button row.
+        // Clickable link to the last saved notes file (shown after Stop→Save,
+        // until the next meeting starts or the app closes).
+        notesLink = linkLabel("Open saved notes");
+        notesLink.setVisible(false);
+        notesLink.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                if (lastSavedNotes != null) {
+                    openFile(lastSavedNotes);
+                }
+            }
+        });
+        JPanel statusStack = new JPanel(new BorderLayout());
+        statusStack.add(statusLabel, BorderLayout.NORTH);
+        statusStack.add(notesLink, BorderLayout.CENTER);
+        statusStackPanel = statusStack;
         JPanel bottom = new JPanel(new BorderLayout());
         bottom.add(captionLabel, BorderLayout.NORTH);
-        bottom.add(statusLabel, BorderLayout.CENTER);
+        bottom.add(statusStack, BorderLayout.CENTER);
         bottom.add(buttons, BorderLayout.SOUTH);
         bottom.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 8, 4, 8));
         bottomPanel = bottom;
@@ -453,8 +470,8 @@ public class MeetingConsole {
         autoStartNotNow.addActionListener(e -> dismissAutoStart());
         autoStartPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
         autoStartPanel.add(autoStartLabel);
-        autoStartPanel.add(autoStartNow);
-        autoStartPanel.add(autoStartNotNow);
+        autoStartPanel.add(sized(autoStartNow));
+        autoStartPanel.add(sized(autoStartNotNow));
         autoStartPanel.setVisible(false);
         JPanel southWrap = new JPanel();
         southWrap.setLayout(new javax.swing.BoxLayout(southWrap, javax.swing.BoxLayout.Y_AXIS));
@@ -466,12 +483,15 @@ public class MeetingConsole {
             boolean meetingTab = tabs.getSelectedIndex() == 0;
             meetingTopRow.setVisible(meetingTab);
             bottomPanel.setVisible(meetingTab);
+            // App name stays "ai-assist"; the active tab is the only suffix.
+            frame.setTitle("ai-assist — " + tabs.getTitleAt(tabs.getSelectedIndex()));
+            updateTabColors();
             frame.revalidate();
             frame.repaint();
         });
         frame.add(southWrap, BorderLayout.SOUTH);
-        frame.setSize(940, 640);
         frame.setMinimumSize(new java.awt.Dimension(720, 520));
+        frame.setSize(720, 520); // open at the minimum size
         frame.setResizable(true);
         frame.setLocationRelativeTo(null); // center on screen instead of the corner
 
@@ -479,10 +499,11 @@ public class MeetingConsole {
         applyTheme(darkModeToggle.isSelected());
         frame.setVisible(true);
 
-        // Make sure the installed app's user folders exist, then tell the user
-        // which models still need downloading.
+        // Make sure the installed app's user folders exist, place first-run
+        // desktop shortcuts, then tell the user which models still need downloading.
         com.aiassist.setup.UserPaths.meetingNotesDir();
         com.aiassist.setup.UserPaths.modelsDir();
+        com.aiassist.setup.DesktopShortcuts.createOnceOnFirstRun();
         maybeShowModelNotice(false);
 
         // 250 ms so the live caption line keeps up with Vosk's partial results;
@@ -543,18 +564,20 @@ public class MeetingConsole {
      */
     private final class OptionChecks {
         final JPanel panel = new JPanel(new java.awt.GridLayout(0, 4, 12, 2));
-        final javax.swing.JCheckBox grammar = themedCheck("Fix grammar");
+        final javax.swing.JCheckBox grammar = themedCheck("Grammar");
         final javax.swing.JCheckBox compact = themedCheck("Compact");
         final javax.swing.JCheckBox detailed = themedCheck("Detailed");
         final javax.swing.JCheckBox professional = themedCheck("Professional");
         final javax.swing.JCheckBox bullets = themedCheck("Bullet points");
         final javax.swing.JCheckBox summary = themedCheck("Summary");
+        final javax.swing.JCheckBox email = themedCheck("Email");
         final java.util.List<javax.swing.JCheckBox> styles = new java.util.ArrayList<>();
 
         OptionChecks() {
             summary.setToolTipText("Summarise the text as an overview, key points and action items");
+            email.setToolTipText("Rewrite as a professional email (subject, greeting, body, sign-off)");
             java.util.List<javax.swing.JCheckBox> all = new java.util.ArrayList<>(java.util.List.of(
-                    grammar, compact, detailed, professional, bullets, summary));
+                    grammar, compact, detailed, professional, bullets, summary, email));
             for (var style : com.aiassist.draft.StyleRewriteService.Style.values()) {
                 var cb = themedCheck(style.display());
                 cb.putClientProperty("style", style);
@@ -579,24 +602,37 @@ public class MeetingConsole {
             professional.setSelected(false);
             bullets.setSelected(false);
             summary.setSelected(false);
+            email.setSelected(false);
             styles.forEach(cb -> cb.setSelected(false));
         }
     }
 
     /** Runs the chosen options over the text: Summary, else the editing pipeline. */
     private String runOptions(OptionChecks o, String text, String instructions) {
+        String instr = instructions == null ? "" : instructions.strip();
+        if (o.email.isSelected()) {
+            instr = ("Rewrite the content as a professional email with a concise subject line, a "
+                    + "greeting, a clear body, and a polite sign-off. " + instr).strip();
+        }
         if (o.summary.isSelected()) {
-            return styleRewriteService.summarizeMeeting(text, instructions);
+            return styleRewriteService.summarizeMeeting(text, instr);
         }
         return styleRewriteService.applyEditor(text, o.grammar.isSelected(), o.compact.isSelected(),
                 o.detailed.isSelected(), o.professional.isSelected(), o.bullets.isSelected(),
-                o.selectedStyles(), instructions);
+                o.selectedStyles(), instr);
     }
 
     private JLabel themedLabel(String text) {
         var label = new JLabel(text);
         themedLabels.add(label);
         return label;
+    }
+
+    /** Gives a button the app-wide uniform size, so all buttons match. */
+    private static <T extends JButton> T sized(T button) {
+        button.setPreferredSize(BUTTON_SIZE);
+        button.setMinimumSize(BUTTON_SIZE);
+        return button;
     }
 
     /** Native file dialog: Finder sheet on macOS, Explorer dialog on Windows. */
@@ -621,16 +657,27 @@ public class MeetingConsole {
         return new java.io.File(dialog.getDirectory(), dialog.getFile()).getAbsolutePath();
     }
 
+    private static final java.util.Set<String> ALLOWED_LOAD_TYPES =
+            java.util.Set.of("txt", "doc", "docx");
+
     private void loadAssistFile() {
         String path = chooseFile(false);
         if (path == null) {
+            return;
+        }
+        String ext = fileExtension(path);
+        if (!ALLOWED_LOAD_TYPES.contains(ext)) {
+            JOptionPane.showMessageDialog(frame,
+                    "Only these file types can be loaded:\n\n    .txt, .doc, .docx\n\n"
+                            + "The file you picked is a \"." + ext + "\" file.",
+                    "Unsupported file type", JOptionPane.WARNING_MESSAGE);
             return;
         }
         filePathField.setText(path);
         composeStatus.setText("Loading…");
         notesExecutor.submit(() -> {
             try {
-                String text = java.nio.file.Files.readString(java.nio.file.Path.of(path));
+                String text = readDocument(java.nio.file.Path.of(path), ext);
                 SwingUtilities.invokeLater(() -> {
                     composeFeed.setText(text);
                     composeFeed.setCaretPosition(0);
@@ -641,6 +688,72 @@ public class MeetingConsole {
                         composeStatus.setText("Could not load: " + e.getMessage()));
             }
         });
+    }
+
+    private static String fileExtension(String path) {
+        String name = java.nio.file.Path.of(path).getFileName().toString();
+        int dot = name.lastIndexOf('.');
+        return dot >= 0 ? name.substring(dot + 1).toLowerCase(java.util.Locale.ROOT) : "";
+    }
+
+    /**
+     * Reads text from a .txt, .docx, or .doc file using only the JDK (no
+     * document library), so it works the same on every OS. .docx is a zip of
+     * XML — the text lives in word/document.xml; .doc is the legacy binary
+     * format, from which we extract readable runs best-effort.
+     */
+    private static String readDocument(java.nio.file.Path file, String ext) throws java.io.IOException {
+        switch (ext) {
+            case "docx":
+                return readDocx(file);
+            case "doc":
+                return readLegacyDoc(file);
+            default:
+                return java.nio.file.Files.readString(file);
+        }
+    }
+
+    private static String readDocx(java.nio.file.Path file) throws java.io.IOException {
+        try (var zip = new java.util.zip.ZipInputStream(java.nio.file.Files.newInputStream(file))) {
+            java.util.zip.ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                if ("word/document.xml".equals(entry.getName())) {
+                    String xml = new String(zip.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                    // paragraphs and line breaks become newlines; then strip tags.
+                    String text = xml.replaceAll("(?i)</w:p>", "\n")
+                            .replaceAll("(?i)<w:br[^>]*/>", "\n")
+                            .replaceAll("<[^>]+>", "");
+                    return unescapeXml(text).strip();
+                }
+            }
+        }
+        return "";
+    }
+
+    private static String readLegacyDoc(java.nio.file.Path file) throws java.io.IOException {
+        byte[] bytes = java.nio.file.Files.readAllBytes(file);
+        StringBuilder out = new StringBuilder();
+        StringBuilder run = new StringBuilder();
+        for (byte b : bytes) {
+            char c = (char) (b & 0xFF);
+            if (c == '\n' || c == '\r' || c == '\t' || (c >= 0x20 && c < 0x7F)) {
+                run.append(c);
+            } else {
+                if (run.length() >= 4) {
+                    out.append(run).append('\n');
+                }
+                run.setLength(0);
+            }
+        }
+        if (run.length() >= 4) {
+            out.append(run);
+        }
+        return out.toString().replaceAll("\n{3,}", "\n\n").strip();
+    }
+
+    private static String unescapeXml(String s) {
+        return s.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
+                .replace("&apos;", "'").replace("&amp;", "&");
     }
 
     /**
@@ -658,24 +771,25 @@ public class MeetingConsole {
         filePathField = new javax.swing.JTextField();
         filePathField.setToolTipText("A text file to load; the file name is reused when you Download");
         JButton loadButton = new JButton("Load");
-        loadButton.setToolTipText("Load a text file into the content box");
+        loadButton.setToolTipText("Load a .txt, .doc or .docx file into the content box");
         loadButton.addActionListener(e -> loadAssistFile());
         JPanel fileRow = new JPanel(new BorderLayout(6, 0));
         fileRow.add(themedLabel("File:"), BorderLayout.WEST);
         fileRow.add(filePathField, BorderLayout.CENTER);
         JPanel fileButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
-        fileButtons.add(loadButton);
+        fileButtons.add(sized(loadButton));
         fileRow.add(fileButtons, BorderLayout.EAST);
         fileRow.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 8, 4, 8));
 
         composeChecks = new OptionChecks();
         composeInstructions = new javax.swing.JTextField(18);
         JPanel instrRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
-        instrRow.add(themedLabel("Instructions:"));
+        instrRow.add(themedLabel("Additional instructions:"));
         instrRow.add(composeInstructions);
         JPanel optionStack = new JPanel();
         optionStack.setLayout(new javax.swing.BoxLayout(optionStack, javax.swing.BoxLayout.Y_AXIS));
         optionStack.add(composeChecks.panel);
+        optionStack.add(javax.swing.Box.createVerticalStrut(12)); // space before instructions
         optionStack.add(instrRow);
 
         JButton clearButton = new JButton("Clear");
@@ -685,13 +799,13 @@ public class MeetingConsole {
         downloadButton.setToolTipText("Save the result to your Desktop");
         downloadButton.addActionListener(e -> downloadAssistFile());
         JButton applyButton = new JButton("Apply");
-        applyButton.setToolTipText("Apply the checked options and instructions to your content");
+        applyButton.setToolTipText("Apply the checked options and instructions — click again any time to regenerate");
         applyButton.addActionListener(e -> composeApply());
         composeStatus = new JLabel(" ");
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));
-        controls.add(clearButton);
-        controls.add(downloadButton);
-        controls.add(applyButton);
+        controls.add(sized(clearButton));
+        controls.add(sized(downloadButton));
+        controls.add(sized(applyButton));
 
         JPanel south = new JPanel(new BorderLayout());
         south.add(optionStack, BorderLayout.NORTH);
@@ -708,7 +822,7 @@ public class MeetingConsole {
                 JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER),
                 BorderLayout.CENTER);
         JPanel bottom = new JPanel(new BorderLayout());
-        bottom.add(themedLabel("  Result:"), BorderLayout.NORTH);
+        bottom.add(themedLabel("  After modification:"), BorderLayout.NORTH);
         bottom.add(new JScrollPane(composeResult,
                 JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER),
                 BorderLayout.CENTER);
@@ -758,7 +872,13 @@ public class MeetingConsole {
         panel.add(leftRow(themedLabel("Architecture & Design by Maruti, version 0.1")));
         panel.add(javax.swing.Box.createVerticalStrut(18));
 
-        // Section 2 — Help (a link that opens the instructions window).
+        // Section 2 — Appearance (the Dark-mode toggle, moved off the top bar).
+        panel.add(leftRow(sectionHeading("Appearance")));
+        darkModeToggle.setText("Dark mode");
+        panel.add(leftRow(darkModeToggle));
+        panel.add(javax.swing.Box.createVerticalStrut(18));
+
+        // Section 3 — Help (a link that opens the instructions window).
         panel.add(leftRow(sectionHeading("Help")));
         JLabel instructionsLink = linkLabel("Instructions to use ai-assist");
         instructionsLink.addMouseListener(new java.awt.event.MouseAdapter() {
@@ -770,17 +890,39 @@ public class MeetingConsole {
         panel.add(leftRow(instructionsLink));
         panel.add(javax.swing.Box.createVerticalStrut(18));
 
-        // Section 3 — Feedback.
+        // Section 4 — Feedback.
         panel.add(leftRow(sectionHeading("Feedback")));
         feedbackArea = multiLineArea();
+        ((javax.swing.text.AbstractDocument) feedbackArea.getDocument())
+                .setDocumentFilter(new LengthLimitFilter(FEEDBACK_MAX_CHARS));
         JScrollPane feedbackScroll = new JScrollPane(feedbackArea);
         feedbackScroll.setPreferredSize(new java.awt.Dimension(560, 150));
-        feedbackScroll.setMaximumSize(new java.awt.Dimension(Integer.MAX_VALUE, 170));
-        feedbackScroll.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
-        panel.add(feedbackScroll);
+        feedbackCount = themedLabel(FEEDBACK_MAX_CHARS + " characters left");
+        feedbackCount.setFont(feedbackCount.getFont().deriveFont(11f));
+        feedbackArea.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            private void update() {
+                int left = FEEDBACK_MAX_CHARS - feedbackArea.getText().length();
+                feedbackCount.setText(left + " characters left");
+            }
+            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { update(); }
+            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { update(); }
+            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { update(); }
+        });
+        JPanel countRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        countRow.add(feedbackCount);
+        JPanel feedbackBox = new JPanel(new BorderLayout());
+        feedbackBox.add(feedbackScroll, BorderLayout.CENTER);
+        feedbackBox.add(countRow, BorderLayout.SOUTH);
+        feedbackBox.setMaximumSize(new java.awt.Dimension(Integer.MAX_VALUE, 200));
+        feedbackBox.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
+        helpPanels.add(feedbackBox);
+        helpPanels.add(countRow);
+        panel.add(feedbackBox);
 
+        // A line of space between the text box and the rating.
+        panel.add(javax.swing.Box.createVerticalStrut(14));
         ratingCombo = new javax.swing.JComboBox<>(new Integer[] {0, 1, 2, 3, 4, 5});
-        JPanel ratingRow = leftRow(themedLabel("Rating:"), ratingCombo);
+        JPanel ratingRow = leftRow(themedLabel("Over all rating to ai-assist :"), ratingCombo);
         panel.add(ratingRow);
 
         // A couple of lines of breathing room between the rating and the buttons.
@@ -797,7 +939,22 @@ public class MeetingConsole {
         feedbackSubmit.addActionListener(e -> submitFeedback());
         feedbackStatus = new JLabel(" ");
         themedLabels.add(feedbackStatus);
-        panel.add(leftRow(feedbackClear, feedbackSubmit, feedbackStatus));
+        panel.add(leftRow(sized(feedbackClear), sized(feedbackSubmit), feedbackStatus));
+
+        // A read-only copy of the last submitted feedback, shown after Submit.
+        panel.add(javax.swing.Box.createVerticalStrut(16));
+        submittedArea = multiLineArea();
+        submittedArea.setEditable(false);
+        JScrollPane submittedScroll = new JScrollPane(submittedArea);
+        submittedScroll.setPreferredSize(new java.awt.Dimension(560, 110));
+        submittedScroll.setMaximumSize(new java.awt.Dimension(Integer.MAX_VALUE, 130));
+        submittedPanel = new JPanel(new BorderLayout());
+        submittedPanel.add(leftRow(themedLabel("Submitted:")), BorderLayout.NORTH);
+        submittedPanel.add(submittedScroll, BorderLayout.CENTER);
+        submittedPanel.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
+        submittedPanel.setVisible(false);
+        helpPanels.add(submittedPanel);
+        panel.add(submittedPanel);
 
         helpPanel = panel;
         JPanel wrap = new JPanel(new BorderLayout());
@@ -833,6 +990,35 @@ public class MeetingConsole {
         return row;
     }
 
+    /** Caps a text component at a maximum number of characters. */
+    private static final class LengthLimitFilter extends javax.swing.text.DocumentFilter {
+        private final int max;
+
+        LengthLimitFilter(int max) {
+            this.max = max;
+        }
+
+        @Override
+        public void insertString(FilterBypass fb, int offset, String text,
+                                 javax.swing.text.AttributeSet attr) throws javax.swing.text.BadLocationException {
+            replace(fb, offset, 0, text, attr);
+        }
+
+        @Override
+        public void replace(FilterBypass fb, int offset, int length, String text,
+                            javax.swing.text.AttributeSet attr) throws javax.swing.text.BadLocationException {
+            if (text == null) {
+                text = "";
+            }
+            int room = max - (fb.getDocument().getLength() - length);
+            if (room <= 0) {
+                return;
+            }
+            String toInsert = text.length() > room ? text.substring(0, room) : text;
+            fb.replace(offset, length, toInsert, attr);
+        }
+    }
+
     /**
      * Opens the instructions window: a searchable, read-only information box
      * plus a Close button. The search box highlights every match in the text.
@@ -848,6 +1034,8 @@ public class MeetingConsole {
 
         JEditorPane info = new JEditorPane("text/html", instructionsHtml(dark));
         info.setEditable(false);
+        info.setOpaque(true);
+        info.setBackground(bg); // otherwise the pane stays white and dark-mode text is unreadable
         info.setCaretPosition(0);
         info.addHyperlinkListener(e -> {
             if (e.getEventType() == javax.swing.event.HyperlinkEvent.EventType.ACTIVATED && e.getURL() != null) {
@@ -855,6 +1043,7 @@ public class MeetingConsole {
             }
         });
         JScrollPane infoScroll = new JScrollPane(info);
+        infoScroll.getViewport().setBackground(bg);
 
         JTextField searchField = new JTextField(26);
         JButton searchButton = new JButton("Search");
@@ -867,13 +1056,13 @@ public class MeetingConsole {
         searchLabel.setForeground(dark ? new java.awt.Color(0xE6E6E6) : java.awt.Color.BLACK);
         searchRow.add(searchLabel);
         searchRow.add(searchField);
-        searchRow.add(searchButton);
+        searchRow.add(sized(searchButton));
 
         JButton close = new JButton("Close");
         close.addActionListener(e -> dialog.dispose());
         JPanel bottom = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 6));
         bottom.setBackground(panelBg);
-        bottom.add(close);
+        bottom.add(sized(close));
 
         dialog.getContentPane().setBackground(panelBg);
         dialog.setLayout(new BorderLayout());
@@ -960,6 +1149,13 @@ public class MeetingConsole {
             SwingUtilities.invokeLater(() -> feedbackStatus.setText("Submitted"));
             sleepQuietly(1000);
             SwingUtilities.invokeLater(() -> {
+                // Show a read-only copy of what was submitted, below the buttons,
+                // until the next submission or the app closes.
+                submittedArea.setText("Rating: " + rate + "/5\n\n"
+                        + (message == null ? "" : message.strip()));
+                submittedArea.setCaretPosition(0);
+                submittedPanel.setVisible(true);
+                helpPanel.revalidate();
                 feedbackArea.setText("");
                 ratingCombo.setSelectedIndex(0);
                 feedbackStatus.setText(" ");
@@ -1069,7 +1265,8 @@ public class MeetingConsole {
         JScrollPane scroll = new JScrollPane(modelNoticePane);
         scroll.setPreferredSize(new java.awt.Dimension(560, 380));
 
-        JButton openFolder = new JButton("Open models folder");
+        JButton openFolder = new JButton("Open");
+        openFolder.setToolTipText("Open the models folder");
         openFolder.addActionListener(e -> openFolder(com.aiassist.setup.UserPaths.modelsDir()));
         JButton recheck = new JButton("Recheck");
         recheck.setToolTipText("Unpack any dropped .zip models and check again");
@@ -1077,9 +1274,9 @@ public class MeetingConsole {
         JButton close = new JButton("Close");
         close.addActionListener(e -> modelNoticeDialog.dispose());
         JPanel buttons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT));
-        buttons.add(openFolder);
-        buttons.add(recheck);
-        buttons.add(close);
+        buttons.add(sized(openFolder));
+        buttons.add(sized(recheck));
+        buttons.add(sized(close));
 
         modelNoticeDialog.getContentPane().setLayout(new BorderLayout());
         modelNoticeDialog.getContentPane().add(scroll, BorderLayout.CENTER);
@@ -1124,7 +1321,8 @@ public class MeetingConsole {
         b.append("<h3>").append(heading).append("</h3><ul>");
         for (var m : models) {
             b.append("<li><b>").append(escapeHtml(m.title())).append("</b> — ").append(escapeHtml(m.purpose()))
-                    .append(".<br><a href='").append(m.downloadUrl()).append("'>Download</a> — ")
+                    .append(".<br>File: <code>").append(escapeHtml(m.fileName())).append("</code>")
+                    .append(" &nbsp; <a href='").append(m.downloadUrl()).append("'>Download page</a><br>")
                     .append(escapeHtml(m.instructions())).append("</li>");
         }
         b.append("</ul>");
@@ -1143,6 +1341,40 @@ public class MeetingConsole {
             }
         } catch (Exception e) {
             log.warn("Could not open the folder {}: {}", dir, e.getMessage());
+        }
+    }
+
+    /** Opens a file in the OS default application, best-effort. */
+    private void openFile(java.nio.file.Path file) {
+        try {
+            if (java.awt.Desktop.isDesktopSupported()
+                    && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.OPEN)) {
+                java.awt.Desktop.getDesktop().open(file.toFile());
+            }
+        } catch (Exception e) {
+            log.warn("Could not open the file {}: {}", file, e.getMessage());
+        }
+    }
+
+    /** Shows the clickable "open saved notes" link for a saved file. */
+    private void showSavedNotesLink(String savedPath) {
+        if (savedPath == null || savedPath.isBlank()) {
+            return;
+        }
+        lastSavedNotes = java.nio.file.Path.of(savedPath);
+        notesLink.setText("<html><u>Open saved notes: "
+                + escapeHtml(lastSavedNotes.getFileName().toString()) + "</u></html>");
+        notesLink.setToolTipText(savedPath);
+        notesLink.setVisible(true);
+        if (statusStackPanel != null) {
+            statusStackPanel.revalidate();
+        }
+    }
+
+    private void clearSavedNotesLink() {
+        lastSavedNotes = null;
+        if (notesLink != null) {
+            notesLink.setVisible(false);
         }
     }
 
@@ -1173,48 +1405,77 @@ public class MeetingConsole {
                 + "<h3 style='color:" + heading + ";'>Step group B — record a meeting (Meeting tab)</h3>"
                 + "<ol>"
                 + "<li>Open the <b>Meeting</b> tab.</li>"
-                + "<li>(Optional) Type a <b>Title</b> at the top — it becomes the notes file name.</li>"
-                + "<li>Pick a speech model from the dropdown (top-right). Your choice is remembered.</li>"
-                + "<li>Press <b>Start</b>. Your voice shows as <b>[you]</b> and the other participants as "
-                + "<b>[other]</b>; live words appear under the box, finished lines drop into it.</li>"
+                + "<li>The <b>Title</b> defaults to <i>Minutes of meeting</i>; change it if you like — a "
+                + "timestamp is added automatically when the file is saved.</li>"
+                + "<li>Pick a speech model from the <b>Model:</b> dropdown (top-right). Your choice is "
+                + "remembered.</li>"
+                + "<li>Press <b>Start</b> — or leave <b>Auto-start</b> ticked and the app starts by itself "
+                + "when a meeting app (Teams, Webex, Zoom) is playing audio.</li>"
+                + "<li>In the transcript, the other participants' lines show the timestamp on its own line "
+                + "above the text; <b>your own speech is shown in blue</b>.</li>"
                 + "<li>Need a pause? Press <b>Pause</b>, then <b>Start</b> again to resume.</li>"
                 + "<li>Want a summary so far without stopping? Press <b>Apply</b>.</li>"
-                + "<li>When the meeting ends, press <b>Stop</b>, then choose <b>Save</b>.</li>"
-                + "<li>Find your notes in <code>Documents/meeting-notes</code> as a timestamped file.</li>"
+                + "<li>When the meeting ends, press <b>Stop</b>, then choose <b>Save</b> (or <b>No</b> to "
+                + "discard, or <b>Cancel</b> to keep going).</li>"
+                + "<li>A <b>Saving…</b> indicator shows while the file is written; then an "
+                + "<b>Open saved notes</b> link appears. Notes are saved in "
+                + "<code>Documents/meeting-notes</code> as a timestamped file.</li>"
                 + "</ol>"
 
                 + "<h3 style='color:" + heading + ";'>Step group C — improve or summarize text (Assist tab)</h3>"
                 + "<ol>"
                 + "<li>Open the <b>Assist</b> tab.</li>"
-                + "<li>Type or paste text into the top box, or press <b>Load</b> to open a text file.</li>"
-                + "<li>Tick the options you want — e.g. <b>Fix grammar</b>, <b>Professional</b>, "
-                + "<b>Bullet points</b>, <b>Summary</b>, or a communication style.</li>"
-                + "<li>(Optional) Type free-form <b>Instructions</b> for anything the tick-boxes don't cover.</li>"
-                + "<li>Press <b>Apply</b>. The result appears in the bottom box.</li>"
+                + "<li>Type or paste text into the top box, or press <b>Load</b> to open a "
+                + "<code>.txt</code>, <code>.doc</code>, or <code>.docx</code> file.</li>"
+                + "<li>Tick the options you want — e.g. <b>Grammar</b>, <b>Professional</b>, "
+                + "<b>Bullet points</b>, <b>Summary</b>, <b>Email</b>, or a communication style.</li>"
+                + "<li>(Optional) Type <b>Additional instructions</b> for anything the tick-boxes don't cover.</li>"
+                + "<li>Press <b>Apply</b>. The result appears in the <b>After modification</b> box. Press "
+                + "<b>Apply</b> again any time to regenerate.</li>"
                 + "<li>Press <b>Download</b> to save the result, or <b>Clear</b> to start over.</li>"
                 + "</ol>"
+
+                + "<h3 style='color:" + heading + ";'>Models — what to download and where</h3>"
+                + "<p>Place these in your models folder (Open the folder from the setup notice). The app "
+                + "picks them up automatically; a Vosk <code>.zip</code> is unpacked for you.</p>"
+                + "<ul>"
+                + "<li><b>Speech (required)</b> — file <code>vosk-model-small-en-us-0.15.zip</code>, from "
+                + "<a href='https://alphacephei.com/vosk/models'>alphacephei.com/vosk/models</a>.</li>"
+                + "<li><b>Transcript (recommended)</b> — file <code>ggml-base.bin</code>, from the "
+                + "<a href='https://github.com/NoMercy-Entertainment/nomercy-whisper-models/releases'>GitHub "
+                + "mirror</a> (no Hugging Face needed).</li>"
+                + "<li><b>AI model (recommended)</b> — a single GGUF instruct model such as "
+                + "<code>qwen2.5-1.5b-instruct-q4_k_m.gguf</code>; see the "
+                + "<a href='https://github.com/marutisridharjob/ai-assist/blob/main/models/README.md'>models "
+                + "guide</a>.</li>"
+                + "</ul>"
 
                 + "<h3 style='color:" + heading + ";'>Good to know</h3>"
                 + "<ul>"
                 + "<li>Everything runs on your machine — no audio or text ever leaves it.</li>"
-                + "<li>With a speech model you get live captions and notes; add the recommended models for "
-                + "a more accurate transcript and richer AI summaries.</li>"
+                + "<li>Switch light/dark on this Help tab under <b>Appearance</b>.</li>"
+                + "<li>When you are muted, room noise on your mic is ignored unless you speak up.</li>"
                 + "<li>Slow steps (transcribing, drafting, saving) run in the background, so the app stays "
                 + "responsive.</li>"
                 + "</ul>"
 
                 + "<h3 style='color:" + heading + ";'>Open-source licenses</h3>"
+                + "<p>ai-assist and everything it bundles is open source. Licenses (click for the full text):</p>"
                 + "<ul>"
-                + "<li>Vosk speech models &amp; API — Apache-2.0 "
-                + "(<a href='https://github.com/alphacep/vosk-api'>vosk-api</a>)</li>"
-                + "<li>Whisper / whisper.cpp — MIT "
-                + "(<a href='https://github.com/ggerganov/whisper.cpp'>whisper.cpp</a>)</li>"
-                + "<li>whisper-jni (Java binding) — MIT "
-                + "(<a href='https://github.com/GiviMAD/whisper-jni'>whisper-jni</a>)</li>"
-                + "<li>JNA — Apache-2.0 / LGPL-2.1</li>"
-                + "<li>Spring Boot &amp; Jackson — Apache-2.0</li>"
-                + "<li>Java runtime (OpenJDK) — GPLv2 with Classpath Exception</li>"
-                + "<li>ai-assist application code — open source</li>"
+                + "<li>Vosk speech engine &amp; models — "
+                + "<a href='https://www.apache.org/licenses/LICENSE-2.0'>Apache-2.0</a></li>"
+                + "<li>Whisper / whisper.cpp &amp; whisper-jni — "
+                + "<a href='https://opensource.org/license/mit'>MIT</a></li>"
+                + "<li>llama.cpp &amp; de.kherud:llama — "
+                + "<a href='https://opensource.org/license/mit'>MIT</a></li>"
+                + "<li>JNA — <a href='https://www.apache.org/licenses/LICENSE-2.0'>Apache-2.0</a> / "
+                + "<a href='https://opensource.org/license/lgpl-2-1'>LGPL-2.1</a></li>"
+                + "<li>Spring Boot &amp; Jackson — "
+                + "<a href='https://www.apache.org/licenses/LICENSE-2.0'>Apache-2.0</a></li>"
+                + "<li>Java runtime (OpenJDK) — "
+                + "<a href='https://openjdk.org/legal/gplv2+ce.html'>GPLv2 with Classpath Exception</a></li>"
+                + "<li>ai-assist source — see the "
+                + "<a href='https://github.com/marutisridharjob/ai-assist'>GitHub repository</a></li>"
                 + "</ul>"
 
                 + "<p style='color:" + link + ";'>Tip: use the Search box above to jump to any word on this page.</p>"
@@ -1313,8 +1574,8 @@ public class MeetingConsole {
                 case PAUSED -> "Paused — press Start to continue";
                 case ERROR -> "Audio problem: " + status.detail();
                 case IDLE -> modelsAvailable
-                        ? "Idle — press Start to begin"
-                        : "No speech model found — place a Vosk model zip or folder next to the jar"
+                        ? "Click Start to begin"
+                        : "No speech model found — place a Vosk model zip or folder in the models folder"
                           + " (it extracts automatically)";
             }, status.state() == LiveTranscriptionService.State.ERROR
                     || (status.state() == LiveTranscriptionService.State.IDLE && !modelsAvailable));
@@ -1348,22 +1609,47 @@ public class MeetingConsole {
         if (!sessionId.equals(renderedSessionId)) {
             renderedSessionId = sessionId;
             renderedUtterances = 0;
-            // New meeting: seed the title field, preferring the detected app.
-            if (detectedMeetingApp != null && "Live meeting notes".equals(session.topic())) {
-                session.rename(detectedMeetingApp + " meeting");
-            }
+            // New meeting: seed the title field (default "Minutes of meeting").
             titleField.setText(session.topic());
         }
         List<Utterance> utterances = session.utterances();
         for (int i = renderedUtterances; i < utterances.size(); i++) {
-            Utterance u = utterances.get(i);
-            transcript.append("[" + LINE_TIME.format(u.capturedAt()) + "] "
-                    + sourceName(u.speaker()) + ": " + u.text() + "\n");
+            appendTranscriptEntry(utterances.get(i));
         }
         if (utterances.size() > renderedUtterances) {
             renderedUtterances = utterances.size();
-            transcript.setCaretPosition(transcript.getDocument().getLength());
+            transcript.setCaretPosition(transcript.getStyledDocument().getLength());
         }
+    }
+
+    /**
+     * Appends one utterance to the transcript: the timestamp on its own line,
+     * then the content on the next line. Your own speech ("you") is shown in a
+     * darker blue; the other participants' speech uses the normal text colour.
+     * No [you]/[other] tags — the colour distinguishes the speaker.
+     */
+    private void appendTranscriptEntry(Utterance u) {
+        javax.swing.text.StyledDocument doc = transcript.getStyledDocument();
+        boolean you = "you".equals(u.speaker());
+        java.awt.Color body = you
+                ? (darkMode ? new java.awt.Color(0x6FA8FF) : new java.awt.Color(0x0D47A1))
+                : (darkMode ? new java.awt.Color(0xE6E6E6) : new java.awt.Color(0x1A1A1A));
+        java.awt.Color stamp = darkMode ? new java.awt.Color(0x9AA0A6) : new java.awt.Color(0x808080);
+        try {
+            insertStyled(doc, "[" + LINE_TIME.format(u.capturedAt()) + "]\n", stamp, 11);
+            insertStyled(doc, u.text() + "\n\n", body, 14);
+        } catch (javax.swing.text.BadLocationException ignored) {
+            // best-effort append
+        }
+    }
+
+    private static void insertStyled(javax.swing.text.StyledDocument doc, String text,
+                                     java.awt.Color color, int size) throws javax.swing.text.BadLocationException {
+        var attrs = new javax.swing.text.SimpleAttributeSet();
+        javax.swing.text.StyleConstants.setForeground(attrs, color);
+        javax.swing.text.StyleConstants.setFontFamily(attrs, Font.SANS_SERIF);
+        javax.swing.text.StyleConstants.setFontSize(attrs, size);
+        doc.insertString(doc.getLength(), text, attrs);
     }
 
     /** Friendly source name: "You" for your microphone, "Others" for the room. */
@@ -1493,6 +1779,19 @@ public class MeetingConsole {
     }
 
     /** Light/dark palette applied to every part of the window. */
+    /** Colours the active tab a clear green so it stands out (esp. in dark mode). */
+    private void updateTabColors() {
+        if (tabs == null) {
+            return;
+        }
+        java.awt.Color activeGreen = darkMode ? new java.awt.Color(0x69D08A) : new java.awt.Color(0x2E7D32);
+        java.awt.Color normal = darkMode ? new java.awt.Color(0xC8C8C8) : new java.awt.Color(0x1A1A1A);
+        int selected = tabs.getSelectedIndex();
+        for (int i = 0; i < tabs.getTabCount(); i++) {
+            tabs.setForegroundAt(i, i == selected ? activeGreen : normal);
+        }
+    }
+
     private void applyTheme(boolean dark) {
         darkMode = dark;
         java.awt.Color textBg = dark ? new java.awt.Color(0x1E1E1E) : java.awt.Color.WHITE;
@@ -1502,6 +1801,11 @@ public class MeetingConsole {
 
         transcript.setBackground(textBg);
         transcript.setForeground(textFg);
+        // Re-render the transcript so the per-speaker colours match the new theme.
+        if (renderedSessionId != null) {
+            transcript.setText("");
+            renderedUtterances = 0;
+        }
         transcript.setCaretColor(textFg);
         summaryArea.setBackground(textBg);
         summaryArea.setForeground(textFg);
@@ -1512,7 +1816,7 @@ public class MeetingConsole {
         titleField.setForeground(textFg);
         titleField.setCaretColor(textFg);
         for (JPanel panel : java.util.List.of(topPanel, bottomPanel, buttonsPanel, controlsPanel,
-                editorFileRow, autoStartPanel,
+                editorFileRow, autoStartPanel, statusStackPanel,
                 composePanel, composeTopPanel, composeBottomPanel, composeSouthPanel,
                 composeChecks.panel, composeInstrRow, composeOptionStack,
                 composeControlsPanel, indicatorPanel, southWrapPanel)) {
@@ -1520,13 +1824,20 @@ public class MeetingConsole {
             panel.setOpaque(true);
             panel.setBackground(panelBg);
         }
-        for (JTextArea area : java.util.List.of(composeResult, composeFeed, feedbackArea)) {
+        for (JPanel row : meetingButtonRows) {
+            row.setOpaque(true);
+            row.setBackground(panelBg);
+        }
+        for (JTextArea area : java.util.List.of(composeResult, composeFeed, feedbackArea, submittedArea)) {
             area.setBackground(textBg);
             area.setForeground(textFg);
             area.setCaretColor(textFg);
         }
-        ratingCombo.setBackground(textBg);
-        ratingCombo.setForeground(textFg);
+        // Keep the dropdowns light so their down-arrow stays visible in dark mode.
+        java.awt.Color comboBg = new java.awt.Color(0xF2F2F2);
+        java.awt.Color comboFg = new java.awt.Color(0x1A1A1A);
+        ratingCombo.setBackground(comboBg);
+        ratingCombo.setForeground(comboFg);
         if (helpPanel != null) {
             helpPanel.setOpaque(true);
             helpPanel.setBackground(panelBg);
@@ -1549,10 +1860,11 @@ public class MeetingConsole {
         }
         composeSplit.setBackground(panelBg);
         composeStatus.setForeground(muted);
-        modelCombo.setBackground(textBg);
-        modelCombo.setForeground(textFg);
+        modelCombo.setBackground(comboBg);
+        modelCombo.setForeground(comboFg);
         tabs.setBackground(panelBg);
         tabs.setForeground(textFg);
+        updateTabColors();
         filePathField.setBackground(textBg);
         filePathField.setForeground(textFg);
         filePathField.setCaretColor(textFg);
@@ -1563,8 +1875,6 @@ public class MeetingConsole {
         darkModeToggle.setForeground(textFg);
         autoStartToggle.setBackground(panelBg);
         autoStartToggle.setForeground(textFg);
-        audioGateToggle.setBackground(panelBg);
-        audioGateToggle.setForeground(textFg);
         // Start/Pause/Stop keep their green/red action colors in both themes.
         setStatus(lastStatusMessage, lastStatusWasError);
         frame.repaint();
@@ -1573,6 +1883,7 @@ public class MeetingConsole {
     /** Begins a fresh meeting (a new session), e.g. after Stop or a startup error. */
     private void startMeeting() {
         setMonitorWanted(false); // free the system-audio source for the meeting
+        clearSavedNotesLink();   // the previous meeting's link goes away now
         try {
             if (liveTranscription.status().state() == LiveTranscriptionService.State.PAUSED
                     && !meetingCompleted) {
@@ -1658,6 +1969,7 @@ public class MeetingConsole {
                 Draft draft = meetingEndService.finishNotes(pending, null);
                 SwingUtilities.invokeLater(() -> {
                     savingNotes = false;
+                    showSavedNotesLink(draft.savedTo());
                     boolean anotherMeetingLive = liveTranscription.status().sessionId() != null;
                     String savedMsg = draft.savedTo() != null
                             ? "Notes saved to " + draft.savedTo()
@@ -1721,7 +2033,9 @@ public class MeetingConsole {
                 && status.sessionId() == null
                 && status.state() == LiveTranscriptionService.State.IDLE
                 && modelsAvailable;
-        boolean gate = audioGateToggle != null && audioGateToggle.isSelected();
+        // Auto-start always waits for real meeting audio (the other participants
+        // talking) before triggering — never the microphone.
+        boolean gate = true;
 
         if (autoStartDeadline > 0) {
             long remaining = autoStartDeadline - System.currentTimeMillis();

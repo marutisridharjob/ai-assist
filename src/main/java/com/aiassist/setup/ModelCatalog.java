@@ -27,7 +27,8 @@ public final class ModelCatalog {
      * tell whether it is already present in a given folder.
      */
     public record ModelSpec(String id, String title, Tier tier, String purpose,
-                            String downloadUrl, String instructions, Predicate<Path> presentIn) {
+                            String fileName, String downloadUrl, String instructions,
+                            Predicate<Path> presentIn) {
     }
 
     /** Present-in-folder tests, kept next to the catalogue so they stay in sync. */
@@ -69,22 +70,25 @@ public final class ModelCatalog {
     public static final List<ModelSpec> MODELS = List.of(
             new ModelSpec("vosk", "Vosk small English speech model", Tier.REQUIRED,
                     "live captions while the meeting runs",
+                    "vosk-model-small-en-us-0.15.zip",
                     "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip",
-                    "Download the .zip and drop it straight into the models folder — the app unpacks it "
-                            + "for you. Larger, more accurate models are listed at "
+                    "Download the file and drop the .zip straight into the models folder — the app "
+                            + "unpacks it for you. Bigger, more accurate models are at "
                             + "https://alphacephei.com/vosk/models",
                     dir -> hasVoskModel(dir)),
-            new ModelSpec("whisper", "Whisper transcription model (ggml-base.bin)", Tier.RECOMMENDED,
+            new ModelSpec("whisper", "Whisper transcription model", Tier.RECOMMENDED,
                     "an accurate, complete transcript when you press Stop",
+                    "ggml-base.bin",
                     "https://github.com/NoMercy-Entertainment/nomercy-whisper-models/releases/latest/download/ggml-base.bin",
-                    "Click Download to save ggml-base.bin from the GitHub mirror (no Hugging Face account "
-                            + "needed), then place the .bin file in the models folder.",
+                    "Download from the GitHub mirror (no Hugging Face account needed) and put the .bin "
+                            + "file in the models folder.",
                     dir -> hasFile(dir, "ggml-", ".bin")),
-            new ModelSpec("llm", "Instruct LLM model (*.gguf)", Tier.RECOMMENDED,
+            new ModelSpec("llm", "Instruct LLM model (GGUF)", Tier.RECOMMENDED,
                     "richer AI summaries and rewrites",
+                    "qwen2.5-1.5b-instruct-q4_k_m.gguf",
                     "https://github.com/marutisridharjob/ai-assist/blob/main/models/README.md",
-                    "Optional. Follow the models guide, then drop any single GGUF instruct model into the "
-                            + "models folder.",
+                    "Optional. Open the models guide for direct links, then put a single GGUF instruct "
+                            + "model in the models folder.",
                     dir -> hasFile(dir, "", ".gguf")));
 
     /** The outcome of checking the catalogue against the model folders. */

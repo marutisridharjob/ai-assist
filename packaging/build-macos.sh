@@ -18,6 +18,8 @@ VERSION="$(basename "$JAR" | sed -E "s/^${APP_NAME}-(.*)\.jar/\1/; s/-SNAPSHOT//
 echo "==> Packaging ${APP_NAME} ${VERSION} as ${TYPE}"
 
 INPUT="$(mktemp -d)"; cp "$JAR" "$INPUT/"
+# Drop the other platforms' native libraries to shrink the installer.
+bash packaging/slim-jar.sh "$INPUT/$(basename "$JAR")" mac || echo "(jar slimming skipped)"
 OUT="dist"; mkdir -p "$OUT"
 
 # Build an .icns from the PNG using the built-in macOS tools; fall back to no icon.

@@ -42,9 +42,9 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y fakeroot binutils
 
-      - name: Install WiX (Windows msi/exe)
+      - name: Install WiX + zip (Windows msi/exe, jar slimming)
         if: runner.os == 'Windows'
-        run: choco install wixtoolset -y --no-progress
+        run: choco install wixtoolset zip -y --no-progress
 
       - name: Build installer (Linux)
         if: runner.os == 'Linux'

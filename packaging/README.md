@@ -37,6 +37,18 @@ bash packaging/build-macos.sh dmg
 The installer lands in `./dist`. The build uses the `harden` Maven profile,
 which strips debug information from the compiled classes.
 
+### Smaller installers
+
+The fat jar bundles the Vosk / llama.cpp / whisper native libraries for **every**
+OS and CPU. Each build script runs [`slim-jar.sh`](slim-jar.sh) before
+`jpackage` to remove the native libraries the target OS will never use (plus
+obsolete Android / 32-bit targets), which cuts the jar by roughly 40% (e.g.
+65 MB → ~38 MB) and makes each installer that much smaller. The slimmed nested
+jars are written back **stored/uncompressed**, as Spring Boot's loader requires.
+Slimming needs `zip`/`unzip` on `PATH` (present on the CI runners; on Windows it
+uses Git Bash + the `zip` package). If they are missing the build still
+succeeds — it just ships the full-size jar.
+
 ## What the installed app does on first run
 
 The installer only lays down the program; the app does the user-folder setup

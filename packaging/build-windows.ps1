@@ -24,6 +24,16 @@ Write-Host "==> Packaging $AppName $Version as $Type"
 $Input = New-Item -ItemType Directory -Force -Path (Join-Path $env:TEMP "aiassist-input")
 Remove-Item "$Input\*" -Force -ErrorAction SilentlyContinue
 Copy-Item $Jar.FullName $Input
+
+# Drop the other platforms' native libraries to shrink the installer (uses Git
+# Bash, present on GitHub windows runners; skipped if bash/zip are unavailable).
+$SlimJar = Join-Path $Input $Jar.Name
+if (Get-Command bash -ErrorAction SilentlyContinue) {
+  bash packaging/slim-jar.sh "$SlimJar" windows
+  if ($LASTEXITCODE -ne 0) { Write-Host "(jar slimming skipped)" }
+} else {
+  Write-Host "(jar slimming skipped: bash not found)"
+}
 $Out = "dist"; New-Item -ItemType Directory -Force -Path $Out | Out-Null
 
 # Build a .ico from the PNG with ImageMagick if available; otherwise no icon.

@@ -321,6 +321,14 @@ headphones, your options without installing anything are:
   loopback today. macOS 14.2+ has a native "audio process tap" API that
   could remove even that install in a future version of ai-assist.
 
+## Documentation
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — architecture diagrams
+  (features, technologies, data flow, meeting sequence).
+- [`docs/TECHNICAL-DOCUMENTATION.md`](docs/TECHNICAL-DOCUMENTATION.md) — the full
+  technical write-up: features step by step, module reference, models &
+  licenses (with download links), configuration, security, and packaging.
+
 ## Getting the app
 
 **Native installer (recommended)**: download the installer for your OS from the

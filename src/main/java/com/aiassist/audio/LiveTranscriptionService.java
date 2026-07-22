@@ -156,7 +156,7 @@ public class LiveTranscriptionService {
         }
         ListeningSession session;
         if (sessionId == null || sessionId.isBlank()) {
-            session = sessions.create("Live meeting notes");
+            session = sessions.create("Minutes of meeting");
         } else {
             session = sessions.get(sessionId);
         }
@@ -572,6 +572,12 @@ public class LiveTranscriptionService {
         // whose audio never rose above near-silence is dropped, so a quiet room
         // can't post a stray filler word like "the" when Pause flushes.
         private static final int MIN_SPEECH_LEVEL = 3;
+        // The microphone ("you") often picks up room noise even when you are
+        // muted in the meeting app, which then gets drafted. Require the mic to
+        // be genuinely loud (30%+) before a phrase from it counts as speech; the
+        // meeting audio ("other") keeps the low threshold so quiet remote voices
+        // are not dropped.
+        private static final int MIC_SPEECH_LEVEL = 30;
         private volatile int phrasePeak;
         private Thread thread;
         // Recognition runs on its own thread, fed by this bounded queue, so a
@@ -844,7 +850,9 @@ public class LiveTranscriptionService {
                 // Capture every recognized phrase, labelled only by its source
                 // ([you] = mic, [other] = system audio), but drop phrases that
                 // carried no real audio energy — those are silence artefacts.
-                boolean hadSpeech = phrasePeak >= MIN_SPEECH_LEVEL;
+                // The mic needs 30%+ (muted-in-app room noise otherwise gets drafted).
+                int threshold = "you".equals(selection.label()) ? MIC_SPEECH_LEVEL : MIN_SPEECH_LEVEL;
+                boolean hadSpeech = phrasePeak >= threshold;
                 phrasePeak = 0; // start measuring the next phrase
                 if (!text.isBlank() && hadSpeech && !session.isEnded()) {
                     session.addUtterance(text, selection.label());
