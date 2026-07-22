@@ -61,7 +61,14 @@ JDK — not a browser):
   it begins recording — so you never forget to press Start. It never triggers
   from your microphone alone. It works best with apps launched per meeting
   (Webex, Zoom); Teams and Slack run in the background, so you may need to
-  dismiss one prompt at launch. The choice is remembered across launches,
+  dismiss one prompt at launch. The choice is remembered across launches.
+  A stronger **on meeting audio** sub-option makes it wait until the meeting is
+  actually **playing audio** (the other participants talking) before starting,
+  not just when the app is open — ideal for always-running Teams. It listens to
+  the **system audio only** (never your mic) via the same source the meeting
+  uses (the built-in tap on macOS/Windows, or a loopback/PulseAudio-monitor
+  device on Linux); if no system-audio source exists it falls back to plain app
+  detection,
 - a **Dark** toggle (top-right) switching the whole window between light and
   dark mode; the choice is remembered across launches. The UI uses the
   JDK's own cross-platform look-and-feel, so the window looks and behaves the

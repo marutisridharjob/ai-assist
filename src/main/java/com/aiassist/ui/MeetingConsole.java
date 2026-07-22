@@ -106,11 +106,20 @@ public class MeetingConsole {
     // Opt-in auto-start: when a meeting app is detected, a cancelable countdown
     // begins and then starts capture. Off by default.
     private javax.swing.JCheckBox autoStartToggle;
+    private javax.swing.JCheckBox audioGateToggle; // stronger mode: wait for meeting audio
     private JPanel autoStartPanel;
     private JLabel autoStartLabel;
     private long autoStartDeadline;      // 0 = no countdown running
     private String autoStartHandledApp;  // app already prompted for this episode
     private long autoStartCooldownUntil;  // don't re-prompt before this time
+    // Serialises system-audio monitor start/stop off the UI thread.
+    private final java.util.concurrent.ExecutorService monitorControl =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "monitor-control");
+                t.setDaemon(true);
+                return t;
+            });
+    private volatile boolean monitorWanted;
     // Help tab.
     private JPanel helpPanel;
     private final java.util.List<JPanel> helpPanels = new java.util.ArrayList<>();
@@ -325,15 +334,32 @@ public class MeetingConsole {
                 + "the background, so you may need to dismiss one prompt at launch.<br>"
                 + "It never starts from your microphone alone.</html>");
         autoStartToggle.setSelected(prefs.getBoolean("autoStart", false));
+        audioGateToggle = new javax.swing.JCheckBox("on meeting audio");
+        audioGateToggle.setToolTipText("<html>Stronger mode: wait until the meeting is actually "
+                + "<b>playing audio</b> (the other participants talking) before starting — not just when "
+                + "the app is open. Uses the system audio, never your microphone.<br>"
+                + "Needs a system-audio source (the built-in tap on macOS/Windows, or a loopback/monitor "
+                + "device); if none is available it falls back to app detection.</html>");
+        audioGateToggle.setSelected(prefs.getBoolean("autoStartAudioGate", false));
+        audioGateToggle.setEnabled(autoStartToggle.isSelected());
         autoStartToggle.addActionListener(e -> {
             prefs.putBoolean("autoStart", autoStartToggle.isSelected());
+            audioGateToggle.setEnabled(autoStartToggle.isSelected());
             if (!autoStartToggle.isSelected()) {
                 cancelAutoStartPrompt();
+                setMonitorWanted(false);
+            }
+        });
+        audioGateToggle.addActionListener(e -> {
+            prefs.putBoolean("autoStartAudioGate", audioGateToggle.isSelected());
+            if (!audioGateToggle.isSelected()) {
+                setMonitorWanted(false);
             }
         });
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         controls.add(modelCombo);
         controls.add(autoStartToggle);
+        controls.add(audioGateToggle);
         controls.add(darkModeToggle);
         JPanel top = new JPanel(new BorderLayout(6, 0));
         top.add(titleLabel, BorderLayout.WEST);
@@ -1537,6 +1563,8 @@ public class MeetingConsole {
         darkModeToggle.setForeground(textFg);
         autoStartToggle.setBackground(panelBg);
         autoStartToggle.setForeground(textFg);
+        audioGateToggle.setBackground(panelBg);
+        audioGateToggle.setForeground(textFg);
         // Start/Pause/Stop keep their green/red action colors in both themes.
         setStatus(lastStatusMessage, lastStatusWasError);
         frame.repaint();
@@ -1544,6 +1572,7 @@ public class MeetingConsole {
 
     /** Begins a fresh meeting (a new session), e.g. after Stop or a startup error. */
     private void startMeeting() {
+        setMonitorWanted(false); // free the system-audio source for the meeting
         try {
             if (liveTranscription.status().state() == LiveTranscriptionService.State.PAUSED
                     && !meetingCompleted) {
@@ -1679,6 +1708,7 @@ public class MeetingConsole {
             if (autoStartDeadline > 0) {
                 cancelAutoStartPrompt();
             }
+            setMonitorWanted(false);
             return;
         }
         String app = detectedMeetingApp;
@@ -1691,6 +1721,7 @@ public class MeetingConsole {
                 && status.sessionId() == null
                 && status.state() == LiveTranscriptionService.State.IDLE
                 && modelsAvailable;
+        boolean gate = audioGateToggle != null && audioGateToggle.isSelected();
 
         if (autoStartDeadline > 0) {
             long remaining = autoStartDeadline - System.currentTimeMillis();
@@ -1707,15 +1738,43 @@ public class MeetingConsole {
                     + (remaining / 1000 + 1) + "s");
             return;
         }
-        // Not counting down: should we begin?
-        if (idle && app != null
+
+        // Armed and waiting. Are we clear to consider this app?
+        boolean appReady = idle && app != null
                 && System.currentTimeMillis() >= autoStartCooldownUntil
-                && !app.equals(autoStartHandledApp)) {
+                && !app.equals(autoStartHandledApp);
+
+        // Stronger mode: keep a lightweight system-audio monitor running while
+        // we wait, and only trigger once the meeting is actually playing audio.
+        setMonitorWanted(gate && appReady);
+        boolean audioReady = !gate || liveTranscription.systemAudioActiveWithin(3000);
+
+        if (appReady && audioReady) {
             autoStartHandledApp = app;
             autoStartDeadline = System.currentTimeMillis() + AUTO_START_COUNTDOWN_MS;
+            setMonitorWanted(false); // release the audio source before the meeting opens it
             autoStartPanel.setVisible(true);
             frame.revalidate();
         }
+    }
+
+    /** Turns the background system-audio monitor on/off, off the UI thread. */
+    private void setMonitorWanted(boolean wanted) {
+        if (monitorWanted == wanted) {
+            return;
+        }
+        monitorWanted = wanted;
+        monitorControl.submit(() -> {
+            try {
+                if (wanted) {
+                    liveTranscription.startActivityMonitor();
+                } else {
+                    liveTranscription.stopActivityMonitor();
+                }
+            } catch (Exception e) {
+                log.warn("System-audio monitor control failed: {}", e.getMessage());
+            }
+        });
     }
 
     private void cancelAutoStartPrompt() {
@@ -1827,6 +1886,12 @@ public class MeetingConsole {
         if (refreshTimer != null) {
             refreshTimer.stop();
         }
+        try {
+            liveTranscription.stopActivityMonitor();
+        } catch (Exception ignored) {
+            // shutting down anyway
+        }
+        monitorControl.shutdownNow();
         frame.dispose();
         System.exit(0);
     }

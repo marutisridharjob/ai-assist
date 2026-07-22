@@ -271,6 +271,158 @@ public class LiveTranscriptionService {
         return stopped;
     }
 
+    // ===== System-audio activity monitor =====
+    // A lightweight, level-only listen on the SYSTEM audio (the "other" source —
+    // what the computer is playing, i.e. the meeting participants). No speech
+    // model, no recording — it just measures loudness so auto-start can wait
+    // until others are actually talking. Uses the same source a meeting would
+    // (the native tap, or a loopback device), so it works on every OS.
+
+    private static final int MONITOR_ACTIVE_LEVEL = 4; // 0-100 peak that counts as "someone talking"
+    private volatile Thread monitorThread;
+    private volatile boolean monitorRunning;
+    private volatile javax.sound.sampled.TargetDataLine monitorLine;
+    private volatile Process monitorProcess;
+    private volatile int monitorLevel;
+    private volatile long monitorLastLoud;
+
+    /** The best system-audio ("other") source, or null when none is available. */
+    private AudioDeviceService.DeviceSelection systemAudioSelection() {
+        if (NativeSystemAudioTap.isSupported()) {
+            return new AudioDeviceService.DeviceSelection(NativeSystemAudioTap.SOURCE_NAME, "other", true);
+        }
+        return audioDevices.resolveAutoDevices(properties.preferredDevice()).stream()
+                .filter(s -> "other".equals(s.label()))
+                .findFirst().orElse(null);
+    }
+
+    /** Begins level-only monitoring of the system audio (no transcription/recording). */
+    public synchronized void startActivityMonitor() {
+        if (monitorRunning) {
+            return;
+        }
+        AudioDeviceService.DeviceSelection sys = systemAudioSelection();
+        if (sys == null) {
+            return; // no system-audio source on this machine; caller falls back to app-only detection
+        }
+        monitorRunning = true;
+        monitorLevel = 0;
+        monitorThread = new Thread(() -> {
+            try {
+                if (sys.systemTap()) {
+                    monitorViaTap();
+                } else {
+                    monitorViaLine(sys.deviceName());
+                }
+            } catch (Throwable t) {
+                log.warn("System-audio monitor unavailable ({}); auto-start will fall back to app detection",
+                        rootMessage(t));
+            } finally {
+                monitorRunning = false;
+            }
+        }, "sys-audio-monitor");
+        monitorThread.setDaemon(true);
+        monitorThread.start();
+    }
+
+    /** Stops the activity monitor and frees the audio source. Safe to call any time. */
+    public synchronized void stopActivityMonitor() {
+        monitorRunning = false;
+        javax.sound.sampled.TargetDataLine l = monitorLine;
+        if (l != null) {
+            try {
+                l.stop();
+                l.close();
+            } catch (Exception ignored) {
+                // closing best-effort
+            }
+            monitorLine = null;
+        }
+        Process p = monitorProcess;
+        if (p != null) {
+            p.destroy();
+            monitorProcess = null;
+        }
+        Thread t = monitorThread;
+        if (t != null) {
+            try {
+                t.join(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            monitorThread = null;
+        }
+        monitorLevel = 0;
+    }
+
+    public boolean monitorRunning() {
+        return monitorRunning;
+    }
+
+    /** True when the system audio has been loud within the last {@code withinMs}. */
+    public boolean systemAudioActiveWithin(long withinMs) {
+        return monitorRunning && (System.currentTimeMillis() - monitorLastLoud) < withinMs;
+    }
+
+    private void monitorViaLine(String deviceName) throws Exception {
+        javax.sound.sampled.TargetDataLine line = audioDevices.openBestCaptureLine(deviceName);
+        monitorLine = line;
+        int frame = Math.max(2, line.getFormat().getFrameSize());
+        line.start();
+        byte[] buffer = new byte[BUFFER_BYTES * frame];
+        while (monitorRunning) {
+            int n = line.read(buffer, 0, buffer.length);
+            if (n <= 0) {
+                continue;
+            }
+            recordActivity(peakLevel(buffer, n));
+        }
+    }
+
+    private void monitorViaTap() throws Exception {
+        Process process = NativeSystemAudioTap.startHelper();
+        monitorProcess = process;
+        java.io.InputStream pcm = new java.io.BufferedInputStream(process.getInputStream());
+        NativeSystemAudioTap.readHeader(pcm);
+        byte[] buffer = new byte[BUFFER_BYTES];
+        while (monitorRunning) {
+            int n = pcm.read(buffer, 0, buffer.length);
+            if (n < 0) {
+                break;
+            }
+            if (n > 0) {
+                recordActivity(peakLevel(buffer, n));
+            }
+        }
+    }
+
+    private void recordActivity(int level) {
+        monitorLevel = level;
+        if (level >= MONITOR_ACTIVE_LEVEL) {
+            monitorLastLoud = System.currentTimeMillis();
+        }
+    }
+
+    /** Loudest 16-bit LE sample in the buffer as 0-100. */
+    private static int peakLevel(byte[] buffer, int length) {
+        int peak = 0;
+        for (int i = 0; i + 1 < length; i += 2) {
+            int sample = Math.abs((short) ((buffer[i + 1] << 8) | (buffer[i] & 0xFF)));
+            if (sample > peak) {
+                peak = sample;
+            }
+        }
+        return peak * 100 / 32767;
+    }
+
+    private static String rootMessage(Throwable t) {
+        Throwable c = t;
+        while (c.getCause() != null && c.getCause() != c) {
+            c = c.getCause();
+        }
+        return c.getClass().getSimpleName() + (c.getMessage() == null ? "" : ": " + c.getMessage());
+    }
+
     public Status status() {
         return status.get();
     }
