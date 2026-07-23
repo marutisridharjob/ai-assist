@@ -16,7 +16,7 @@ public final class AttributedTranscript {
 
     public static final String HEADING = "Full transcript (who said what)";
     private static final String LEGEND =
-            "[you] = you / your side of the room · [other] = other participants (system audio)";
+            "You = you / your side of the room · Other = other participants (system audio)";
 
     private AttributedTranscript() {
     }
@@ -25,12 +25,29 @@ public final class AttributedTranscript {
             java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
                     .withZone(java.time.ZoneId.systemDefault());
 
-    /** The verbatim transcript text: legend then one timestamped, tagged line each. */
+    /** Friendly speaker label for the saved document: You / Other. */
+    private static String speakerLabel(String speaker) {
+        if ("you".equalsIgnoreCase(speaker)) {
+            return "You";
+        }
+        if ("other".equalsIgnoreCase(speaker)) {
+            return "Other";
+        }
+        if (speaker == null || speaker.isBlank()) {
+            return "Other";
+        }
+        return Character.toUpperCase(speaker.charAt(0)) + speaker.substring(1);
+    }
+
+    /**
+     * The verbatim transcript text: a legend, then one line per utterance with
+     * the timestamp and the spoken content side by side, tagged You / Other.
+     */
     public static String rawText(List<Utterance> utterances) {
         StringBuilder lines = new StringBuilder(LEGEND).append("\n");
         for (Utterance utterance : utterances) {
-            lines.append("\n[").append(TIME.format(utterance.capturedAt())).append("] [")
-                    .append(utterance.speaker()).append("] ").append(utterance.text());
+            lines.append("\n[").append(TIME.format(utterance.capturedAt())).append("]  ")
+                    .append(speakerLabel(utterance.speaker())).append(":  ").append(utterance.text());
         }
         return lines.toString();
     }

@@ -103,7 +103,7 @@ class ListenAndDraftIntegrationTest {
                 .contains("hire two more engineers")
                 // the saved notes always end with the source-attributed transcript
                 .contains("Full transcript (who said what)")
-                .contains("[user] Revenue grew twelve percent over the previous quarter.");
+                .contains("User:  Revenue grew twelve percent over the previous quarter.");
 
         // The session is now read-only and cannot be ended twice.
         ResponseEntity<String> lateUtterance = rest.postForEntity("/api/sessions/{id}/utterances",

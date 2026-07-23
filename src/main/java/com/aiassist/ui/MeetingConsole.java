@@ -77,6 +77,7 @@ public class MeetingConsole {
     private JPanel controlsPanel;
     private JPanel topPanel;
     private JPanel topStackPanel;
+    private JPanel meetingTabPanel;
     private JPanel meetingTopRow;
     private JPanel extractionPanel;
     private javax.swing.JProgressBar extractionBar;
@@ -94,6 +95,7 @@ public class MeetingConsole {
     private JPanel composeOptionStack;
     private final java.util.List<javax.swing.JCheckBox> themedChecks = new java.util.ArrayList<>();
     private final java.util.List<JLabel> themedLabels = new java.util.ArrayList<>();
+    private final java.util.List<JButton> themedButtons = new java.util.ArrayList<>();
     private javax.swing.JSplitPane composeSplit;
     private JPanel composePanel;
     private JPanel composeTopPanel;
@@ -119,8 +121,9 @@ public class MeetingConsole {
                 return t;
             });
     private volatile boolean monitorWanted;
-    // Help tab.
+    // Settings tab.
     private JPanel helpPanel;
+    private JScrollPane helpScroll;
     private final java.util.List<JPanel> helpPanels = new java.util.ArrayList<>();
     private JTextArea feedbackArea;
     private javax.swing.JComboBox<Integer> ratingCombo;
@@ -129,7 +132,7 @@ public class MeetingConsole {
     private JLabel feedbackCount;
     private JTextArea submittedArea;   // read-only copy of the last submitted feedback
     private JPanel submittedPanel;
-    private static final int FEEDBACK_MAX_CHARS = 1000;
+    private static final int FEEDBACK_MAX_CHARS = 3000;
     private boolean blinkOn;
     private JPanel bottomPanel;
     private JPanel buttonsPanel;
@@ -138,13 +141,15 @@ public class MeetingConsole {
     private JPanel statusStackPanel;
     private java.util.List<JPanel> meetingButtonRows = java.util.List.of();
     /** One button size across the whole app, so every button matches. */
-    private static final java.awt.Dimension BUTTON_SIZE = new java.awt.Dimension(122, 30);
+    private static final java.awt.Dimension BUTTON_SIZE = new java.awt.Dimension(100, 28);
     private JButton startButton;
     private JButton pauseButton;
     private JButton stopButton;
     private Timer refreshTimer;
     private int renderedUtterances;
     private String renderedSessionId;
+    private boolean transcriptHeaderWritten;
+    private java.time.Instant meetingStartAt;
     // Serialises background note-drafting so Stop returns instantly and
     // back-to-back meetings save their notes in order.
     private final java.util.concurrent.ExecutorService notesExecutor =
@@ -268,6 +273,7 @@ public class MeetingConsole {
 
         // Editable meeting title — becomes the notes file name.
         titleField = new javax.swing.JTextField("Minutes of meeting");
+        roundTextField(titleField);
         titleField.setToolTipText("Meeting title — used for the notes file name (a timestamp is added on save)");
         titleField.addActionListener(e -> applyTitle());
         titleField.addFocusListener(new java.awt.event.FocusAdapter() {
@@ -377,10 +383,12 @@ public class MeetingConsole {
         controlsPanel = controls;
 
         statusLabel = new JLabel(" ");
+        // Small and muted — status sits quietly in the lower-left corner.
+        statusLabel.setFont(statusLabel.getFont().deriveFont(Font.PLAIN, 11f));
         // Live caption: in-progress words before the recognizer finalizes them.
         captionLabel = new JLabel(" ");
         captionLabel.setForeground(java.awt.Color.GRAY);
-        captionLabel.setFont(captionLabel.getFont().deriveFont(Font.ITALIC));
+        captionLabel.setFont(captionLabel.getFont().deriveFont(Font.PLAIN, 11f));
         startButton = new IndicatorButton("Start");
         startButton.setToolTipText("Begin a new meeting");
         startButton.addActionListener(e -> startMeeting());
@@ -390,15 +398,18 @@ public class MeetingConsole {
         stopButton = new IndicatorButton("Stop");
         stopButton.setToolTipText("Meeting complete — draft the notes and save the file");
         stopButton.addActionListener(e -> stopMeeting());
+        themedButtons.add(startButton);
+        themedButtons.add(pauseButton);
+        themedButtons.add(stopButton);
 
-        JButton clearButton = new JButton("Clear");
+        JButton clearButton = button("Clear");
         clearButton.setToolTipText("Clear the transcript and summary display (captured content is kept for the notes)");
         clearButton.addActionListener(e -> {
             transcript.setText("");
             summaryArea.setText("");
         });
 
-        JButton applyButton = new JButton("Apply");
+        JButton applyButton = button("Apply");
         applyButton.setToolTipText("Summarize the meeting so far and show it below");
         applyButton.addActionListener(e -> applyMeetingSummary());
 
@@ -431,58 +442,67 @@ public class MeetingConsole {
                 }
             }
         });
+        // Status + the saved-notes link, left-aligned in the lower-left corner.
         JPanel statusStack = new JPanel(new BorderLayout());
         statusStack.add(statusLabel, BorderLayout.NORTH);
         statusStack.add(notesLink, BorderLayout.CENTER);
         statusStackPanel = statusStack;
+        // Buttons ride on the right just above the status; the status stays
+        // quietly in the lower-left corner of the tab.
         JPanel bottom = new JPanel(new BorderLayout());
         bottom.add(captionLabel, BorderLayout.NORTH);
-        bottom.add(statusStack, BorderLayout.CENTER);
-        bottom.add(buttons, BorderLayout.SOUTH);
+        bottom.add(buttons, BorderLayout.CENTER);
+        bottom.add(statusStack, BorderLayout.SOUTH);
         bottom.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 8, 4, 8));
         bottomPanel = bottom;
 
         frame.setLayout(new BorderLayout());
-        frame.add(topStackPanel, BorderLayout.NORTH);
+        // The Meeting tab now carries its own title row and buttons, so every
+        // tab is self-contained and the three tabs line up consistently (no
+        // shared bar floating above the tab strip).
+        JPanel meetingTab = new JPanel(new BorderLayout());
+        meetingTab.add(topStackPanel, BorderLayout.NORTH);
+        meetingTab.add(meetingSplit, BorderLayout.CENTER);
+        meetingTab.add(bottom, BorderLayout.SOUTH);
+        meetingTabPanel = meetingTab;
         tabs = new javax.swing.JTabbedPane();
-        tabs.addTab("Meeting", meetingSplit);
-        tabs.addTab("Assist", buildAssistTab());
-        tabs.addTab("Help", buildHelpTab());
+        tabs.addTab("Meeting", meetingTab);
+        tabs.addTab("Compose", buildAssistTab());
+        tabs.addTab("Settings", buildHelpTab());
         frame.add(tabs, BorderLayout.CENTER);
 
         // On the Editor/Compose tabs the meeting chrome (title row, status,
         // buttons) is hidden; a blinking indicator shows a live meeting.
         meetingIndicator = new JLabel(" ");
-        meetingIndicator.setFont(meetingIndicator.getFont().deriveFont(Font.BOLD));
+        meetingIndicator.setFont(meetingIndicator.getFont().deriveFont(Font.PLAIN, 11f));
         indicatorPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
         indicatorPanel.add(meetingIndicator);
         indicatorPanel.setVisible(false);
         // Cancelable auto-start countdown bar (hidden unless armed and a meeting
         // app is detected).
         autoStartLabel = themedLabel(" ");
-        autoStartLabel.setFont(autoStartLabel.getFont().deriveFont(Font.BOLD));
-        JButton autoStartNow = new JButton("Start now");
+        autoStartLabel.setFont(autoStartLabel.getFont().deriveFont(Font.PLAIN, 12f));
+        JButton autoStartNow = button("Start now");
         autoStartNow.addActionListener(e -> {
             cancelAutoStartPrompt();
             startMeeting();
         });
-        JButton autoStartNotNow = new JButton("Not now");
+        JButton autoStartNotNow = button("Not now");
         autoStartNotNow.addActionListener(e -> dismissAutoStart());
         autoStartPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
         autoStartPanel.add(autoStartLabel);
         autoStartPanel.add(sized(autoStartNow));
         autoStartPanel.add(sized(autoStartNotNow));
         autoStartPanel.setVisible(false);
+        // Only the cross-tab bits live at the frame bottom now: the auto-start
+        // countdown prompt and the "meeting in progress" indicator (shown while
+        // you are on another tab). The meeting's own buttons ride inside its tab.
         JPanel southWrap = new JPanel();
         southWrap.setLayout(new javax.swing.BoxLayout(southWrap, javax.swing.BoxLayout.Y_AXIS));
-        southWrap.add(bottom);
         southWrap.add(autoStartPanel);
         southWrap.add(indicatorPanel);
         southWrapPanel = southWrap;
         tabs.addChangeListener(e -> {
-            boolean meetingTab = tabs.getSelectedIndex() == 0;
-            meetingTopRow.setVisible(meetingTab);
-            bottomPanel.setVisible(meetingTab);
             // App name stays "ai-assist"; the active tab is the only suffix.
             frame.setTitle("ai-assist — " + tabs.getTitleAt(tabs.getSelectedIndex()));
             updateTabColors();
@@ -512,15 +532,12 @@ public class MeetingConsole {
         refreshTimer.start();
     }
 
-    private static final java.time.format.DateTimeFormatter LINE_TIME =
-            java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
-                    .withZone(java.time.ZoneId.systemDefault());
 
     /** Writes the modified content to the Desktop, off the UI thread. */
     private void downloadAssistFile() {
         String content = composeResult.getText();
         if (content == null || content.isBlank()) {
-            composeStatus.setText("Nothing to download yet — press Apply first.");
+            composeStatus.setText("Nothing to save yet — press Apply first.");
             return;
         }
         String sourcePath = filePathField.getText();
@@ -542,10 +559,10 @@ public class MeetingConsole {
                 }
                 java.nio.file.Files.writeString(target, content);
                 final java.nio.file.Path saved = target;
-                SwingUtilities.invokeLater(() -> composeStatus.setText("Downloaded to " + saved));
+                SwingUtilities.invokeLater(() -> composeStatus.setText("Saved to " + saved));
             } catch (Exception e) {
                 SwingUtilities.invokeLater(() ->
-                        composeStatus.setText("Could not download: " + e.getMessage()));
+                        composeStatus.setText("Could not save: " + e.getMessage()));
             }
         });
     }
@@ -633,6 +650,42 @@ public class MeetingConsole {
         button.setPreferredSize(BUTTON_SIZE);
         button.setMinimumSize(BUTTON_SIZE);
         return button;
+    }
+
+    /**
+     * Makes a curved (rounded) button and registers it so the theme keeps it
+     * in step with light/dark mode. Use this for every main-window button.
+     */
+    private JButton button(String text) {
+        RoundedButton b = new RoundedButton(text);
+        themedButtons.add(b);
+        return b;
+    }
+
+    /** Colours a rounded button for the current theme (foreground left alone for indicators). */
+    private static void styleButton(JButton b, boolean dark) {
+        b.setBackground(dark ? new java.awt.Color(0x3C4043) : new java.awt.Color(0xE8E8E8));
+        if (!(b instanceof IndicatorButton)) {
+            b.setForeground(dark ? new java.awt.Color(0xE6E6E6) : new java.awt.Color(0x1A1A1A));
+        }
+    }
+
+    /** A curved (rounded) dialog button, coloured once for the given theme. */
+    private JButton dialogButton(String text, boolean dark) {
+        RoundedButton b = new RoundedButton(text);
+        styleButton(b, dark);
+        return b;
+    }
+
+    /** Gives a single-line text field a curved outline and a compact height. */
+    private static void roundTextField(javax.swing.JTextField field) {
+        field.setBorder(new RoundedBorder(10));
+        field.setMargin(new java.awt.Insets(3, 8, 3, 8));
+    }
+
+    /** Gives a multi-line text area a curved outline (used inside a scroll pane). */
+    private static void roundTextArea(javax.swing.text.JTextComponent area, JScrollPane scroll) {
+        scroll.setBorder(new RoundedBorder(12));
     }
 
     /** Native file dialog: Finder sheet on macOS, Explorer dialog on Windows. */
@@ -767,10 +820,12 @@ public class MeetingConsole {
         composeResult = multiLineArea();
         composeFeed = multiLineArea();
 
-        // File row: optional load of a text file into the content box.
+        // File row: optional load of a text file into the content box. The path
+        // field is curved and compact — it is only a short one-line hint.
         filePathField = new javax.swing.JTextField();
-        filePathField.setToolTipText("A text file to load; the file name is reused when you Download");
-        JButton loadButton = new JButton("Load");
+        filePathField.setToolTipText("A text file to load; the file name is reused when you Save");
+        roundTextField(filePathField);
+        JButton loadButton = button("Load");
         loadButton.setToolTipText("Load a .txt, .doc or .docx file into the content box");
         loadButton.addActionListener(e -> loadAssistFile());
         JPanel fileRow = new JPanel(new BorderLayout(6, 0));
@@ -782,7 +837,8 @@ public class MeetingConsole {
         fileRow.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 8, 4, 8));
 
         composeChecks = new OptionChecks();
-        composeInstructions = new javax.swing.JTextField(18);
+        composeInstructions = new javax.swing.JTextField(36);
+        roundTextField(composeInstructions);
         JPanel instrRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
         instrRow.add(themedLabel("Additional instructions:"));
         instrRow.add(composeInstructions);
@@ -792,20 +848,22 @@ public class MeetingConsole {
         optionStack.add(javax.swing.Box.createVerticalStrut(12)); // space before instructions
         optionStack.add(instrRow);
 
-        JButton clearButton = new JButton("Clear");
+        JButton clearButton = button("Clear");
         clearButton.setToolTipText("Clear both boxes and unselect all options");
         clearButton.addActionListener(e -> clearCompose());
-        JButton downloadButton = new JButton("Download");
-        downloadButton.setToolTipText("Save the result to your Desktop");
-        downloadButton.addActionListener(e -> downloadAssistFile());
-        JButton applyButton = new JButton("Apply");
+        JButton applyButton = button("Apply");
         applyButton.setToolTipText("Apply the checked options and instructions — click again any time to regenerate");
         applyButton.addActionListener(e -> composeApply());
+        JButton saveButton = button("Save");
+        saveButton.setToolTipText("Save the result to a file");
+        saveButton.addActionListener(e -> downloadAssistFile());
         composeStatus = new JLabel(" ");
+        composeStatus.setFont(composeStatus.getFont().deriveFont(java.awt.Font.PLAIN, 11f));
+        // Button order: Clear, Apply, Save.
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));
         controls.add(sized(clearButton));
-        controls.add(sized(downloadButton));
         controls.add(sized(applyButton));
+        controls.add(sized(saveButton));
 
         JPanel south = new JPanel(new BorderLayout());
         south.add(optionStack, BorderLayout.NORTH);
@@ -862,7 +920,7 @@ public class MeetingConsole {
      * Help tab: About, a Help link that opens the instructions window, and a
      * Feedback form that sends an email to the author.
      */
-    private JPanel buildHelpTab() {
+    private JScrollPane buildHelpTab() {
         JPanel panel = new JPanel();
         panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
         panel.setBorder(javax.swing.BorderFactory.createEmptyBorder(14, 16, 14, 16));
@@ -896,7 +954,8 @@ public class MeetingConsole {
         ((javax.swing.text.AbstractDocument) feedbackArea.getDocument())
                 .setDocumentFilter(new LengthLimitFilter(FEEDBACK_MAX_CHARS));
         JScrollPane feedbackScroll = new JScrollPane(feedbackArea);
-        feedbackScroll.setPreferredSize(new java.awt.Dimension(560, 150));
+        feedbackScroll.setPreferredSize(new java.awt.Dimension(560, 96));
+        roundTextArea(feedbackArea, feedbackScroll);
         feedbackCount = themedLabel(FEEDBACK_MAX_CHARS + " characters left");
         feedbackCount.setFont(feedbackCount.getFont().deriveFont(11f));
         feedbackArea.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
@@ -913,41 +972,43 @@ public class MeetingConsole {
         JPanel feedbackBox = new JPanel(new BorderLayout());
         feedbackBox.add(feedbackScroll, BorderLayout.CENTER);
         feedbackBox.add(countRow, BorderLayout.SOUTH);
-        feedbackBox.setMaximumSize(new java.awt.Dimension(Integer.MAX_VALUE, 200));
+        feedbackBox.setMaximumSize(new java.awt.Dimension(Integer.MAX_VALUE, 124));
         feedbackBox.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
         helpPanels.add(feedbackBox);
         helpPanels.add(countRow);
         panel.add(feedbackBox);
 
         // A line of space between the text box and the rating.
-        panel.add(javax.swing.Box.createVerticalStrut(14));
+        panel.add(javax.swing.Box.createVerticalStrut(10));
         ratingCombo = new javax.swing.JComboBox<>(new Integer[] {0, 1, 2, 3, 4, 5});
         JPanel ratingRow = leftRow(themedLabel("Over all rating to ai-assist :"), ratingCombo);
         panel.add(ratingRow);
 
-        // A couple of lines of breathing room between the rating and the buttons.
-        panel.add(javax.swing.Box.createVerticalStrut(24));
+        // Breathing room between the rating and the buttons.
+        panel.add(javax.swing.Box.createVerticalStrut(14));
 
-        JButton feedbackClear = new JButton("Clear");
+        JButton feedbackClear = button("Clear");
         feedbackClear.setToolTipText("Clear the feedback box and reset the rating");
         feedbackClear.addActionListener(e -> {
             feedbackArea.setText("");
             ratingCombo.setSelectedIndex(0);
             feedbackStatus.setText(" ");
         });
-        feedbackSubmit = new JButton("Submit");
+        feedbackSubmit = button("Submit");
         feedbackSubmit.addActionListener(e -> submitFeedback());
         feedbackStatus = new JLabel(" ");
+        feedbackStatus.setFont(feedbackStatus.getFont().deriveFont(java.awt.Font.PLAIN, 11f));
         themedLabels.add(feedbackStatus);
         panel.add(leftRow(sized(feedbackClear), sized(feedbackSubmit), feedbackStatus));
 
         // A read-only copy of the last submitted feedback, shown after Submit.
-        panel.add(javax.swing.Box.createVerticalStrut(16));
+        panel.add(javax.swing.Box.createVerticalStrut(14));
         submittedArea = multiLineArea();
         submittedArea.setEditable(false);
         JScrollPane submittedScroll = new JScrollPane(submittedArea);
-        submittedScroll.setPreferredSize(new java.awt.Dimension(560, 110));
-        submittedScroll.setMaximumSize(new java.awt.Dimension(Integer.MAX_VALUE, 130));
+        submittedScroll.setPreferredSize(new java.awt.Dimension(560, 96));
+        submittedScroll.setMaximumSize(new java.awt.Dimension(Integer.MAX_VALUE, 110));
+        roundTextArea(submittedArea, submittedScroll);
         submittedPanel = new JPanel(new BorderLayout());
         submittedPanel.add(leftRow(themedLabel("Submitted:")), BorderLayout.NORTH);
         submittedPanel.add(submittedScroll, BorderLayout.CENTER);
@@ -957,10 +1018,13 @@ public class MeetingConsole {
         panel.add(submittedPanel);
 
         helpPanel = panel;
-        JPanel wrap = new JPanel(new BorderLayout());
-        wrap.add(panel, BorderLayout.NORTH);
-        helpPanels.add(wrap);
-        return wrap;
+        // Wrap the whole tab in a scroll pane so the buttons are always
+        // reachable even when the window is at its small default size.
+        helpScroll = new JScrollPane(panel,
+                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        helpScroll.setBorder(null);
+        helpScroll.getVerticalScrollBar().setUnitIncrement(16);
+        return helpScroll;
     }
 
     /** A bold, slightly larger heading label that also follows the theme. */
@@ -1046,7 +1110,8 @@ public class MeetingConsole {
         infoScroll.getViewport().setBackground(bg);
 
         JTextField searchField = new JTextField(26);
-        JButton searchButton = new JButton("Search");
+        roundTextField(searchField);
+        JButton searchButton = dialogButton("Search", dark);
         Runnable search = () -> highlightMatches(info, searchField.getText());
         searchButton.addActionListener(e -> search.run());
         searchField.addActionListener(e -> search.run());
@@ -1058,7 +1123,7 @@ public class MeetingConsole {
         searchRow.add(searchField);
         searchRow.add(sized(searchButton));
 
-        JButton close = new JButton("Close");
+        JButton close = dialogButton("Close", dark);
         close.addActionListener(e -> dialog.dispose());
         JPanel bottom = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 6));
         bottom.setBackground(panelBg);
@@ -1149,17 +1214,19 @@ public class MeetingConsole {
             SwingUtilities.invokeLater(() -> feedbackStatus.setText("Submitted"));
             sleepQuietly(1000);
             SwingUtilities.invokeLater(() -> {
-                // Show a read-only copy of what was submitted, below the buttons,
-                // until the next submission or the app closes.
+                // Clear the input first so a successful submit always empties the
+                // box (even if a later UI step were to fail).
+                feedbackArea.setText("");
+                ratingCombo.setSelectedIndex(0);
+                feedbackStatus.setText(" ");
+                setFeedbackControlsEnabled(true);
+                // Then show a read-only copy of what was submitted, below the
+                // buttons, until the next submission or the app closes.
                 submittedArea.setText("Rating: " + rate + "/5\n\n"
                         + (message == null ? "" : message.strip()));
                 submittedArea.setCaretPosition(0);
                 submittedPanel.setVisible(true);
                 helpPanel.revalidate();
-                feedbackArea.setText("");
-                ratingCombo.setSelectedIndex(0);
-                feedbackStatus.setText(" ");
-                setFeedbackControlsEnabled(true);
             });
         }, "feedback-submit").start();
     }
@@ -1265,13 +1332,13 @@ public class MeetingConsole {
         JScrollPane scroll = new JScrollPane(modelNoticePane);
         scroll.setPreferredSize(new java.awt.Dimension(560, 380));
 
-        JButton openFolder = new JButton("Open");
+        JButton openFolder = dialogButton("Open", darkMode);
         openFolder.setToolTipText("Open the models folder");
         openFolder.addActionListener(e -> openFolder(com.aiassist.setup.UserPaths.modelsDir()));
-        JButton recheck = new JButton("Recheck");
+        JButton recheck = dialogButton("Recheck", darkMode);
         recheck.setToolTipText("Unpack any dropped .zip models and check again");
         recheck.addActionListener(e -> runRecheck(recheck));
-        JButton close = new JButton("Close");
+        JButton close = dialogButton("Close", darkMode);
         close.addActionListener(e -> modelNoticeDialog.dispose());
         JPanel buttons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT));
         buttons.add(sized(openFolder));
@@ -1411,8 +1478,9 @@ public class MeetingConsole {
                 + "remembered.</li>"
                 + "<li>Press <b>Start</b> — or leave <b>Auto-start</b> ticked and the app starts by itself "
                 + "when a meeting app (Teams, Webex, Zoom) is playing audio.</li>"
-                + "<li>In the transcript, the other participants' lines show the timestamp on its own line "
-                + "above the text; <b>your own speech is shown in blue</b>.</li>"
+                + "<li>The transcript shows a single <b>Recording started</b> date/time header at the top; "
+                + "individual lines are not timestamped. <b>Your own speech is shown in blue</b>; the other "
+                + "participants use the normal colour.</li>"
                 + "<li>Need a pause? Press <b>Pause</b>, then <b>Start</b> again to resume.</li>"
                 + "<li>Want a summary so far without stopping? Press <b>Apply</b>.</li>"
                 + "<li>When the meeting ends, press <b>Stop</b>, then choose <b>Save</b> (or <b>No</b> to "
@@ -1422,9 +1490,9 @@ public class MeetingConsole {
                 + "<code>Documents/meeting-notes</code> as a timestamped file.</li>"
                 + "</ol>"
 
-                + "<h3 style='color:" + heading + ";'>Step group C — improve or summarize text (Assist tab)</h3>"
+                + "<h3 style='color:" + heading + ";'>Step group C — improve or summarize text (Compose tab)</h3>"
                 + "<ol>"
-                + "<li>Open the <b>Assist</b> tab.</li>"
+                + "<li>Open the <b>Compose</b> tab.</li>"
                 + "<li>Type or paste text into the top box, or press <b>Load</b> to open a "
                 + "<code>.txt</code>, <code>.doc</code>, or <code>.docx</code> file.</li>"
                 + "<li>Tick the options you want — e.g. <b>Grammar</b>, <b>Professional</b>, "
@@ -1432,7 +1500,7 @@ public class MeetingConsole {
                 + "<li>(Optional) Type <b>Additional instructions</b> for anything the tick-boxes don't cover.</li>"
                 + "<li>Press <b>Apply</b>. The result appears in the <b>After modification</b> box. Press "
                 + "<b>Apply</b> again any time to regenerate.</li>"
-                + "<li>Press <b>Download</b> to save the result, or <b>Clear</b> to start over.</li>"
+                + "<li>Press <b>Save</b> to save the result, or <b>Clear</b> to start over.</li>"
                 + "</ol>"
 
                 + "<h3 style='color:" + heading + ";'>Models — what to download and where</h3>"
@@ -1453,7 +1521,7 @@ public class MeetingConsole {
                 + "<h3 style='color:" + heading + ";'>Good to know</h3>"
                 + "<ul>"
                 + "<li>Everything runs on your machine — no audio or text ever leaves it.</li>"
-                + "<li>Switch light/dark on this Help tab under <b>Appearance</b>.</li>"
+                + "<li>Switch light/dark on the <b>Settings</b> tab under <b>Appearance</b>.</li>"
                 + "<li>When you are muted, room noise on your mic is ignored unless you speak up.</li>"
                 + "<li>Slow steps (transcribing, drafting, saving) run in the background, so the app stays "
                 + "responsive.</li>"
@@ -1609,10 +1677,16 @@ public class MeetingConsole {
         if (!sessionId.equals(renderedSessionId)) {
             renderedSessionId = sessionId;
             renderedUtterances = 0;
+            transcriptHeaderWritten = false;
+            meetingStartAt = java.time.Instant.now();
             // New meeting: seed the title field (default "Minutes of meeting").
             titleField.setText(session.topic());
         }
         List<Utterance> utterances = session.utterances();
+        if (!transcriptHeaderWritten && !utterances.isEmpty()) {
+            writeTranscriptHeader();
+            transcriptHeaderWritten = true;
+        }
         for (int i = renderedUtterances; i < utterances.size(); i++) {
             appendTranscriptEntry(utterances.get(i));
         }
@@ -1622,11 +1696,32 @@ public class MeetingConsole {
         }
     }
 
+    /** Date + time header written once, when the recording starts. */
+    private static final java.time.format.DateTimeFormatter HEADER_TIME =
+            java.time.format.DateTimeFormatter.ofPattern("EEE, d MMM yyyy · HH:mm")
+                    .withZone(java.time.ZoneId.systemDefault());
+
     /**
-     * Appends one utterance to the transcript: the timestamp on its own line,
-     * then the content on the next line. Your own speech ("you") is shown in a
-     * darker blue; the other participants' speech uses the normal text colour.
-     * No [you]/[other] tags — the colour distinguishes the speaker.
+     * Writes a single "Recording started …" header with the date and time. The
+     * individual lines below it carry no per-line timestamp — the header alone
+     * marks when the meeting began.
+     */
+    private void writeTranscriptHeader() {
+        java.time.Instant when = meetingStartAt != null ? meetingStartAt : java.time.Instant.now();
+        java.awt.Color stamp = darkMode ? new java.awt.Color(0x9AA0A6) : new java.awt.Color(0x808080);
+        try {
+            insertStyled(transcript.getStyledDocument(),
+                    "Recording started: " + HEADER_TIME.format(when) + "\n\n", stamp, 11);
+        } catch (javax.swing.text.BadLocationException ignored) {
+            // best-effort append
+        }
+    }
+
+    /**
+     * Appends one utterance to the transcript. Your own speech ("you") is shown
+     * in a darker blue; the other participants' speech uses the normal text
+     * colour. No per-line timestamp and no [you]/[other] tags — the colour
+     * distinguishes the speaker and the header marks the start time.
      */
     private void appendTranscriptEntry(Utterance u) {
         javax.swing.text.StyledDocument doc = transcript.getStyledDocument();
@@ -1634,9 +1729,7 @@ public class MeetingConsole {
         java.awt.Color body = you
                 ? (darkMode ? new java.awt.Color(0x6FA8FF) : new java.awt.Color(0x0D47A1))
                 : (darkMode ? new java.awt.Color(0xE6E6E6) : new java.awt.Color(0x1A1A1A));
-        java.awt.Color stamp = darkMode ? new java.awt.Color(0x9AA0A6) : new java.awt.Color(0x808080);
         try {
-            insertStyled(doc, "[" + LINE_TIME.format(u.capturedAt()) + "]\n", stamp, 11);
             insertStyled(doc, u.text() + "\n\n", body, 14);
         } catch (javax.swing.text.BadLocationException ignored) {
             // best-effort append
@@ -1757,11 +1850,58 @@ public class MeetingConsole {
     }
 
     /**
+     * A curved (rounded) button drawn the same on every OS. It paints its own
+     * rounded background from {@link #getBackground()} (so the theme controls
+     * the colour) with light press/hover feedback, then lets the base class
+     * paint the label on top.
+     */
+    private static class RoundedButton extends JButton {
+
+        private static final int ARC = 18;
+
+        RoundedButton(String text) {
+            super(text);
+            setContentAreaFilled(false);
+            setBorderPainted(false);
+            setFocusPainted(false);
+            setOpaque(false);
+            setBackground(new java.awt.Color(0xE8E8E8));
+            setBorder(javax.swing.BorderFactory.createEmptyBorder(5, 14, 5, 14));
+        }
+
+        @Override
+        protected void paintComponent(java.awt.Graphics g) {
+            java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+            g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
+                    java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+            java.awt.Color base = getBackground();
+            if (getModel().isPressed()) {
+                base = base.darker();
+            } else if (getModel().isRollover()) {
+                base = lighten(base);
+            }
+            int w = getWidth();
+            int h = getHeight();
+            g2.setColor(base);
+            g2.fillRoundRect(0, 0, w - 1, h - 1, ARC, ARC);
+            g2.setColor(base.darker());
+            g2.drawRoundRect(0, 0, w - 1, h - 1, ARC, ARC);
+            g2.dispose();
+            super.paintComponent(g);
+        }
+
+        private static java.awt.Color lighten(java.awt.Color c) {
+            return new java.awt.Color(Math.min(255, c.getRed() + 16),
+                    Math.min(255, c.getGreen() + 16), Math.min(255, c.getBlue() + 16));
+        }
+    }
+
+    /**
      * Button whose label text is green when the action is available right
-     * now and red when it is not — no extra decorations, readable on the
+     * now and red when it is not — curved like the rest, readable on the
      * native look and feel of both macOS and Windows.
      */
-    private static final class IndicatorButton extends JButton {
+    private static final class IndicatorButton extends RoundedButton {
 
         private static final java.awt.Color ACTIVE = new java.awt.Color(0x1E8E3E);
         private static final java.awt.Color INACTIVE = new java.awt.Color(0xC62828);
@@ -1775,6 +1915,41 @@ public class MeetingConsole {
         public void setEnabled(boolean enabled) {
             super.setEnabled(enabled);
             setForeground(enabled ? ACTIVE : INACTIVE);
+        }
+    }
+
+    /** A simple rounded line border, matched to the field's own colours. */
+    private static final class RoundedBorder implements javax.swing.border.Border {
+        private final int arc;
+
+        RoundedBorder(int arc) {
+            this.arc = arc;
+        }
+
+        @Override
+        public void paintBorder(java.awt.Component c, java.awt.Graphics g, int x, int y, int w, int h) {
+            java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+            g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
+                    java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+            java.awt.Color line = c.getBackground() == null ? java.awt.Color.GRAY
+                    : (isDarkish(c.getBackground()) ? new java.awt.Color(0x5A5A5A) : new java.awt.Color(0xB0B0B0));
+            g2.setColor(line);
+            g2.drawRoundRect(x, y, w - 1, h - 1, arc, arc);
+            g2.dispose();
+        }
+
+        @Override
+        public java.awt.Insets getBorderInsets(java.awt.Component c) {
+            return new java.awt.Insets(4, 8, 4, 8);
+        }
+
+        @Override
+        public boolean isBorderOpaque() {
+            return false;
+        }
+
+        private static boolean isDarkish(java.awt.Color c) {
+            return (c.getRed() + c.getGreen() + c.getBlue()) / 3 < 128;
         }
     }
 
@@ -1805,6 +1980,7 @@ public class MeetingConsole {
         if (renderedSessionId != null) {
             transcript.setText("");
             renderedUtterances = 0;
+            transcriptHeaderWritten = false; // header is re-written on re-render
         }
         transcript.setCaretColor(textFg);
         summaryArea.setBackground(textBg);
@@ -1819,7 +1995,8 @@ public class MeetingConsole {
                 editorFileRow, autoStartPanel, statusStackPanel,
                 composePanel, composeTopPanel, composeBottomPanel, composeSouthPanel,
                 composeChecks.panel, composeInstrRow, composeOptionStack,
-                composeControlsPanel, indicatorPanel, southWrapPanel)) {
+                composeControlsPanel, indicatorPanel, southWrapPanel,
+                meetingTabPanel, meetingTopRow, extractionPanel)) {
             // Aqua only honors panel backgrounds when the panel is opaque.
             panel.setOpaque(true);
             panel.setBackground(panelBg);
@@ -1875,7 +2052,16 @@ public class MeetingConsole {
         darkModeToggle.setForeground(textFg);
         autoStartToggle.setBackground(panelBg);
         autoStartToggle.setForeground(textFg);
-        // Start/Pause/Stop keep their green/red action colors in both themes.
+        // Curved buttons follow the theme (Start/Pause/Stop keep their green/red
+        // label colour; styleButton leaves indicator foregrounds alone).
+        for (JButton b : themedButtons) {
+            styleButton(b, dark);
+        }
+        if (helpScroll != null) {
+            helpScroll.setOpaque(true);
+            helpScroll.setBackground(panelBg);
+            helpScroll.getViewport().setBackground(panelBg);
+        }
         setStatus(lastStatusMessage, lastStatusWasError);
         frame.repaint();
     }
@@ -1952,14 +2138,14 @@ public class MeetingConsole {
         if (!save) {
             // No — end the meeting and discard the recording, nothing is written.
             summaryArea.setText("Meeting ended — notes were not saved.");
-            setStatus("Meeting ended — notes were not saved. You can start a new meeting now.", false);
+            setStatus("Meeting ended — notes were not saved. Start new meeting.", false);
             MeetingEndService.PendingNotes toDiscard = pending;
             notesExecutor.submit(() -> meetingEndService.discardNotes(toDiscard));
             return;
         }
 
         summaryArea.setText("Transcribing and drafting the notes in the background…");
-        setStatus("Meeting stopped — drafting notes in the background. You can start a new meeting now.", false);
+        setStatus("Meeting stopped — drafting notes in the background. Start new meeting.", false);
         savingNotes = true; // drives the "⏳ Saving meeting notes…" indicator
 
         // Slow part: transcribe + draft + save off the UI thread. Serialised so
