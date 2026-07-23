@@ -153,6 +153,34 @@ public class MeetingConsole {
     private static Font uiFont(int style, float size) {
         return new Font(UI_FONT_FAMILY, style, Math.round(size));
     }
+
+    /**
+     * Forces one explicit font (size and weight) onto every built-in Swing
+     * widget class, not just the components we build ourselves. Without this,
+     * things we never touch directly — JOptionPane's own Yes/No/Cancel-style
+     * buttons, checkbox/radio tick icons (Metal draws these at a size derived
+     * from the current font), menus, tooltips — fall back to the L&F's own
+     * default font, which differs subtly in size/weight between macOS and
+     * Windows even under the same cross-platform Metal L&F. Installing one
+     * concrete Font for every key here is what actually keeps text size,
+     * boldness, and icon size in sync across operating systems. Must run
+     * before any component is created.
+     */
+    private static void installUniformUiDefaults() {
+        Font base = uiFont(Font.PLAIN, 13);
+        for (String key : new String[] {
+                "Button.font", "ToggleButton.font", "CheckBox.font", "RadioButton.font",
+                "ComboBox.font", "Label.font", "List.font", "MenuBar.font", "MenuItem.font",
+                "Menu.font", "PopupMenu.font", "CheckBoxMenuItem.font", "RadioButtonMenuItem.font",
+                "OptionPane.font", "OptionPane.buttonFont", "OptionPane.messageFont", "Panel.font",
+                "ProgressBar.font", "ScrollPane.font", "TabbedPane.font", "TextField.font",
+                "PasswordField.font", "TextArea.font", "TextPane.font", "EditorPane.font",
+                "TitledBorder.font", "ToolTip.font", "Tree.font", "Table.font", "TableHeader.font",
+                "Viewport.font", "Spinner.font", "FormattedTextField.font"}) {
+            javax.swing.UIManager.put(key, base);
+        }
+    }
+
     private JButton startButton;
     private JButton pauseButton;
     private JButton stopButton;
@@ -285,6 +313,7 @@ public class MeetingConsole {
         } catch (Exception e) {
             log.debug("Cross-platform look and feel unavailable: {}", e.getMessage());
         }
+        installUniformUiDefaults();
         frame = new JFrame("ai-assist — Meeting");
         var icons = java.util.List.of(notesIcon(16), notesIcon(32), notesIcon(64), notesIcon(128));
         frame.setIconImages(icons);
@@ -641,7 +670,7 @@ public class MeetingConsole {
      * out in a tidy grid and sorted alphabetically.
      */
     private final class OptionChecks {
-        final JPanel panel = new JPanel(new java.awt.GridLayout(0, 4, 12, 2));
+        final JPanel panel = new JPanel(new java.awt.GridLayout(0, 4, 12, 1));
         final javax.swing.JCheckBox grammar = themedCheck("Grammar");
         final javax.swing.JCheckBox compact = themedCheck("Compact");
         final javax.swing.JCheckBox detailed = themedCheck("Detailed");
@@ -739,6 +768,52 @@ public class MeetingConsole {
         return b;
     }
 
+    /**
+     * A Yes/No/Cancel-style confirmation dialog whose buttons match the rest
+     * of the app (curved, same uniform size, same font) instead of the L&F's
+     * own plain default buttons. Returns the index into {@code labels} that
+     * was clicked, or {@code JOptionPane.CLOSED_OPTION} if the dialog was
+     * dismissed without choosing one. The message may contain "\n" for line
+     * breaks — JOptionPane renders each line as its own row.
+     */
+    private int showStyledConfirm(String message, String title, String[] labels, int defaultIndex) {
+        JOptionPane pane = new JOptionPane(message, JOptionPane.QUESTION_MESSAGE,
+                JOptionPane.DEFAULT_OPTION, null, new Object[0]);
+        JButton[] buttons = new JButton[labels.length];
+        for (int i = 0; i < labels.length; i++) {
+            JButton b = sized(dialogButton(labels[i], darkMode));
+            String label = labels[i];
+            b.addActionListener(e -> pane.setValue(label));
+            buttons[i] = b;
+        }
+        pane.setOptions(buttons);
+        pane.setInitialValue(buttons[defaultIndex]);
+        JDialog dialog = pane.createDialog(frame, title);
+        dialog.setVisible(true);
+        Object value = pane.getValue();
+        for (int i = 0; i < labels.length; i++) {
+            if (labels[i].equals(value)) {
+                return i;
+            }
+        }
+        return JOptionPane.CLOSED_OPTION;
+    }
+
+    /**
+     * A single-button "OK" information/warning/error dialog whose button
+     * matches the rest of the app. {@code messageType} is one of
+     * JOptionPane.{INFORMATION,WARNING,ERROR}_MESSAGE.
+     */
+    private void showStyledMessage(String message, String title, int messageType) {
+        JOptionPane pane = new JOptionPane(message, messageType, JOptionPane.DEFAULT_OPTION, null, new Object[0]);
+        JButton ok = sized(dialogButton("OK", darkMode));
+        ok.addActionListener(e -> pane.setValue("OK"));
+        pane.setOptions(new Object[] {ok});
+        pane.setInitialValue(ok);
+        JDialog dialog = pane.createDialog(frame, title);
+        dialog.setVisible(true);
+    }
+
     /** Gives a single-line text field a curved outline and a compact height. */
     private static void roundTextField(javax.swing.JTextField field) {
         field.setBorder(new RoundedBorder(10));
@@ -782,8 +857,8 @@ public class MeetingConsole {
         }
         String ext = fileExtension(path);
         if (!ALLOWED_LOAD_TYPES.contains(ext)) {
-            JOptionPane.showMessageDialog(frame,
-                    "Only these file types can be loaded:\n\n    .txt, .doc, .docx\n\n"
+            showStyledMessage(
+                    "Only these file types can be loaded: .txt, .doc, .docx\n"
                             + "The file you picked is a \"." + ext + "\" file.",
                     "Unsupported file type", JOptionPane.WARNING_MESSAGE);
             return;
@@ -900,7 +975,7 @@ public class MeetingConsole {
         fileRow.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 8, 4, 8));
 
         composeChecks = new OptionChecks();
-        composeInstructions = new javax.swing.JTextField(36);
+        composeInstructions = new javax.swing.JTextField(41);
         roundTextField(composeInstructions);
         composeInstructions.setFont(uiFont(Font.PLAIN, 13));
         JPanel instrRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
@@ -990,8 +1065,7 @@ public class MeetingConsole {
         panel.setBorder(javax.swing.BorderFactory.createEmptyBorder(8, 16, 8, 16));
 
         // Section 1 — About.
-        panel.add(leftRow(sectionHeading("About")));
-        panel.add(leftRow(themedLabel("Architecture & Design by Maruti, version 0.1")));
+        panel.add(leftRow(themedLabel("About:"), themedLabel("  Architecture & Design by Maruti, version 0.1")));
         panel.add(javax.swing.Box.createVerticalStrut(8));
 
         // Section 2 — Appearance (the Dark-mode toggle, moved off the top bar).
@@ -1006,9 +1080,9 @@ public class MeetingConsole {
         panel.add(leftRow(themedLabel("Model:"), modelCombo));
         panel.add(javax.swing.Box.createVerticalStrut(8));
 
-        // Section 3 — Help (a link that opens the instructions window).
-        panel.add(leftRow(sectionHeading("Help")));
-        JLabel instructionsLink = linkLabel("Instructions to use ai-assist");
+        // Section 3 — Instructions (a link that opens the instructions window).
+        panel.add(leftRow(sectionHeading("Instructions")));
+        JLabel instructionsLink = linkLabel("ai-assist app help");
         instructionsLink.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
             public void mouseClicked(java.awt.event.MouseEvent e) {
@@ -1052,6 +1126,10 @@ public class MeetingConsole {
         panel.add(javax.swing.Box.createVerticalStrut(6));
         ratingCombo = new javax.swing.JComboBox<>(new Integer[] {0, 1, 2, 3, 4, 5});
         ratingCombo.setFont(uiFont(Font.PLAIN, 13));
+        // A touch wider than its natural single-digit width, so it doesn't
+        // look cramped next to the label.
+        java.awt.Dimension ratingSize = ratingCombo.getPreferredSize();
+        ratingCombo.setPreferredSize(new java.awt.Dimension(ratingSize.width + 10, ratingSize.height));
         JPanel ratingRow = leftRow(themedLabel("Over all rating to ai-assist :"), ratingCombo);
         panel.add(ratingRow);
 
@@ -1450,8 +1528,8 @@ public class MeetingConsole {
         }
         b.append("<p style='color:#666;'>Tip: drop a Vosk <code>.zip</code> straight into the models folder — ")
                 .append("the app unpacks it and moves the <code>.zip</code> to ")
-                .append("<b>Documents/meeting-notes/model-backups</b> for safekeeping. ")
-                .append("Press <b>Recheck</b> after adding files.</p>");
+                .append("Documents/meeting-notes/model-backups for safekeeping. ")
+                .append("Press Recheck after adding files.</p>");
         return b.append("</body></html>").toString();
     }
 
@@ -1532,7 +1610,7 @@ public class MeetingConsole {
                 + "<h3 style='color:" + heading + ";'>Step group A — first-time setup (do once)</h3>"
                 + "<ol>"
                 + "<li>When the app opens, read the <b>Set up your models</b> notice.</li>"
-                + "<li>Click <b>Open models folder</b> to see where model files go.</li>"
+                + "<li>Click <b>Open</b> to see where model files go.</li>"
                 + "<li>In the notice, click the <b>Download</b> link next to the <b>required</b> speech "
                 + "model. Your browser downloads a <code>.zip</code> file.</li>"
                 + "<li>Move that <code>.zip</code> into the models folder from step 2.</li>"
@@ -1578,24 +1656,24 @@ public class MeetingConsole {
                 + "</ol>"
 
                 + "<h3 style='color:" + heading + ";'>Models — what to download and where</h3>"
-                + "<p>Place these in your models folder (Open the folder from the setup notice). The app "
+                + "<p>Place these in your models folder (click Open in the setup notice). The app "
                 + "picks them up automatically; a Vosk <code>.zip</code> is unpacked for you.</p>"
                 + "<ul>"
                 + "<li><b>Speech (required)</b> — file <code>vosk-model-small-en-us-0.15.zip</code>, from "
                 + "<a href='https://alphacephei.com/vosk/models'>alphacephei.com/vosk/models</a>.</li>"
                 + "<li><b>Transcript (recommended)</b> — file <code>ggml-base.bin</code>, from the "
                 + "<a href='https://github.com/NoMercy-Entertainment/nomercy-whisper-models/releases'>GitHub "
-                + "mirror</a> (no Hugging Face needed).</li>"
-                + "<li><b>AI model (recommended)</b> — a single GGUF instruct model such as "
-                + "<code>qwen2.5-1.5b-instruct-q4_k_m.gguf</code>; see the "
-                + "<a href='https://github.com/marutisridharjob/ai-assist/blob/main/models/README.md'>models "
-                + "guide</a>.</li>"
+                + "mirror</a>.</li>"
+                + "<li><b>AI model (recommended)</b> — a single GGUF instruct model. For noticeably better "
+                + "summaries and rewrites, use something like <code>qwen2.5-3b-instruct-q4_k_m.gguf</code> "
+                + "(~2 GB); <code>llama-3.2-1b-instruct-q4_k_m.gguf</code> (~800 MB) is a lighter default if "
+                + "you want less RAM/CPU use. If you can only reach GitHub, host the file yourself as a "
+                + "Release asset (up to 2 GB) on any repo you control.</li>"
                 + "</ul>"
 
-                + "<h3 style='color:" + heading + ";'>Good to know</h3>"
+                + "<h3 style='color:" + heading + ";'>How it works</h3>"
                 + "<ul>"
                 + "<li>Everything runs on your machine — no audio or text ever leaves it.</li>"
-                + "<li>Switch light/dark on the <b>Settings</b> tab under <b>Appearance</b>.</li>"
                 + "<li>When you are muted, room noise on your mic is ignored unless you speak up.</li>"
                 + "<li>Slow steps (transcribing, drafting, saving) run in the background, so the app stays "
                 + "responsive.</li>"
@@ -1620,8 +1698,6 @@ public class MeetingConsole {
                 + "<a href='https://www.apache.org/licenses/LICENSE-2.0'>Apache-2.0</a></li>"
                 + "<li>Java runtime (OpenJDK) — "
                 + "<a href='https://openjdk.org/legal/gplv2+ce.html'>GPLv2 with Classpath Exception</a></li>"
-                + "<li>ai-assist source — see the "
-                + "<a href='https://github.com/marutisridharjob/ai-assist'>GitHub repository</a></li>"
                 + "</ul>"
 
                 + "<p style='color:" + link + ";'>Tip: use the Search box above to jump to any word on this page.</p>"
@@ -2209,12 +2285,10 @@ public class MeetingConsole {
         // without saving, Cancel keeps the meeting running. Explicit button
         // labels because the plain confirm dialog rendered without visible
         // buttons for some users on Windows.
-        Object[] choices = {"Save", "No", "Cancel"};
-        int choice = JOptionPane.showOptionDialog(frame,
-                "End the meeting? Save writes the notes file to your Documents/meeting-notes folder; "
-                        + "No ends without saving.",
-                "Meeting complete", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE,
-                null, choices, choices[0]);
+        String[] choices = {"Save", "No", "Cancel"};
+        int choice = showStyledConfirm(
+                "End the meeting?\nSave writes the notes file; No ends without saving.",
+                "Meeting complete", choices, 0);
         if (choice == 2 || choice == JOptionPane.CLOSED_OPTION) {
             return; // Cancel — keep the meeting running
         }
@@ -2414,7 +2488,12 @@ public class MeetingConsole {
      */
     private void showBackgroundNote(String message, boolean error) {
         JOptionPane pane = new JOptionPane(message,
-                error ? JOptionPane.WARNING_MESSAGE : JOptionPane.INFORMATION_MESSAGE);
+                error ? JOptionPane.WARNING_MESSAGE : JOptionPane.INFORMATION_MESSAGE,
+                JOptionPane.DEFAULT_OPTION, null, new Object[0]);
+        JButton ok = sized(dialogButton("OK", darkMode));
+        ok.addActionListener(e -> pane.setValue("OK"));
+        pane.setOptions(new Object[] {ok});
+        pane.setInitialValue(ok);
         javax.swing.JDialog dialog = pane.createDialog(frame,
                 error ? "ai-assist — notes not saved" : "ai-assist — notes saved");
         dialog.setModal(false);
@@ -2485,12 +2564,9 @@ public class MeetingConsole {
                     || status.state() == LiveTranscriptionService.State.PAUSED
                     || status.state() == LiveTranscriptionService.State.PREPARING);
         if (meetingActive && hasCapturedContent(status.sessionId())) {
-            int choice = JOptionPane.showOptionDialog(frame,
-                    "A meeting is still running. Save the notes before closing?",
-                    "Close ai-assist", JOptionPane.YES_NO_CANCEL_OPTION,
-                    JOptionPane.QUESTION_MESSAGE, null,
-                    new Object[]{"Yes — save and close", "Close without saving", "Cancel"},
-                    "Yes — save and close");
+            int choice = showStyledConfirm(
+                    "A meeting is still running.\nSave the notes before closing?",
+                    "Close ai-assist", new String[] {"Save", "Discard", "Cancel"}, 0);
             if (choice == 2 || choice == JOptionPane.CLOSED_OPTION) {
                 return;
             }
@@ -2498,12 +2574,12 @@ public class MeetingConsole {
                 try {
                     Draft draft = meetingEndService.endCurrentLiveMeeting(null);
                     if (draft.savedTo() != null) {
-                        JOptionPane.showMessageDialog(frame, "Notes saved to:\n" + draft.savedTo());
+                        showStyledMessage("Notes saved to:\n" + draft.savedTo(), "ai-assist",
+                                JOptionPane.INFORMATION_MESSAGE);
                     }
                 } catch (Exception e) {
                     // Don't silently discard the meeting: report and abort the close.
-                    JOptionPane.showMessageDialog(frame,
-                            "The notes were NOT saved:\n" + e.getMessage(),
+                    showStyledMessage("The notes were NOT saved:\n" + e.getMessage(),
                             "Could not save", JOptionPane.ERROR_MESSAGE);
                     return;
                 }

@@ -80,15 +80,16 @@ public final class ModelCatalog {
                     "an accurate, complete transcript when you press Stop",
                     "ggml-base.bin",
                     "https://github.com/NoMercy-Entertainment/nomercy-whisper-models/releases/latest/download/ggml-base.bin",
-                    "Download from the GitHub mirror (no Hugging Face account needed) and put the .bin "
-                            + "file in the models folder.",
+                    "Download from the GitHub mirror and put the .bin file in the models folder.",
                     dir -> hasFile(dir, "ggml-", ".bin")),
             new ModelSpec("llm", "Instruct LLM model (GGUF)", Tier.RECOMMENDED,
                     "richer AI summaries and rewrites",
-                    "qwen2.5-1.5b-instruct-q4_k_m.gguf",
-                    "https://github.com/marutisridharjob/ai-assist/blob/main/models/README.md",
-                    "Optional. Open the models guide for direct links, then put a single GGUF instruct "
-                            + "model in the models folder.",
+                    "qwen2.5-3b-instruct-q4_k_m.gguf",
+                    "https://github.com/ggerganov/llama.cpp",
+                    "Optional. For noticeably better summaries and rewrites, use a model like "
+                            + "qwen2.5-3b-instruct-q4_k_m.gguf (~2 GB); llama-3.2-1b-instruct-q4_k_m.gguf "
+                            + "(~800 MB) is a lighter default. Put a single GGUF instruct model in the "
+                            + "models folder.",
                     dir -> hasFile(dir, "", ".gguf")));
 
     /** The outcome of checking the catalogue against the model folders. */
