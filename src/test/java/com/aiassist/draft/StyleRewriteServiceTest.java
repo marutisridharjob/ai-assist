@@ -1,10 +1,41 @@
 package com.aiassist.draft;
 
+import java.nio.file.Path;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * These tests assert the specific, deterministic behaviour of the offline
+ * rule-based rewriter (TemplateContentDrafter/TextRewriteService), so the
+ * real LocalLlmService must never actually find a model — otherwise, on a
+ * machine that has genuinely set up ai-assist with a real GGUF model in
+ * ~/Documents/ai-assist/models, the LLM-first path in StyleRewriteService
+ * would use that model instead, producing different (if equally valid)
+ * wording than these hardcoded assertions expect. user.home is pointed at an
+ * empty temp dir for the duration of every test so results are independent
+ * of whoever runs them.
+ */
 class StyleRewriteServiceTest {
+
+    @TempDir
+    Path isolatedHome;
+    private String originalHome;
+
+    @BeforeEach
+    void isolateFromAnyRealLocalModel() {
+        originalHome = System.getProperty("user.home");
+        System.setProperty("user.home", isolatedHome.toString());
+    }
+
+    @AfterEach
+    void restoreRealHome() {
+        System.setProperty("user.home", originalHome);
+    }
 
     private final StyleRewriteService service = new StyleRewriteService(
             new TextRewriteService(new TemplateContentDrafter()),

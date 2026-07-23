@@ -73,17 +73,26 @@ class DraftFileWriterTest {
     }
 
     @Test
-    void blankDirSavesIntoAppFolderMeetingNotes() throws Exception {
-        DraftFileWriter writer = new DraftFileWriter(new OutputProperties(true, ""));
-
-        Path saved = writer.save(draft("Team sync"));
-
+    void blankDirSavesIntoAppFolderMeetingNotes(@TempDir Path isolatedHome) throws Exception {
+        // A blank dir resolves to ~/Documents/meeting-notes, the same folder
+        // real meetings are saved to. On a machine that has actually used
+        // ai-assist, that folder is real, shared, and non-empty, so point
+        // user.home at an empty temp dir for the duration of this test —
+        // both to avoid writing into the real folder and because the old
+        // version of this test deleted the shared parent directory in
+        // `finally`, which fails with DirectoryNotEmptyException as soon as
+        // any other real note lives there.
+        String originalHome = System.getProperty("user.home");
+        System.setProperty("user.home", isolatedHome.toString());
         try {
+            DraftFileWriter writer = new DraftFileWriter(new OutputProperties(true, ""));
+
+            Path saved = writer.save(draft("Team sync"));
+
             assertThat(saved).exists();
             assertThat(saved.getParent().getFileName().toString()).isEqualTo("meeting-notes");
         } finally {
-            java.nio.file.Files.deleteIfExists(saved);
-            java.nio.file.Files.deleteIfExists(saved.getParent());
+            System.setProperty("user.home", originalHome);
         }
     }
 }

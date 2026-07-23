@@ -30,11 +30,20 @@ class WhisperTranscriberTest {
     }
 
     @Test
-    void unavailableWithoutAModel() {
-        // No ggml-*.bin in the working dir, so Whisper is not available and
-        // transcription returns an empty list rather than failing.
-        WhisperTranscriber transcriber = new WhisperTranscriber();
-        assertThat(transcriber.findModel()).isEmpty();
-        assertThat(transcriber.isAvailable()).isFalse();
+    void unavailableWithoutAModel(@TempDir Path isolatedHome) {
+        // findModel() searches the real ~/Documents/ai-assist/models among other
+        // places, so on a machine that has actually set up ai-assist for real
+        // use, a genuine model lives there and would be found instead of
+        // "nothing". Point user.home at an empty temp dir for the duration of
+        // this test so the result is independent of whoever runs it.
+        String originalHome = System.getProperty("user.home");
+        System.setProperty("user.home", isolatedHome.toString());
+        try {
+            WhisperTranscriber transcriber = new WhisperTranscriber();
+            assertThat(transcriber.findModel()).isEmpty();
+            assertThat(transcriber.isAvailable()).isFalse();
+        } finally {
+            System.setProperty("user.home", originalHome);
+        }
     }
 }
