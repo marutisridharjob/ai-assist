@@ -68,7 +68,7 @@ public final class DesktopShortcuts {
     private static void shortcutToFolder(Path desktop, String name, Path target) {
         try {
             if (isWindows()) {
-                createWindowsLnk(desktop.resolve(name + ".lnk"), target, true);
+                createWindowsLnk(desktop.resolve(name + ".lnk"), target, null, null);
             } else {
                 // A symlink shows up as a normal folder shortcut in Finder / file managers.
                 Path link = desktop.resolve(name);
@@ -81,7 +81,14 @@ public final class DesktopShortcuts {
         }
     }
 
-    /** A Desktop shortcut that launches the installed app, where one can be located. */
+    /**
+     * A Desktop shortcut that launches ai-assist. Prefers a natively installed
+     * app/exe/.desktop entry when one is found (from a jpackage install); most
+     * users instead run the single downloaded jar directly (see the README),
+     * in which case that native launcher never exists, so a shortcut that
+     * runs {@code java -jar <this jar>} is created instead — otherwise those
+     * users never get a Desktop shortcut at all.
+     */
     private static void shortcutToApp(Path desktop) {
         try {
             if (isMac()) {
@@ -89,13 +96,18 @@ public final class DesktopShortcuts {
                 Path link = desktop.resolve("ai-assist");
                 if (Files.isDirectory(app) && !Files.exists(link)) {
                     Files.createSymbolicLink(link, app);
+                    return;
                 }
+                currentJarPath().ifPresent(jar -> createMacJarLauncher(desktop, jar));
             } else if (isWindows()) {
                 Path exe = windowsAppExe();
                 if (exe != null) {
-                    createWindowsLnk(desktop.resolve("ai-assist.lnk"), exe, false);
+                    createWindowsLnk(desktop.resolve("ai-assist.lnk"), exe, null, exe.getParent());
+                    return;
                 }
-                // Otherwise the installer's own --win-shortcut already placed one.
+                // Otherwise the installer's own --win-shortcut already placed one
+                // when installed natively; running the plain jar needs its own.
+                currentJarPath().ifPresent(jar -> createWindowsJarLauncher(desktop, jar));
             } else {
                 // Linux: copy the .desktop launcher the installer registered, if present.
                 Path menuEntry = linuxDesktopEntry();
@@ -105,10 +117,76 @@ public final class DesktopShortcuts {
                         Files.copy(menuEntry, link);
                         link.toFile().setExecutable(true);
                     }
+                    return;
                 }
+                currentJarPath().ifPresent(jar -> createLinuxJarLauncher(desktop, jar));
             }
         } catch (Exception e) {
             log.info("Skipped app shortcut ({})", e.getMessage());
+        }
+    }
+
+    /**
+     * The jar currently running, when launched the ordinary way ({@code java
+     * -jar ai-assist.jar} or a double-click, both a single-entry classpath
+     * ending in {@code .jar}). Empty for an IDE/exploded classpath or a
+     * jpackage native launcher, neither of which needs this fallback.
+     */
+    private static java.util.Optional<Path> currentJarPath() {
+        String classPath = System.getProperty("java.class.path", "");
+        if (classPath.isBlank() || classPath.contains(java.io.File.pathSeparator)
+                || !classPath.toLowerCase(Locale.ROOT).endsWith(".jar")) {
+            return java.util.Optional.empty();
+        }
+        Path jar = Path.of(classPath).toAbsolutePath();
+        return Files.isRegularFile(jar) ? java.util.Optional.of(jar) : java.util.Optional.empty();
+    }
+
+    /** Windows: a .lnk that runs {@code javaw -jar <jar>} (no console window). */
+    private static void createWindowsJarLauncher(Path desktop, Path jar) {
+        try {
+            Path javaw = Path.of(System.getProperty("java.home", ""), "bin", "javaw.exe");
+            Path javaExe = Files.isRegularFile(javaw) ? javaw : Path.of("javaw.exe");
+            createWindowsLnk(desktop.resolve("ai-assist.lnk"), javaExe,
+                    "-jar \"" + jar + "\"", jar.getParent());
+        } catch (Exception e) {
+            log.info("Skipped jar-launcher shortcut ({})", e.getMessage());
+        }
+    }
+
+    /** macOS: a double-clickable .command script that runs {@code java -jar <jar>}. */
+    private static void createMacJarLauncher(Path desktop, Path jar) {
+        Path link = desktop.resolve("ai-assist.command");
+        try {
+            if (Files.exists(link)) {
+                return;
+            }
+            Files.writeString(link, "#!/bin/bash\ncd \"" + jar.getParent() + "\"\n"
+                    + "exec java -jar \"" + jar.getFileName() + "\"\n");
+            link.toFile().setExecutable(true);
+        } catch (Exception e) {
+            log.info("Skipped jar-launcher shortcut ({})", e.getMessage());
+        }
+    }
+
+    /** Linux: a standard .desktop entry that runs {@code java -jar <jar>}. */
+    private static void createLinuxJarLauncher(Path desktop, Path jar) {
+        Path link = desktop.resolve("ai-assist.desktop");
+        try {
+            if (Files.exists(link)) {
+                return;
+            }
+            Files.writeString(link, "[Desktop Entry]\n"
+                    + "Type=Application\n"
+                    + "Name=ai-assist\n"
+                    + "Comment=Offline meeting notes assistant\n"
+                    + "Exec=java -jar \"" + jar + "\"\n"
+                    + "Path=" + jar.getParent() + "\n"
+                    + "Terminal=false\n"
+                    + "Categories=Office;\n");
+            link.toFile().setExecutable(true);
+        } catch (Exception e) {
+            log.info("Skipped jar-launcher shortcut ({})", e.getMessage());
         }
     }
 
@@ -144,15 +222,20 @@ public final class DesktopShortcuts {
     /**
      * Creates a Windows .lnk shortcut via the built-in WScript.Shell (no extra
      * tools). Uses a temporary VBScript so it works on any Windows version.
+     * {@code arguments} and {@code workingDir} may be null when not needed.
      */
-    private static void createWindowsLnk(Path lnk, Path target, boolean isFolder) throws IOException, InterruptedException {
+    private static void createWindowsLnk(Path lnk, Path target, String arguments, Path workingDir)
+            throws IOException, InterruptedException {
         if (Files.exists(lnk)) {
             return;
         }
         String vbs = "Set s = CreateObject(\"WScript.Shell\")\r\n"
-                + "Set lnk = s.CreateShortcut(\"" + lnk.toAbsolutePath() + "\")\r\n"
-                + "lnk.TargetPath = \"" + target.toAbsolutePath() + "\"\r\n"
-                + (isFolder ? "" : "lnk.WorkingDirectory = \"" + target.toAbsolutePath().getParent() + "\"\r\n")
+                + "Set lnk = s.CreateShortcut(\"" + vbsEscape(lnk.toAbsolutePath().toString()) + "\")\r\n"
+                + "lnk.TargetPath = \"" + vbsEscape(target.toAbsolutePath().toString()) + "\"\r\n"
+                + (arguments != null ? "lnk.Arguments = \"" + vbsEscape(arguments) + "\"\r\n" : "")
+                + (workingDir != null
+                        ? "lnk.WorkingDirectory = \"" + vbsEscape(workingDir.toAbsolutePath().toString()) + "\"\r\n"
+                        : "")
                 + "lnk.Save\r\n";
         Path script = Files.createTempFile("ai-assist-lnk", ".vbs");
         try {
@@ -163,5 +246,10 @@ public final class DesktopShortcuts {
         } finally {
             Files.deleteIfExists(script);
         }
+    }
+
+    /** Doubles double-quotes for embedding a value inside a VBScript string literal. */
+    private static String vbsEscape(String value) {
+        return value.replace("\"", "\"\"");
     }
 }

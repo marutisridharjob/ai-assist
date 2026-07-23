@@ -100,7 +100,21 @@ public class WhisperTranscriber {
             WhisperFullParams params = new WhisperFullParams(WhisperSamplingStrategy.GREEDY);
             params.nThreads = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
             params.printProgress = false;
+            // Disable whisper.cpp's temperature-fallback loop: by default (temp
+            // step ~0.2) it RE-DECODES a chunk at increasingly random
+            // temperatures whenever its confidence thresholds aren't met —
+            // which real meeting audio (pauses, room noise, cross-talk) hits
+            // constantly, silently multiplying transcription time several-fold
+            // (a 30-minute recording taking an hour-plus is this, not a slow
+            // model). One greedy pass per ~30s chunk is dramatically faster and
+            // is an acceptable trade here since the live Vosk captions already
+            // cover the low-confidence case as a fallback transcript.
+            params.temperatureInc = 0f;
+            long t0 = System.currentTimeMillis();
             int rc = whisper.full(context, params, samples, samples.length);
+            double audioSeconds = samples.length / 16000.0;
+            log.info("Whisper transcribed {} ({}s of audio) in {} ms", pcmFile.getFileName(),
+                    (long) audioSeconds, System.currentTimeMillis() - t0);
             if (rc != 0) {
                 log.warn("Whisper transcription returned code {}", rc);
                 return List.of();
