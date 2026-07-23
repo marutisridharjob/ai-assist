@@ -19,11 +19,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * Locates the offline English speech model. Resolution order, all local:
- * an unpacked model on disk ({@code ./models} or the configured directory),
- * then the copy embedded inside the application jar at build time
- * ({@code mvn package -Pfetch-model}), which is extracted once to the model
- * directory. The app never touches the network unless
+ * Locates the offline English speech model. To keep the download small the
+ * shipped app bundles <b>no</b> model — the user places it themselves (see the
+ * Settings tab &rarr; Instructions). Resolution order, all local: an unpacked
+ * model on disk ({@code ./models}, the user's Documents models folder, or the
+ * configured directory). A developer build may opt to embed a model with
+ * {@code mvn package -Pfetch-model}; when present it is extracted once, but the
+ * released app never ships one. The app never touches the network unless
  * {@code ai-assist.transcription.allow-download=true} is explicitly set.
  */
 @Service
@@ -232,8 +234,8 @@ public class VoskModelManager {
             return modelPath;
         }
 
-        // First run of a self-contained build: extract the model shipped
-        // inside the jar to the model directory.
+        // Released builds ship no model, so this is normally null. A developer
+        // build made with -Pfetch-model may embed one; extract it if present.
         try (InputStream embedded = embeddedModelZip()) {
             if (embedded != null) {
                 log.info("Extracting embedded speech model to {}", modelPath);
@@ -247,9 +249,10 @@ public class VoskModelManager {
         }
 
         if (!properties.allowDownload()) {
-            throw new IOException(("No speech model found. Place a Vosk model folder or .zip "
-                    + "(e.g. vosk-model-en-us-0.22-lgraph from alphacephei.com/vosk/models) next to "
-                    + "the ai-assist jar or in %s, then press Start again.")
+            throw new IOException(("No speech model found. ai-assist ships without models to keep the "
+                    + "download small — see the Settings tab → Instructions to get one. Place the "
+                    + "Vosk model folder or .zip (e.g. vosk-model-small-en-us-0.15 from "
+                    + "alphacephei.com/vosk/models) in %s, then press Start again.")
                     .formatted(bundled.toAbsolutePath().getParent()));
         }
         log.info("Vosk model not found at {}; downloading from {}", modelPath, properties.modelUrl());

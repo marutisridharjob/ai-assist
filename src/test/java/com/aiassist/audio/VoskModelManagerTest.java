@@ -65,7 +65,7 @@ class VoskModelManagerTest {
         assertThatThrownBy(manager::ensureModel)
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("No speech model found")
-                .hasMessageContaining("next to");
+                .hasMessageContaining("Settings tab");
     }
 
     @Test

@@ -1643,8 +1643,8 @@ public class MeetingConsole {
                 case ERROR -> "Audio problem: " + status.detail();
                 case IDLE -> modelsAvailable
                         ? "Click Start to begin"
-                        : "No speech model found — place a Vosk model zip or folder in the models folder"
-                          + " (it extracts automatically)";
+                        : "No speech model yet — see the Settings tab → Instructions to get one, then"
+                          + " drop the model zip in the models folder (it extracts automatically)";
             }, status.state() == LiveTranscriptionService.State.ERROR
                     || (status.state() == LiveTranscriptionService.State.IDLE && !modelsAvailable));
             // Green text = press me now, red = not applicable:

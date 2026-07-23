@@ -17,9 +17,9 @@ public record TranscriptionProperties(String modelDir, String modelUrl, String m
 
     public TranscriptionProperties {
         if (modelDir == null || modelDir.isBlank()) {
-            // OS-managed temp space: the user ships and sees ONE file (the jar);
-            // the embedded model is unpacked here invisibly and re-extracted
-            // automatically if the OS ever cleans it up.
+            // OS-managed temp space where the user-supplied model is unpacked.
+            // No model ships with the app (to keep the download small); the user
+            // places it themselves — see the Settings tab -> Instructions.
             modelDir = Path.of(System.getProperty("java.io.tmpdir"), "ai-assist", "models").toString();
         }
         if (modelName == null || modelName.isBlank()) {

@@ -46,10 +46,10 @@ ai-assist:
     content-type: MEETING_NOTES
     tone: PROFESSIONAL
   transcription:
-    # English speech model (proven, lightweight vosk-small-en-us). It ships
-    # in src/main/resources/vosk-model.zip, so every jar built with plain
-    # `mvn package` embeds it; at runtime it is unpacked invisibly to OS
-    # temp space — the user only ever handles the single jar file.
+    # English speech model (proven, lightweight vosk-small-en-us). To keep the
+    # download small, NO model is bundled in the app — the user places the model
+    # themselves (see the Settings tab -> Instructions in the app). Drop the
+    # model .zip into the models folder and the app unpacks it automatically.
     model-dir: ${java.io.tmpdir}/ai-assist/models
     model-name: vosk-model-small-en-us-0.15
     # Keep false so the app never uses the internet at runtime.
