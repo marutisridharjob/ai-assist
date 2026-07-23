@@ -97,8 +97,8 @@ JDK — not a browser):
   **summary + action points** (the local LLM when installed, else the offline
   drafter), and the save happen **in the background**; the finished notes —
   summary followed by the **full verbatim transcript** — are written as a
-  timestamped rich-text (.rtf) file in the **`meeting-notes`** folder next to
-  the jar (e.g. `meeting-notes/2026-07-05_15-02-41_live-meeting-notes.rtf`) and
+  timestamped rich-text (.rtf) file in the **`minutes-of-meeting`** folder in your
+  Documents (e.g. `minutes-of-meeting/Minutes-07-05-2026_03-02-41-PM.rtf`) and
   shown in the Summary pane when they're ready. You can start the next meeting
   while the previous one is still being drafted,
 - **who said what**: every transcript line is tagged with its source —
@@ -335,7 +335,7 @@ headphones, your options without installing anything are:
 project's GitHub Releases — `.dmg` (macOS), `.msi` (Windows), or `.deb`/`.rpm`
 (Linux). Each **bundles its own Java runtime** (no separate Java install),
 installs into Applications/Program Files, and adds a shortcut. On first run the
-app creates `~/Documents/meeting-notes` and `~/Documents/ai-assist/models`, then
+app creates `~/Documents/minutes-of-meeting` and `~/Documents/ai-assist/models`, then
 shows a notice with **download links for the models** you still need. See
 [`packaging/README.md`](packaging/README.md) to build the installers yourself
 (or push a `v*` tag to build all three via GitHub Actions).
@@ -363,9 +363,9 @@ jar plus your model `.zip`(s) are all you ever copy, ship, or click:
 [adoptium.net](https://adoptium.net)), or run `java -jar ai-assist-<version>.jar`.
 A dropped model `.zip` is unpacked once, in the background (a progress bar
 shows); after that, the only visible output the app ever creates is the notes
-file it writes to the `meeting-notes` folder next to the jar when you press
-Stop. The app makes **zero network requests at runtime** — verified by socket
-inspection in testing.
+file it writes to the `minutes-of-meeting` folder in your Documents when you
+press Stop. The app makes **zero network requests at runtime** — verified by
+socket inspection in testing.
 
 > Recording a meeting may require participants' consent depending on your
 > jurisdiction and company policy.
@@ -388,8 +388,8 @@ universal binary; no Rosetta needed).
    from a terminal, *Java* if you double-clicked. Click **Allow**. The app's
    status line tells you while it is waiting on this.
 4. The window opens, listening starts automatically, and after the meeting
-   you press **Stop**: the notes file appears in the `meeting-notes` folder
-   next to the jar.
+   you press **Stop**: the notes file appears in the `minutes-of-meeting`
+   folder in your Documents.
 
 ### macOS troubleshooting
 
@@ -405,7 +405,7 @@ universal binary; no Rosetta needed).
 | Status line never shows `system audio (native tap)` | macOS: the helper couldn't be built — install the Command Line Tools once (`xcode-select --install`), then press Pause → Resume. Windows: the helper is prebuilt inside the jar, so check the log (run from a terminal) for the `Native system-audio tap unavailable:` line, which states the exact reason. If the tap fails while running, the app disables it and Pause → Resume switches to the fallback capture automatically. |
 | Native tap listed but `[meeting]` level stays 0 % / helper exits (macOS) | The "System Audio Recording" permission was denied or never shown. System Settings → Privacy & Security → **Screen & System Audio Recording** → **System Audio Recording Only** tab → enable Terminal (or Java), then press Pause → Resume. The `[system-tap]` log lines show the exact error. |
 | BlackHole installed but missing from Audio MIDI Setup / Multi-Output list | CoreAudio only loads new drivers when it restarts. ① Verify the install: `ls /Library/Audio/Plug-Ins/HAL/` must show `BlackHole2ch.driver` — if not, the installer didn't finish (it asks for an admin password); `brew reinstall blackhole-2ch` or rerun the `.pkg`. ② Restart the audio daemon: `sudo killall coreaudiod` (it relaunches itself) — or reboot. ③ Fully quit Audio MIDI Setup (⌘Q) and reopen; **BlackHole 2ch** now appears in the device list and the Multi-Output tick-list. |
-| Where are my notes / the model? | Notes: in the **`meeting-notes`** folder next to the jar, named `<date>_<time>_live-meeting-notes.rtf`. Model cache: `$TMPDIR/ai-assist/models` (managed by the OS; safe to ignore). |
+| Where are my notes / the model? | Notes: in the **`minutes-of-meeting`** folder in your Documents, named `Minutes-<date>-<time>.rtf`. Speech models: `~/Documents/ai-assist/models`. |
 
 ## How it works
 
@@ -468,7 +468,7 @@ without changing the header contract.
 ai-assist:
   output:
     save-drafts: true          # save final notes at meeting Stop
-    dir: ""                    # blank = meeting-notes/ next to the jar; or an absolute path
+    dir: ""                    # blank = ~/Documents/minutes-of-meeting/; or an absolute path
   auto:
     start-capture: true        # listen immediately on launch
     draft-interval-seconds: 30 # interim in-memory draft cadence

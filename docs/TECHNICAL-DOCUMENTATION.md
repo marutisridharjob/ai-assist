@@ -74,12 +74,12 @@ an optional, locally-bound REST API.
 
 On first launch the app:
 
-1. creates `~/Documents/meeting-notes` (where notes are saved) and
-   `~/Documents/meeting-notes/model-backups` (where unpacked model `.zip`s are
+1. creates `~/Documents/minutes-of-meeting` (where notes are saved) and
+   `~/Documents/minutes-of-meeting/model-backups` (where unpacked model `.zip`s are
    archived);
 2. creates `~/Documents/ai-assist/models` (where you place model files);
 3. places two **Desktop shortcuts** — one to the app and one to the
-   meeting-notes folder (best-effort, per OS);
+   minutes-of-meeting folder (best-effort, per OS);
 4. shows the **model-setup notice** listing which models are still missing, each
    with its exact filename, a download-page link, and where to place it.
 
@@ -97,7 +97,7 @@ On first launch the app:
 7. **Stop** → **Save** writes the notes; **No** ends without saving; **Cancel**
    keeps the meeting running. A blinking *Saving…* indicator shows while the
    file is written, then an **Open saved notes** link appears.
-8. Notes land in `~/Documents/meeting-notes` as `<timestamp>_<title>.rtf`.
+8. Notes land in `~/Documents/minutes-of-meeting` as `Minutes-<12-hour timestamp>.rtf`.
 
 ### 3.3 Auto-start
 
@@ -185,7 +185,7 @@ background threads and marshal results back to the EDT.
 | `LocalLlmService` | Loads a GGUF model with llama.cpp and generates text using the model's own chat template. |
 | `WhisperTranscriber` | Runs whisper.cpp on the recorded WAVs for the accurate transcript. |
 | `VoskModelManager` | Locates and unpacks Vosk models (Zip-Slip-guarded), backs up the `.zip`, and lists available models. |
-| `DraftFileWriter` | Renders the draft as RTF and writes `<timestamp>_<slug>.rtf`; sanitizes the filename. |
+| `DraftFileWriter` | Renders the draft as RTF and writes `Minutes-<12-hour timestamp>.rtf`. |
 | `FeedbackMailSender` | Sends feedback straight over SMTP (JDK sockets + JNDI MX lookup + STARTTLS), no desktop mail app. |
 | `UserPaths` | The user-writable folders (notes, backups, models), identical on every OS. |
 | `ModelCatalog` | The required/recommended models, each with filename, download URL, and an on-disk detector. |
@@ -248,7 +248,7 @@ committed — see [§9](#9-security).
 | Key | Default | Meaning |
 |---|---|---|
 | `output.save-drafts` | `true` | Save notes on Stop. |
-| `output.dir` | `""` | Blank = `~/Documents/meeting-notes`. |
+| `output.dir` | `""` | Blank = `~/Documents/minutes-of-meeting`. |
 | `auto.start-capture` | `false` | Begin capture immediately at launch. |
 | `transcription.model-name` | `vosk-model-small-en-us-0.15` | Default speech model. |
 | `transcription.allow-download` | `false` | Keep false: no runtime network access. |
@@ -339,7 +339,7 @@ Repository: <https://github.com/marutisridharjob/ai-assist>
 | "Not enough was captured to summarize" | Too little speech was recognized; check microphone / meeting-audio routing. |
 | Remote participants not transcribed | System audio isn't reaching the app — use the speakers route or a loopback device; on macOS ensure Mic Mode is *Standard*. |
 | Auto-start doesn't fire | It waits for real meeting audio; confirm a meeting app is running and audio is playing. |
-| Notes "not generated" | They save to `~/Documents/meeting-notes`; an *Open saved notes* link appears when done. |
+| Notes "not generated" | They save to `~/Documents/minutes-of-meeting`; an *Open saved notes* link appears when done. |
 
 ---
 

@@ -9,12 +9,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Best-effort creation of Desktop shortcuts on first run — one for the app and
- * one for the meeting-notes folder — done once and remembered with a marker
- * file. Shortcuts are inherently OS-specific, so each platform is handled with
- * only the JDK and the OS's own tools (no third-party libraries); anything that
- * cannot be created is skipped silently so it never affects startup. Written to
- * degrade gracefully on future OS versions.
+ * Best-effort creation of Desktop shortcuts — one for the app and one for the
+ * minutes-of-meeting folder. Shortcuts are inherently OS-specific, so each
+ * platform is handled with only the JDK and the OS's own tools (no
+ * third-party libraries); anything that cannot be created is skipped silently
+ * so it never affects startup. Written to degrade gracefully on future OS
+ * versions.
  */
 public final class DesktopShortcuts {
 
@@ -23,30 +23,26 @@ public final class DesktopShortcuts {
     private DesktopShortcuts() {
     }
 
-    /** Creates the shortcuts once; subsequent runs do nothing. */
-    public static void createOnceOnFirstRun() {
-        Path marker = UserPaths.configDir().resolve(".shortcuts-created");
-        try {
-            if (Files.exists(marker)) {
-                return;
-            }
-        } catch (Exception ignored) {
-            // fall through and attempt creation
-        }
+    /**
+     * Creates the Desktop shortcuts if they are not already there. Each
+     * individual shortcut creator below already checks for its own target
+     * file before writing, so calling this on every launch is always a cheap
+     * no-op once the shortcuts exist — deliberately not gated behind a
+     * separate "already ran once" marker file, since that marker could get
+     * written even when a transient failure (Desktop not yet mounted, a
+     * permissions hiccup) meant nothing was actually created, which would
+     * have permanently hidden the shortcuts from that user. Calling this
+     * every launch instead makes it self-healing.
+     */
+    public static void ensureShortcuts() {
         try {
             Path desktop = desktopDir();
             if (desktop != null) {
-                shortcutToFolder(desktop, "ai-assist meeting-notes", UserPaths.meetingNotesDir());
+                shortcutToFolder(desktop, "ai-assist minutes-of-meeting", UserPaths.meetingNotesDir());
                 shortcutToApp(desktop);
             }
         } catch (Throwable t) {
             log.info("Could not create desktop shortcuts ({}); skipping", t.getMessage());
-        }
-        try {
-            Files.createDirectories(marker.getParent());
-            Files.writeString(marker, "created\n");
-        } catch (IOException ignored) {
-            // if we cannot persist the marker we simply try again next launch
         }
     }
 

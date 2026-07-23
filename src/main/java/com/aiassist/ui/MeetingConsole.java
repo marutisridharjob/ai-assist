@@ -144,18 +144,12 @@ public class MeetingConsole {
     private java.nio.file.Path lastSavedNotes;  // shown until the next meeting starts / app closes
     private JPanel statusStackPanel;
     private java.util.List<JPanel> meetingButtonRows = java.util.List.of();
-    /** One button size across the whole app, so every button matches. */
-    private static final java.awt.Dimension BUTTON_SIZE = new java.awt.Dimension(80, 28);
-    /**
-     * One professional-looking, cross-platform font family for the whole app:
-     * the JDK logical "SansSerif" family, which maps to each OS's own native
-     * sans-serif (Segoe UI on Windows, Helvetica/Lucida on macOS, DejaVu Sans
-     * on Linux) — no bundled font file, so it stays 100% self-contained.
-     */
-    private static final String UI_FONT_FAMILY = Font.SANS_SERIF;
+    /** One button size across the whole app, so every button matches. See {@link UiStyle}. */
+    private static final java.awt.Dimension BUTTON_SIZE = UiStyle.BUTTON_SIZE;
 
+    /** Every font in the app is built from this — see {@link UiStyle} for why. */
     private static Font uiFont(int style, float size) {
-        return new Font(UI_FONT_FAMILY, style, Math.round(size));
+        return UiStyle.font(style, size);
     }
 
     /**
@@ -312,6 +306,12 @@ public class MeetingConsole {
     }
 
     private void build() {
+        // Done first, before any Swing component is built, so a failure
+        // anywhere later in window construction can never leave the user's
+        // folders or desktop shortcuts missing on first run.
+        com.aiassist.setup.UserPaths.meetingNotesDir();
+        com.aiassist.setup.UserPaths.modelsDir();
+        com.aiassist.setup.DesktopShortcuts.ensureShortcuts();
         try {
             // Swing's own built-in cross-platform look-and-feel (Metal): the
             // same on Windows and macOS, no third-party UI dependency. It also
@@ -343,7 +343,7 @@ public class MeetingConsole {
 
         transcript = new javax.swing.JTextPane();
         transcript.setEditable(false);
-        transcript.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+        transcript.setFont(uiFont(Font.PLAIN, 14));
         transcript.setMargin(new java.awt.Insets(8, 8, 8, 8));
         JScrollPane scroll = new JScrollPane(transcript,
                 JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
@@ -353,7 +353,7 @@ public class MeetingConsole {
         summaryArea.setEditable(false);
         summaryArea.setLineWrap(true);
         summaryArea.setWrapStyleWord(true);
-        summaryArea.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+        summaryArea.setFont(uiFont(Font.PLAIN, 14));
         summaryArea.setMargin(new java.awt.Insets(8, 8, 8, 8));
         JPanel summaryPane = new JPanel(new BorderLayout());
         summaryPane.add(themedLabel("  Summary (click Apply):"), BorderLayout.NORTH);
@@ -616,11 +616,8 @@ public class MeetingConsole {
         applyTheme(darkModeToggle.isSelected());
         frame.setVisible(true);
 
-        // Make sure the installed app's user folders exist, place first-run
-        // desktop shortcuts, then tell the user which models still need downloading.
-        com.aiassist.setup.UserPaths.meetingNotesDir();
-        com.aiassist.setup.UserPaths.modelsDir();
-        com.aiassist.setup.DesktopShortcuts.createOnceOnFirstRun();
+        // Folders and shortcuts are already ensured at the very top of build();
+        // just tell the user which models still need downloading.
         maybeShowModelNotice(false);
 
         // 250 ms so the live caption line keeps up with Vosk's partial results;
@@ -763,9 +760,9 @@ public class MeetingConsole {
 
     /** Colours a rounded button for the current theme (foreground left alone for indicators). */
     private static void styleButton(JButton b, boolean dark) {
-        b.setBackground(dark ? new java.awt.Color(0x3C4043) : new java.awt.Color(0xE8E8E8));
+        b.setBackground(UiStyle.buttonBackground(dark));
         if (!(b instanceof IndicatorButton)) {
-            b.setForeground(dark ? new java.awt.Color(0xE6E6E6) : new java.awt.Color(0x1A1A1A));
+            b.setForeground(UiStyle.buttonForeground(dark));
         }
     }
 
@@ -1072,24 +1069,24 @@ public class MeetingConsole {
         panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
         panel.setBorder(javax.swing.BorderFactory.createEmptyBorder(8, 16, 8, 16));
 
-        // Section 1 — About.
-        panel.add(leftRow(themedLabel("About:"), themedLabel("  Architecture & Design by Maruti, version 0.1")));
+        // Section 1 — About. The label is a heading like the others below it
+        // (bold); only the value after it is plain.
+        panel.add(leftRow(sectionHeading("About:"), themedLabel("  Architecture & Design by Maruti, version 0.1")));
         panel.add(javax.swing.Box.createVerticalStrut(8));
 
-        // Section 2 — Appearance (the Dark-mode toggle, moved off the top bar).
-        panel.add(leftRow(sectionHeading("Appearance")));
+        // Section 2 — Appearance (the Dark-mode toggle, on the same row as the heading).
         darkModeToggle.setText("Dark mode");
-        panel.add(leftRow(darkModeToggle));
+        panel.add(leftRow(sectionHeading("Appearance"), darkModeToggle));
         panel.add(javax.swing.Box.createVerticalStrut(8));
 
         // Section — Speech model (moved off the Meeting tab so every tab's
         // chrome stays consistent; the Meeting tab keeps only Title/Auto-start).
-        panel.add(leftRow(sectionHeading("Speech model")));
-        panel.add(leftRow(themedLabel("Model:"), modelCombo));
+        // Heading and its control share one row, like Appearance above.
+        panel.add(leftRow(sectionHeading("Speech model"), themedLabel("  Model:"), modelCombo));
         panel.add(javax.swing.Box.createVerticalStrut(8));
 
-        // Section 3 — Instructions (a link that opens the instructions window).
-        panel.add(leftRow(sectionHeading("Instructions")));
+        // Section 3 — Instructions (a link that opens the instructions window),
+        // heading and link on the same row.
         JLabel instructionsLink = linkLabel("ai-assist app help");
         instructionsLink.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
@@ -1097,7 +1094,7 @@ public class MeetingConsole {
                 showInstructionsWindow();
             }
         });
-        panel.add(leftRow(instructionsLink));
+        panel.add(leftRow(sectionHeading("Instructions"), instructionsLink));
         panel.add(javax.swing.Box.createVerticalStrut(8));
 
         // Section 4 — Feedback.
@@ -1134,6 +1131,16 @@ public class MeetingConsole {
         panel.add(javax.swing.Box.createVerticalStrut(6));
         ratingCombo = new javax.swing.JComboBox<>(new Integer[] {0, 1, 2, 3, 4, 5});
         ratingCombo.setFont(uiFont(Font.PLAIN, 13));
+        ratingCombo.setRenderer(new javax.swing.DefaultListCellRenderer() {
+            @Override
+            public java.awt.Component getListCellRendererComponent(javax.swing.JList<?> list, Object value,
+                    int index, boolean isSelected, boolean cellHasFocus) {
+                JLabel label = (JLabel) super.getListCellRendererComponent(
+                        list, value, index, isSelected, cellHasFocus);
+                label.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
+                return label;
+            }
+        });
         // A touch wider than its natural single-digit width, so it doesn't
         // look cramped next to the label.
         java.awt.Dimension ratingSize = ratingCombo.getPreferredSize();
@@ -1198,10 +1205,13 @@ public class MeetingConsole {
         panel.add(submittedPanel);
 
         helpPanel = panel;
-        // Wrap the whole tab in a scroll pane so the buttons are always
-        // reachable even when the window is at its small default size.
+        // Wrap the whole tab in a scroll pane so every control (including
+        // Uninstall, pinned to the right of the Clear/Submit row) is always
+        // reachable — vertically at the small default window size, and
+        // horizontally as a safety net against OS font-metric differences
+        // ever making the row wider than the viewport.
         helpScroll = new JScrollPane(panel,
-                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         helpScroll.setBorder(null);
         helpScroll.getVerticalScrollBar().setUnitIncrement(16);
         return helpScroll;
@@ -1270,8 +1280,8 @@ public class MeetingConsole {
      */
     private void showInstructionsWindow() {
         boolean dark = darkMode;
-        java.awt.Color bg = dark ? new java.awt.Color(0x1E1E1E) : java.awt.Color.WHITE;
-        java.awt.Color panelBg = dark ? new java.awt.Color(0x2B2B2B) : new java.awt.Color(0xF2F2F2);
+        java.awt.Color bg = UiStyle.textBackground(dark);
+        java.awt.Color panelBg = UiStyle.panelBackground(dark);
 
         JDialog dialog = new JDialog(frame, "Instructions to use ai-assist", false);
         dialog.setSize(760, 600);
@@ -1300,7 +1310,7 @@ public class MeetingConsole {
         JPanel searchRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 6));
         searchRow.setBackground(panelBg);
         JLabel searchLabel = new JLabel("Search:");
-        searchLabel.setForeground(dark ? new java.awt.Color(0xE6E6E6) : java.awt.Color.BLACK);
+        searchLabel.setForeground(UiStyle.textForeground(dark));
         searchLabel.setFont(uiFont(Font.PLAIN, 13));
         searchRow.add(searchLabel);
         searchRow.add(searchField);
@@ -1559,7 +1569,7 @@ public class MeetingConsole {
         }
         b.append("<p style='color:#666;'>Tip: drop a Vosk <code>.zip</code> straight into the models folder — ")
                 .append("the app unpacks it and moves the <code>.zip</code> to ")
-                .append("Documents/meeting-notes/model-backups for safekeeping. ")
+                .append("Documents/minutes-of-meeting/model-backups for safekeeping. ")
                 .append("Press Recheck after adding files.</p>");
         return b.append("</body></html>").toString();
     }
@@ -1646,7 +1656,7 @@ public class MeetingConsole {
                 + "model. Your browser downloads a <code>.zip</code> file.</li>"
                 + "<li>Move that <code>.zip</code> into the models folder from step 2.</li>"
                 + "<li>Come back to the app and press <b>Recheck</b>. The app unpacks the model and moves "
-                + "the <code>.zip</code> into <code>Documents/meeting-notes/model-backups</code>.</li>"
+                + "the <code>.zip</code> into <code>Documents/minutes-of-meeting/model-backups</code>.</li>"
                 + "<li>(Optional) Repeat steps 3–5 for the <b>recommended</b> models to get a more accurate "
                 + "transcript and richer summaries.</li>"
                 + "<li>When the notice says the models are ready, close it. You are set up.</li>"
@@ -1655,8 +1665,9 @@ public class MeetingConsole {
                 + "<h3 style='color:" + heading + ";'>Step group B — record a meeting (Meeting tab)</h3>"
                 + "<ol>"
                 + "<li>Open the <b>Meeting</b> tab.</li>"
-                + "<li>The <b>Title</b> defaults to <i>Minutes of meeting</i>; change it if you like — a "
-                + "timestamp is added automatically when the file is saved.</li>"
+                + "<li>The <b>Title</b> defaults to <i>Minutes of meeting</i> and appears at the top of the "
+                + "saved notes; the file itself is always named "
+                + "<code>Minutes-&lt;date-time&gt;.rtf</code>.</li>"
                 + "<li>Pick a speech model from the <b>Model:</b> dropdown on the <b>Settings</b> tab. "
                 + "Your choice is remembered.</li>"
                 + "<li>Press <b>Start</b> — or leave <b>Auto-start</b> ticked and the app starts by itself "
@@ -1670,7 +1681,7 @@ public class MeetingConsole {
                 + "discard, or <b>Cancel</b> to keep going).</li>"
                 + "<li>A <b>Saving…</b> indicator shows while the file is written; then an "
                 + "<b>Open saved notes</b> link appears. Notes are saved in "
-                + "<code>Documents/meeting-notes</code> as a timestamped file.</li>"
+                + "<code>Documents/minutes-of-meeting</code> as a timestamped file.</li>"
                 + "</ol>"
 
                 + "<h3 style='color:" + heading + ";'>Step group C — improve or summarize text (Compose tab)</h3>"
@@ -1915,7 +1926,7 @@ public class MeetingConsole {
         boolean you = "you".equals(u.speaker());
         java.awt.Color body = you
                 ? (darkMode ? new java.awt.Color(0x6FA8FF) : new java.awt.Color(0x0D47A1))
-                : (darkMode ? new java.awt.Color(0xE6E6E6) : new java.awt.Color(0x1A1A1A));
+                : UiStyle.primaryText(darkMode);
         int start = doc.getLength();
         try {
             insertStyled(doc, u.text() + "\n", body, 14, you);
@@ -2171,8 +2182,8 @@ public class MeetingConsole {
         if (tabs == null) {
             return;
         }
-        java.awt.Color activeGreen = darkMode ? new java.awt.Color(0x69D08A) : new java.awt.Color(0x2E7D32);
-        java.awt.Color normal = darkMode ? new java.awt.Color(0xC8C8C8) : new java.awt.Color(0x1A1A1A);
+        java.awt.Color activeGreen = UiStyle.activeTabColor(darkMode);
+        java.awt.Color normal = UiStyle.inactiveTabColor(darkMode);
         int selected = tabs.getSelectedIndex();
         for (int i = 0; i < tabs.getTabCount(); i++) {
             tabs.setForegroundAt(i, i == selected ? activeGreen : normal);
@@ -2181,10 +2192,10 @@ public class MeetingConsole {
 
     private void applyTheme(boolean dark) {
         darkMode = dark;
-        java.awt.Color textBg = dark ? new java.awt.Color(0x1E1E1E) : java.awt.Color.WHITE;
-        java.awt.Color textFg = dark ? new java.awt.Color(0xE6E6E6) : java.awt.Color.BLACK;
-        java.awt.Color panelBg = dark ? new java.awt.Color(0x2B2B2B) : new java.awt.Color(0xF2F2F2);
-        java.awt.Color muted = dark ? new java.awt.Color(0x9A9A9A) : java.awt.Color.GRAY;
+        java.awt.Color textBg = UiStyle.textBackground(dark);
+        java.awt.Color textFg = UiStyle.textForeground(dark);
+        java.awt.Color panelBg = UiStyle.panelBackground(dark);
+        java.awt.Color muted = UiStyle.mutedText(dark);
 
         transcript.setBackground(textBg);
         transcript.setForeground(textFg);
@@ -2223,8 +2234,8 @@ public class MeetingConsole {
             area.setCaretColor(textFg);
         }
         // Keep the dropdowns light so their down-arrow stays visible in dark mode.
-        java.awt.Color comboBg = new java.awt.Color(0xF2F2F2);
-        java.awt.Color comboFg = new java.awt.Color(0x1A1A1A);
+        java.awt.Color comboBg = UiStyle.DROPDOWN_BACKGROUND;
+        java.awt.Color comboFg = UiStyle.DROPDOWN_FOREGROUND;
         ratingCombo.setBackground(comboBg);
         ratingCombo.setForeground(comboFg);
         if (helpPanel != null) {
@@ -2640,13 +2651,14 @@ public class MeetingConsole {
     /**
      * Removes everything ai-assist writes outside the jar and the user's own
      * saved meeting notes: the models folder, the model-backup .zips inside
-     * meeting-notes, the app's settings folder (.ai-assist, next to the jar —
-     * API token, first-run marker), saved preferences (dark mode, auto-start),
-     * and the Desktop shortcuts. Never touches the running jar or
-     * the meeting-notes folder itself (only its model-backups subfolder).
-     * Releases any loaded native models first — llama.cpp/whisper.cpp can
-     * mmap model files, which Windows refuses to delete while mapped — so
-     * this works the same way on Windows and macOS. Closes the app after.
+     * minutes-of-meeting, the app's settings folder (.ai-assist, next to the
+     * jar — API token, first-run marker), saved preferences (dark mode,
+     * auto-start), and the Desktop shortcuts. Never touches the running jar
+     * or the minutes-of-meeting folder itself (only its model-backups
+     * subfolder). Releases any loaded native models first — llama.cpp/
+     * whisper.cpp can mmap model files, which Windows refuses to delete while
+     * mapped — so this works the same way on Windows and macOS. Closes the
+     * app after.
      */
     private void uninstall() {
         LiveTranscriptionService.Status status = liveTranscription.status();
@@ -2785,7 +2797,13 @@ public class MeetingConsole {
             return;
         }
         for (String name : new String[] {
-                "ai-assist meeting-notes", "ai-assist", "ai-assist.lnk", "ai-assist.command", "ai-assist.desktop"}) {
+                // Both the current and the old (pre-rename) folder-shortcut name,
+                // and both the bare (macOS/Linux symlink) and ".lnk" (Windows) form
+                // — a Windows folder shortcut is "<name>.lnk", which earlier only
+                // had the bare name here and so was never actually deleted there.
+                "ai-assist minutes-of-meeting", "ai-assist minutes-of-meeting.lnk",
+                "ai-assist meeting-notes", "ai-assist meeting-notes.lnk",
+                "ai-assist", "ai-assist.lnk", "ai-assist.command", "ai-assist.desktop"}) {
             try {
                 java.nio.file.Files.deleteIfExists(desktop.resolve(name));
             } catch (java.io.IOException e) {

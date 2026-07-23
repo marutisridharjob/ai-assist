@@ -17,9 +17,9 @@ import org.slf4j.LoggerFactory;
  * which needs admin rights on macOS/Windows — and survive reinstalls.
  *
  * <ul>
- *   <li>{@code ~/Documents/meeting-notes} — where the notes files are saved;</li>
- *   <li>{@code ~/Documents/meeting-notes/model-backups} — where a model .zip is
- *       moved after it is unpacked, so the original download is kept;</li>
+ *   <li>{@code ~/Documents/minutes-of-meeting} — where the notes files are saved;</li>
+ *   <li>{@code ~/Documents/minutes-of-meeting/model-backups} — where a model .zip
+ *       is moved after it is unpacked, so the original download is kept;</li>
  *   <li>{@code ~/Documents/ai-assist/models} — where the speech / transcription
  *       / LLM model files are placed.</li>
  * </ul>
@@ -138,14 +138,14 @@ public final class UserPaths {
         return out.toString();
     }
 
-    /** {@code ~/Documents/meeting-notes} — created if missing. */
+    /** {@code ~/Documents/minutes-of-meeting} — created if missing. */
     public static Path meetingNotesDir() {
-        return ensure(documents().resolve("meeting-notes"));
+        return ensure(documents().resolve("minutes-of-meeting"));
     }
 
-    /** {@code ~/Documents/meeting-notes/model-backups} — created if missing. */
+    /** {@code ~/Documents/minutes-of-meeting/model-backups} — created if missing. */
     public static Path modelBackupDir() {
-        return ensure(documents().resolve("meeting-notes").resolve("model-backups"));
+        return ensure(documents().resolve("minutes-of-meeting").resolve("model-backups"));
     }
 
     /** {@code ~/Documents/ai-assist/models} — created if missing. */

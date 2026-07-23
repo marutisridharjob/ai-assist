@@ -78,7 +78,7 @@ flowchart TB
     end
 
     subgraph STORE["Local storage"]
-        NOTES["~/Documents/meeting-notes<br/>(.rtf notes + model backups)"]
+        NOTES["~/Documents/minutes-of-meeting<br/>(.rtf notes + model backups)"]
         MODELS["~/Documents/ai-assist/models<br/>(gguf / ggml / vosk)"]
     end
 
@@ -140,7 +140,7 @@ flowchart LR
     DRAFT --> LLMD{"AI model present?"}
     LLMD -->|yes| LLAMA["llama.cpp"]
     LLMD -->|no| RULES["Offline rule-based drafter"]
-    LLAMA --> FILE["Timestamped .rtf<br/>~/Documents/meeting-notes"]
+    LLAMA --> FILE["Timestamped .rtf<br/>~/Documents/minutes-of-meeting"]
     RULES --> FILE
 ```
 
@@ -164,7 +164,7 @@ sequenceDiagram
     participant MES as MeetingEndService
     participant Whisper as Whisper
     participant LLM as LLM / rules
-    participant Disk as meeting-notes
+    participant Disk as minutes-of-meeting
 
     Note over UI,Mon: Auto-start armed (default on)
     Mon->>LTS: system audio active + meeting app detected
@@ -202,7 +202,7 @@ flowchart TB
         D["Security headers · no stack traces"]
     end
     subgraph First["First run"]
-        E["Create ~/Documents/meeting-notes"]
+        E["Create ~/Documents/minutes-of-meeting"]
         F["Create ~/Documents/ai-assist/models"]
         G["Desktop shortcuts: app + notes folder"]
         H["Model-setup notice with download links"]

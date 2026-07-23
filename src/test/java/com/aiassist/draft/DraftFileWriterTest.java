@@ -23,14 +23,14 @@ class DraftFileWriterTest {
     }
 
     @Test
-    void savesTimestampedFileWithSluggedTitle() {
+    void savesWithAMinutesPrefixedTwelveHourTimestampFileName() {
         DraftFileWriter writer = new DraftFileWriter(new OutputProperties(true, tempDir.toString()));
 
         Path saved = writer.save(draft("Weekly Status: Meeting #7!"));
 
         assertThat(saved).exists();
         assertThat(saved.getFileName().toString())
-                .matches("\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}_weekly-status-meeting-7\\.rtf");
+                .matches("Minutes-\\d{2}-\\d{2}-\\d{4}_\\d{2}-\\d{2}-\\d{2}-(AM|PM)\\.rtf");
         assertThat(saved).content().contains("Weekly Status: Meeting #7!");
     }
 
@@ -52,29 +52,21 @@ class DraftFileWriterTest {
     }
 
     @Test
-    void fallsBackToGenericSlugForUnusableTitles() {
+    void fileNameDoesNotDependOnAnUnusableTitle() {
         DraftFileWriter writer = new DraftFileWriter(new OutputProperties(true, tempDir.toString()));
 
         Path symbols = writer.save(draft("!!!***???"));
         Path nullTitle = writer.save(draft(null));
 
-        assertThat(symbols.getFileName().toString()).contains("_draft.rtf");
-        assertThat(nullTitle.getFileName().toString()).contains("_draft.rtf");
+        assertThat(symbols).exists();
+        assertThat(nullTitle).exists();
+        assertThat(symbols.getFileName().toString()).startsWith("Minutes-");
+        assertThat(nullTitle.getFileName().toString()).startsWith("Minutes-");
     }
 
     @Test
-    void truncatesVeryLongTitlesInFileName() {
-        DraftFileWriter writer = new DraftFileWriter(new OutputProperties(true, tempDir.toString()));
-
-        Path saved = writer.save(draft("a".repeat(500)));
-
-        assertThat(saved.getFileName().toString().length()).isLessThan(100);
-        assertThat(saved).exists();
-    }
-
-    @Test
-    void blankDirSavesIntoAppFolderMeetingNotes(@TempDir Path isolatedHome) throws Exception {
-        // A blank dir resolves to ~/Documents/meeting-notes, the same folder
+    void blankDirSavesIntoAppFolderMinutesOfMeeting(@TempDir Path isolatedHome) throws Exception {
+        // A blank dir resolves to ~/Documents/minutes-of-meeting, the same folder
         // real meetings are saved to. On a machine that has actually used
         // ai-assist, that folder is real, shared, and non-empty, so point
         // user.home at an empty temp dir for the duration of this test —
@@ -90,7 +82,7 @@ class DraftFileWriterTest {
             Path saved = writer.save(draft("Team sync"));
 
             assertThat(saved).exists();
-            assertThat(saved.getParent().getFileName().toString()).isEqualTo("meeting-notes");
+            assertThat(saved.getParent().getFileName().toString()).isEqualTo("minutes-of-meeting");
         } finally {
             System.setProperty("user.home", originalHome);
         }

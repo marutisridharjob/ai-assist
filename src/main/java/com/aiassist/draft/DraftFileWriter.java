@@ -15,16 +15,18 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * Persists drafts as Rich Text Format files named with a timestamp, e.g.
- * {@code 2026-07-05_14-30-05_weekly-status-meeting.rtf} — opens formatted
- * in Word, TextEdit, WordPad, Pages. Saving is best-effort: a disk problem
- * is logged but never fails the draft request.
+ * Persists drafts as Rich Text Format files named with a 12-hour timestamp,
+ * e.g. {@code Minutes-07-23-2026_02-45-10-PM.rtf} — opens formatted in Word,
+ * TextEdit, WordPad, Pages. Saving is best-effort: a disk problem is logged
+ * but never fails the draft request.
  */
 @Service
 public class DraftFileWriter {
 
     private static final Logger log = LoggerFactory.getLogger(DraftFileWriter.class);
-    private static final DateTimeFormatter TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
+    // No colons (illegal in Windows file names) — hyphens throughout instead.
+    private static final DateTimeFormatter TIMESTAMP =
+            DateTimeFormatter.ofPattern("MM-dd-yyyy_hh-mm-ss-a", Locale.ROOT);
 
     private final OutputProperties properties;
 
@@ -35,7 +37,7 @@ public class DraftFileWriter {
     /** Saves under a fresh timestamped name. Returns the path, or null when saving is off/failed. */
     public Path save(Draft draft) {
         String stamp = LocalDateTime.now(ZoneId.systemDefault()).format(TIMESTAMP);
-        return write(draft, stamp + "_" + slug(draft.title()) + ".rtf");
+        return write(draft, "Minutes-" + stamp + ".rtf");
     }
 
     private Path write(Draft draft, String fileName) {
@@ -57,7 +59,7 @@ public class DraftFileWriter {
 
     /**
      * The output folder: the configured {@code ai-assist.output.dir} when set,
-     * otherwise a {@code meeting-notes} folder in the app's own folder.
+     * otherwise the {@code minutes-of-meeting} folder in the user's Documents.
      */
     private Path resolveDir() {
         String configured = properties.dir();
@@ -106,16 +108,5 @@ public class DraftFileWriter {
             }
         }
         return out.toString();
-    }
-
-    private String slug(String title) {
-        String slug = (title == null ? "draft" : title)
-                .toLowerCase(Locale.ROOT)
-                .replaceAll("[^a-z0-9]+", "-")
-                .replaceAll("(^-+|-+$)", "");
-        if (slug.isEmpty()) {
-            slug = "draft";
-        }
-        return slug.length() > 60 ? slug.substring(0, 60) : slug;
     }
 }

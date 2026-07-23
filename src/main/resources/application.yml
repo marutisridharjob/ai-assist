@@ -31,10 +31,11 @@ server:
 
 ai-assist:
   output:
-    # When Stop is pressed, the complete notes are saved as a timestamped
-    # rich-text (.rtf) file. Leave dir blank to save into a "meeting-notes"
-    # folder inside the app's own folder (next to the jar); set an absolute
-    # path to save somewhere else (e.g. ${user.home}/Desktop).
+    # When Stop is pressed, the complete notes are saved as a 12-hour
+    # timestamped rich-text (.rtf) file (Minutes-<timestamp>.rtf). Leave dir
+    # blank to save into a "minutes-of-meeting" folder in the user's
+    # Documents; set an absolute path to save somewhere else (e.g.
+    # ${user.home}/Desktop).
     save-drafts: true
     dir: ""
   auto:

@@ -96,7 +96,7 @@ class ListenAndDraftIntegrationTest {
         java.nio.file.Path saved = java.nio.file.Path.of(draft.savedTo());
         assertThat(saved).exists();
         assertThat(saved.getFileName().toString())
-                .matches("\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}_quarterly-review\\.rtf");
+                .matches("Minutes-\\d{2}-\\d{2}-\\d{4}_\\d{2}-\\d{2}-\\d{2}-(AM|PM)\\.rtf");
         assertThat(saved).content()
                 .contains("Quarterly review")
                 .contains("Revenue grew twelve percent")

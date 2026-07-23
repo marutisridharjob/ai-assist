@@ -54,12 +54,12 @@ succeeds — it just ships the full-size jar.
 The installer only lays down the program; the app does the user-folder setup
 itself, identically on every OS, so it always works and stays user-writable:
 
-- creates `~/Documents/meeting-notes` (where notes are saved) and
+- creates `~/Documents/minutes-of-meeting` (where notes are saved) and
   `~/Documents/ai-assist/models` (where you place model files);
 - shows a **model-setup notice** with clickable download links for the models
   that are still missing, and where to put them;
 - when you drop a Vosk model `.zip` into the models folder, it **unpacks it**
-  and moves the original `.zip` to `~/Documents/meeting-notes/model-backups`.
+  and moves the original `.zip` to `~/Documents/minutes-of-meeting/model-backups`.
 
 ## Notes on signing (avoiding OS security prompts)
 
