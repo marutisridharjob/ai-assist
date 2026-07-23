@@ -207,26 +207,70 @@ public class MeetingConsole {
         }
     }
 
-    /** Meeting-notes icon (page + red recording dot), drawn at runtime. */
+    /**
+     * App icon: a scribbling notebook and pen, drawn at runtime (no bundled
+     * image asset) — a blue tile behind a yellow book with a green spine and
+     * scribble lines, and a green-and-yellow pen laid diagonally across it.
+     */
     private static java.awt.image.BufferedImage notesIcon(int size) {
         var image = new java.awt.image.BufferedImage(size, size, java.awt.image.BufferedImage.TYPE_INT_ARGB);
         var g = image.createGraphics();
         g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
                 java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-        int m = Math.max(1, size / 10);
-        int arc = size / 5;
-        g.setColor(java.awt.Color.WHITE);
-        g.fillRoundRect(m, m / 2, size - 2 * m, size - m, arc, arc);
-        g.setColor(new java.awt.Color(0x4A4A4A));
-        g.setStroke(new java.awt.BasicStroke(Math.max(1f, size / 24f)));
-        g.drawRoundRect(m, m / 2, size - 2 * m, size - m, arc, arc);
-        for (int i = 1; i <= 3; i++) {
-            int y = m / 2 + i * (size - m) / 5;
-            g.drawLine(2 * m, y, size - 3 * m, y);
+
+        // Blue tile background, like a typical app icon.
+        int tileArc = size / 4;
+        g.setPaint(new java.awt.GradientPaint(0, 0, new java.awt.Color(0x42A5F5),
+                size, size, new java.awt.Color(0x1565C0)));
+        g.fillRoundRect(0, 0, size, size, tileArc, tileArc);
+
+        // Notebook: yellow pages with a darker fold line and a green spine.
+        int bookX = (int) (size * 0.16);
+        int bookY = (int) (size * 0.38);
+        int bookW = (int) (size * 0.68);
+        int bookH = (int) (size * 0.46);
+        int bookArc = Math.max(1, size / 10);
+        g.setColor(new java.awt.Color(0xFFD54F));
+        g.fillRoundRect(bookX, bookY, bookW, bookH, bookArc, bookArc);
+        g.setColor(new java.awt.Color(0x2E7D32));
+        int spineW = Math.max(2, size / 9);
+        g.fillRoundRect(bookX, bookY, spineW, bookH, bookArc, bookArc);
+        g.setColor(new java.awt.Color(0xF0B90B));
+        g.setStroke(new java.awt.BasicStroke(Math.max(1f, size / 32f)));
+        g.drawLine(bookX + bookW / 2, bookY + size / 24, bookX + bookW / 2, bookY + bookH - size / 24);
+
+        // Scribble lines on the right-hand page (skipped at tiny sizes, where
+        // they would just read as noise).
+        if (size >= 32) {
+            g.setColor(new java.awt.Color(0x43A047));
+            g.setStroke(new java.awt.BasicStroke(Math.max(1f, size / 26f),
+                    java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND));
+            int lineX0 = bookX + spineW + size / 22;
+            int lineX1 = bookX + bookW - size / 16;
+            g.drawLine(lineX0, bookY + bookH * 2 / 5, lineX1, bookY + bookH * 2 / 5);
+            g.drawLine(lineX0, bookY + bookH * 3 / 5, lineX1 - size / 12, bookY + bookH * 3 / 5);
         }
-        int dot = size / 3;
-        g.setColor(new java.awt.Color(0xE74C3C));
-        g.fillOval(size - dot - m, size - dot - m, dot, dot);
+
+        // Pen laid diagonally across the notebook: a green barrel with a
+        // yellow tip, as if it just finished scribbling.
+        double angle = Math.toRadians(-38);
+        int penLen = (int) (size * 0.80);
+        int penW = Math.max(2, size / 11);
+        int startX = (int) (size * 0.24);
+        int startY = (int) (size * 0.86);
+        int endX = (int) (startX + penLen * Math.cos(angle));
+        int endY = (int) (startY + penLen * Math.sin(angle));
+        g.setStroke(new java.awt.BasicStroke(penW, java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND));
+        g.setColor(new java.awt.Color(0x1B5E20));
+        g.drawLine(startX, startY, endX, endY);
+        int nibLen = Math.max(2, size / 6);
+        int nibX = (int) (endX - nibLen * Math.cos(angle));
+        int nibY = (int) (endY - nibLen * Math.sin(angle));
+        g.setColor(new java.awt.Color(0xFFD54F));
+        g.setStroke(new java.awt.BasicStroke(penW * 0.85f,
+                java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND));
+        g.drawLine(nibX, nibY, endX, endY);
+
         g.dispose();
         return image;
     }
