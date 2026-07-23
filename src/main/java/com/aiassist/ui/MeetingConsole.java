@@ -141,7 +141,7 @@ public class MeetingConsole {
     private JPanel statusStackPanel;
     private java.util.List<JPanel> meetingButtonRows = java.util.List.of();
     /** One button size across the whole app, so every button matches. */
-    private static final java.awt.Dimension BUTTON_SIZE = new java.awt.Dimension(100, 28);
+    private static final java.awt.Dimension BUTTON_SIZE = new java.awt.Dimension(84, 28);
     private JButton startButton;
     private JButton pauseButton;
     private JButton stopButton;
