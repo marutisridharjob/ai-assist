@@ -263,7 +263,7 @@ public class MeetingConsole {
         summaryArea.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
         summaryArea.setMargin(new java.awt.Insets(8, 8, 8, 8));
         JPanel summaryPane = new JPanel(new BorderLayout());
-        summaryPane.add(themedLabel("  Summary (press Apply):"), BorderLayout.NORTH);
+        summaryPane.add(themedLabel("  Summary (click Apply):"), BorderLayout.NORTH);
         summaryPane.add(new JScrollPane(summaryArea,
                 JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER),
                 BorderLayout.CENTER);
@@ -537,7 +537,7 @@ public class MeetingConsole {
     private void downloadAssistFile() {
         String content = composeResult.getText();
         if (content == null || content.isBlank()) {
-            composeStatus.setText("Nothing to save yet — press Apply first.");
+            composeStatus.setText("Nothing to save yet — click Apply first.");
             return;
         }
         String sourcePath = filePathField.getText();
@@ -812,7 +812,7 @@ public class MeetingConsole {
     /**
      * Assist tab (merges the old Editor and Compose): type or paste content —
      * or Load a file — into the top box, tick options and/or write
-     * instructions, press Apply, and the rewritten/summarised result appears in
+     * instructions, click Apply, and the rewritten/summarised result appears in
      * the bottom box. Download saves that result. All processing runs off the
      * UI thread. The divider between the boxes is draggable.
      */
@@ -1482,7 +1482,7 @@ public class MeetingConsole {
                 + "individual lines are not timestamped. <b>Your own speech is shown in blue</b>; the other "
                 + "participants use the normal colour.</li>"
                 + "<li>Need a pause? Press <b>Pause</b>, then <b>Start</b> again to resume.</li>"
-                + "<li>Want a summary so far without stopping? Press <b>Apply</b>.</li>"
+                + "<li>Want a summary so far without stopping? Click <b>Apply</b>.</li>"
                 + "<li>When the meeting ends, press <b>Stop</b>, then choose <b>Save</b> (or <b>No</b> to "
                 + "discard, or <b>Cancel</b> to keep going).</li>"
                 + "<li>A <b>Saving…</b> indicator shows while the file is written; then an "
@@ -1498,7 +1498,7 @@ public class MeetingConsole {
                 + "<li>Tick the options you want — e.g. <b>Grammar</b>, <b>Professional</b>, "
                 + "<b>Bullet points</b>, <b>Summary</b>, <b>Email</b>, or a communication style.</li>"
                 + "<li>(Optional) Type <b>Additional instructions</b> for anything the tick-boxes don't cover.</li>"
-                + "<li>Press <b>Apply</b>. The result appears in the <b>After modification</b> box. Press "
+                + "<li>Click <b>Apply</b>. The result appears in the <b>After modification</b> box. Click "
                 + "<b>Apply</b> again any time to regenerate.</li>"
                 + "<li>Press <b>Save</b> to save the result, or <b>Clear</b> to start over.</li>"
                 + "</ol>"
