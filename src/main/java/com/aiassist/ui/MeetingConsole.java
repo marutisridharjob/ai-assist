@@ -2640,9 +2640,9 @@ public class MeetingConsole {
     /**
      * Removes everything ai-assist writes outside the jar and the user's own
      * saved meeting notes: the models folder, the model-backup .zips inside
-     * meeting-notes, the app's settings folder (~/.ai-assist — API token,
-     * first-run marker), saved preferences (dark mode, auto-start, model
-     * choice), and the Desktop shortcuts. Never touches the running jar or
+     * meeting-notes, the app's settings folder (.ai-assist, next to the jar —
+     * API token, first-run marker), saved preferences (dark mode, auto-start),
+     * and the Desktop shortcuts. Never touches the running jar or
      * the meeting-notes folder itself (only its model-backups subfolder).
      * Releases any loaded native models first — llama.cpp/whisper.cpp can
      * mmap model files, which Windows refuses to delete while mapped — so
@@ -2687,7 +2687,7 @@ public class MeetingConsole {
         java.util.List<String> problems = new java.util.ArrayList<>();
         deleteRecursively(com.aiassist.setup.UserPaths.modelsDir(), problems);
         deleteRecursively(com.aiassist.setup.UserPaths.modelBackupDir(), problems);
-        deleteRecursively(com.aiassist.setup.UserPaths.home().resolve(".ai-assist"), problems);
+        deleteRecursively(com.aiassist.setup.UserPaths.configDir(), problems);
         deleteDesktopShortcuts(problems);
         try {
             prefs.removeNode();
@@ -2750,8 +2750,8 @@ public class MeetingConsole {
 
     /** Removes the Desktop shortcuts created on first run, on whichever OS created them. */
     private static void deleteDesktopShortcuts(java.util.List<String> problems) {
-        java.nio.file.Path desktop = com.aiassist.setup.UserPaths.home().resolve("Desktop");
-        if (!java.nio.file.Files.isDirectory(desktop)) {
+        java.nio.file.Path desktop = com.aiassist.setup.UserPaths.desktop();
+        if (desktop == null) {
             return;
         }
         for (String name : new String[] {

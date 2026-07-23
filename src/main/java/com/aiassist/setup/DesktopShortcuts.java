@@ -25,7 +25,7 @@ public final class DesktopShortcuts {
 
     /** Creates the shortcuts once; subsequent runs do nothing. */
     public static void createOnceOnFirstRun() {
-        Path marker = UserPaths.home().resolve(".ai-assist").resolve(".shortcuts-created");
+        Path marker = UserPaths.configDir().resolve(".shortcuts-created");
         try {
             if (Files.exists(marker)) {
                 return;
@@ -50,10 +50,15 @@ public final class DesktopShortcuts {
         }
     }
 
-    /** The user's Desktop folder, or null when there isn't one. */
+    /**
+     * The user's Desktop folder, or null when there isn't one. Resolved via
+     * {@link UserPaths#desktop()}, which finds the real current location even
+     * when OneDrive (or a manual relocation) has moved it off the classic
+     * {@code ~/Desktop} path — otherwise the shortcut would silently never
+     * get created.
+     */
     private static Path desktopDir() {
-        Path desktop = UserPaths.home().resolve("Desktop");
-        return Files.isDirectory(desktop) ? desktop : null;
+        return UserPaths.desktop();
     }
 
     private static boolean isWindows() {

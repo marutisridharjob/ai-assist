@@ -104,7 +104,10 @@ public class ApiTokenService {
         if (props.tokenFile() != null && !props.tokenFile().isBlank()) {
             return Path.of(props.tokenFile().strip());
         }
-        return Path.of(System.getProperty("user.home", "."), ".ai-assist", "api-token");
+        // Next to the running jar (see UserPaths.configDir()), not the user's
+        // home — travels with the app and stays predictable regardless of OS
+        // profile quirks (e.g. a OneDrive-redirected home directory).
+        return com.aiassist.setup.UserPaths.configDir().resolve("api-token");
     }
 
     /** Owner-only file permissions on POSIX; best-effort (ignored) elsewhere. */

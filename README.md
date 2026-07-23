@@ -443,14 +443,14 @@ browser requests (checking `Origin`/`Referer`), and sets conservative security
 headers. Error responses never include stack traces or messages.
 
 **API token.** Every API call must present a bearer token. On first run the app
-generates a 256-bit random token and stores it in a user-private file
-(`~/.ai-assist/api-token`, owner read/write only on POSIX), so the value
+generates a 256-bit random token and stores it in a private file next to the
+jar (`.ai-assist/api-token`, owner read/write only on POSIX), so the value
 survives restarts and any local client the user trusts can read it. Present it
 as `Authorization: Bearer <token>` or `X-API-Token: <token>`; calls without a
 valid token get `401`. Example:
 
 ```bash
-TOKEN=$(cat ~/.ai-assist/api-token)
+TOKEN=$(cat .ai-assist/api-token)
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:1234/api/live/status
 ```
 
@@ -485,9 +485,9 @@ ai-assist:
     password: ""
     start-tls: true            # upgrade to TLS with STARTTLS when the server offers it
   security:
-    api-token: ""              # blank = auto-generate & persist to ~/.ai-assist/api-token
+    api-token: ""              # blank = auto-generate & persist to .ai-assist/api-token next to the jar
     api-token-required: true   # require a bearer token on every API call
-    token-file: ""             # blank = ~/.ai-assist/api-token
+    token-file: ""             # blank = .ai-assist/api-token next to the jar
 ```
 
 **Keep SMTP credentials out of the repo.** Leave `username`/`password` blank in
