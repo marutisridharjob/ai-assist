@@ -26,12 +26,28 @@ public class AiAssistApplication {
     private static final int PREFERRED_PORT = 1234;
 
     public static void main(String[] args) {
+        applyMacMenuBarName();
         int port = choosePort();
         // headless(false) lets the app open the desktop window when launched.
         new SpringApplicationBuilder(AiAssistApplication.class)
                 .headless(false)
                 .properties("server.port=" + port, "server.address=127.0.0.1")
                 .run(args);
+    }
+
+    /**
+     * On macOS, running a plain jar (double-click or {@code java -jar}, the
+     * README's primary way to use ai-assist) makes AWT show the generic
+     * launcher name ("JAR Launcher" or "java") in the menu bar and Dock,
+     * because that is the actual process name — there is no app bundle to
+     * read a proper name from. Setting this property before any AWT class
+     * loads is what actually controls the menu bar/Dock name in that case, so
+     * it must run as the very first thing in main(), before Spring/Swing.
+     */
+    private static void applyMacMenuBarName() {
+        System.setProperty("apple.awt.application.name", "ai-assist");
+        // Older AWT versions on macOS read this property instead.
+        System.setProperty("com.apple.mrj.application.apple.menu.about.name", "ai-assist");
     }
 
     /**
