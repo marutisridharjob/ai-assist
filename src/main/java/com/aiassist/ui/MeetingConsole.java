@@ -1867,6 +1867,10 @@ public class MeetingConsole {
             setOpaque(false);
             setBackground(new java.awt.Color(0xE8E8E8));
             setBorder(javax.swing.BorderFactory.createEmptyBorder(5, 14, 5, 14));
+            // Plain (not bold) label — Metal makes button text bold by default.
+            if (getFont() != null) {
+                setFont(getFont().deriveFont(java.awt.Font.PLAIN));
+            }
         }
 
         @Override
