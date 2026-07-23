@@ -2722,15 +2722,45 @@ public class MeetingConsole {
             return;
         }
         try (var walk = java.nio.file.Files.walk(root)) {
-            walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
-                try {
-                    java.nio.file.Files.delete(p);
-                } catch (java.io.IOException e) {
-                    problems.add(p + " (" + e.getMessage() + ")");
-                }
-            });
+            walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> deleteWithRetry(p, problems));
         } catch (java.io.IOException e) {
             problems.add(root + " (" + e.getMessage() + ")");
+        }
+    }
+
+    /**
+     * Deletes one file or (empty) directory, retrying briefly first —
+     * antivirus scanning, search indexing, or Explorer/native library
+     * handles can transiently hold a just-written file for a moment,
+     * especially on Windows. A plain file still locked after retrying gets
+     * one more chance via {@link java.io.File#deleteOnExit()}, which runs
+     * once this JVM's own handles close at shutdown; only reported as a
+     * problem if it's still not gone after that (or for a non-empty
+     * directory, where deleteOnExit's ordering can't be relied on).
+     */
+    private static void deleteWithRetry(java.nio.file.Path p, java.util.List<String> problems) {
+        java.io.IOException last = null;
+        for (int attempt = 0; attempt < 5; attempt++) {
+            try {
+                java.nio.file.Files.delete(p);
+                return;
+            } catch (java.nio.file.NoSuchFileException gone) {
+                return; // already gone — nothing to do
+            } catch (java.io.IOException e) {
+                last = e;
+                try {
+                    Thread.sleep(150);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+        if (java.nio.file.Files.isRegularFile(p)) {
+            p.toFile().deleteOnExit();
+            problems.add(p + " (in use; will be removed when the app closes)");
+        } else {
+            problems.add(p + (last == null ? "" : " (" + last.getMessage() + ")"));
         }
     }
 

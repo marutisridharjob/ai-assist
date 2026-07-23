@@ -225,11 +225,24 @@ public class VoskModelManager {
 
     /** Returns the model directory, never touching the network unless allowed. */
     public synchronized Path ensureModel() throws IOException, InterruptedException {
-        Path bundled = Path.of("models", properties.modelName());
-        if (isModelPresent(bundled)) {
-            return bundled;
+        // Check every place a model can legitimately be — including the
+        // Documents models folder the app itself tells users to drop models
+        // into (modelRoots(), the same list listAvailableModels() and the
+        // named ensureModel(String) use). Without this, a model correctly
+        // unpacked there was never found here: the default model name always
+        // routes to this method (see ensureModel(String)'s equals check
+        // below), so every "just start" path silently missed it and fell
+        // through to the temp-dir embedded/download path instead — creating
+        // and looking in the wrong folder even though the real model sat
+        // right there in Documents.
+        String name = properties.modelName();
+        for (Path root : modelRoots()) {
+            Path candidate = root.resolve(name);
+            if (isModelPresent(candidate)) {
+                return candidate;
+            }
         }
-        Path modelPath = Path.of(properties.modelDir(), properties.modelName());
+        Path modelPath = Path.of(properties.modelDir(), name);
         if (isModelPresent(modelPath)) {
             return modelPath;
         }
@@ -253,7 +266,7 @@ public class VoskModelManager {
                     + "download small — see the Settings tab → Instructions to get one. Place the "
                     + "Vosk model folder or .zip (e.g. vosk-model-small-en-us-0.15 from "
                     + "alphacephei.com/vosk/models) in %s, then press Start again.")
-                    .formatted(bundled.toAbsolutePath().getParent()));
+                    .formatted(com.aiassist.setup.UserPaths.modelsDir()));
         }
         log.info("Vosk model not found at {}; downloading from {}", modelPath, properties.modelUrl());
         Files.createDirectories(modelPath.getParent());

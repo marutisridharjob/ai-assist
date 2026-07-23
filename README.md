@@ -356,14 +356,16 @@ instead. To also fetch the small model into `./models` at build time:
 
 To refresh the model archive from upstream, build with `-Pfetch-model`.
 
-The result, `target/ai-assist-<version>.jar`, is **one file containing
-everything** — code and speech model. That single jar is all you ever copy,
-ship, or click: **double-click it** to start (needs Java 21+, e.g. from
+The result, `target/ai-assist-<version>.jar`, is **one file containing all the
+app's code** (no model — see above for dropping one next to it). That single
+jar plus your model `.zip`(s) are all you ever copy, ship, or click:
+**double-click the jar** to start (needs Java 21+, e.g. from
 [adoptium.net](https://adoptium.net)), or run `java -jar ai-assist-<version>.jar`.
-The embedded model is unpacked invisibly into OS temp space at startup; the
-only visible output the app ever creates is the notes file it writes to the
-`meeting-notes` folder next to the jar when you press Stop. The app makes
-**zero network requests at runtime** — verified by socket inspection in testing.
+A dropped model `.zip` is unpacked once, in the background (a progress bar
+shows); after that, the only visible output the app ever creates is the notes
+file it writes to the `meeting-notes` folder next to the jar when you press
+Stop. The app makes **zero network requests at runtime** — verified by socket
+inspection in testing.
 
 > Recording a meeting may require participants' consent depending on your
 > jurisdiction and company policy.
@@ -473,7 +475,7 @@ ai-assist:
     content-type: MEETING_NOTES
     tone: PROFESSIONAL
   transcription:
-    model-name: vosk-model-small-en-us-0.15  # English; embedded in the jar
+    model-name: vosk-model-small-en-us-0.15  # English; user-supplied, dropped next to the jar
     allow-download: false      # keep false: no runtime network access
     preferred-device: ""       # optional explicit meeting-audio device
   feedback:
