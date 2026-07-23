@@ -427,6 +427,20 @@ public class LiveTranscriptionService {
         return status.get();
     }
 
+    /**
+     * Releases the loaded speech model, if any — e.g. before deleting the
+     * models folder, so an in-progress uninstall never fights the native
+     * library over a file it still has open. Only safe to call when no
+     * meeting is active.
+     */
+    public synchronized void releaseModel() {
+        if (model != null) {
+            model.close();
+            model = null;
+            loadedModelName = null;
+        }
+    }
+
     /** Models the user can pick from (built-in default + ./models folder). */
     public List<String> availableModels() {
         return modelManager.listAvailableModels();

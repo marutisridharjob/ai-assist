@@ -68,6 +68,20 @@ public class LocalLlmService {
         return !libraryFailed && findModel().isPresent();
     }
 
+    /**
+     * Releases the loaded model, if any — e.g. before deleting the models
+     * folder, so an in-progress uninstall never fights llama.cpp over a file
+     * it still has open (it mmaps GGUF files by default, which Windows in
+     * particular refuses to delete while mapped).
+     */
+    public synchronized void unload() {
+        if (model != null) {
+            model.close();
+            model = null;
+            loadedModel = null;
+        }
+    }
+
     /** One-line outcome of the last generate() call, for the UI/status line. */
     public String report() {
         return lastReport;

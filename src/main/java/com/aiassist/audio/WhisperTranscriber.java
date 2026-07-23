@@ -64,6 +64,20 @@ public class WhisperTranscriber {
         return !libraryFailed && findModel().isPresent();
     }
 
+    /**
+     * Releases the loaded model, if any — e.g. before deleting the models
+     * folder, so an in-progress uninstall never fights a native library over
+     * a file it still has open (llama.cpp/whisper.cpp can mmap model files,
+     * which Windows in particular refuses to delete while mapped).
+     */
+    public synchronized void releaseModel() {
+        if (context != null) {
+            whisper.free(context);
+            context = null;
+            loadedModel = null;
+        }
+    }
+
     private synchronized void ensureLoaded(Path modelPath) throws IOException {
         if (whisper == null) {
             WhisperJNI.loadLibrary();      // extracts bundled natives, offline

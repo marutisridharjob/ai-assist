@@ -56,6 +56,10 @@ public class MeetingConsole {
     private final com.aiassist.draft.TextRewriteService rewriteService;
     private final com.aiassist.draft.StyleRewriteService styleRewriteService;
     private final com.aiassist.feedback.FeedbackMailSender feedbackMailSender;
+    // Only used to release their loaded native models before Uninstall deletes
+    // the models folder (see uninstall()) — never otherwise touched here.
+    private final com.aiassist.audio.WhisperTranscriber whisperTranscriber;
+    private final com.aiassist.draft.LocalLlmService localLlmService;
     private javax.swing.JDialog modelNoticeDialog;
     private javax.swing.JEditorPane modelNoticePane;
 
@@ -211,13 +215,17 @@ public class MeetingConsole {
                           MeetingEndService meetingEndService, SessionStore sessions,
                           com.aiassist.draft.TextRewriteService rewriteService,
                           com.aiassist.draft.StyleRewriteService styleRewriteService,
-                          com.aiassist.feedback.FeedbackMailSender feedbackMailSender) {
+                          com.aiassist.feedback.FeedbackMailSender feedbackMailSender,
+                          com.aiassist.audio.WhisperTranscriber whisperTranscriber,
+                          com.aiassist.draft.LocalLlmService localLlmService) {
         this.liveTranscription = liveTranscription;
         this.meetingEndService = meetingEndService;
         this.sessions = sessions;
         this.rewriteService = rewriteService;
         this.styleRewriteService = styleRewriteService;
         this.feedbackMailSender = feedbackMailSender;
+        this.whisperTranscriber = whisperTranscriber;
+        this.localLlmService = localLlmService;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -1148,7 +1156,30 @@ public class MeetingConsole {
         feedbackStatus = new JLabel(" ");
         feedbackStatus.setFont(uiFont(Font.PLAIN, 11f));
         themedLabels.add(feedbackStatus);
-        panel.add(leftRow(sized(feedbackClear), sized(feedbackSubmit), feedbackStatus));
+
+        // Uninstall sits on the same row as Clear/Submit, pinned to the right
+        // with a little breathing room from the edge — same style as every
+        // other button, just placed apart from the feedback actions.
+        JButton uninstallButton = button("Uninstall");
+        uninstallButton.setToolTipText("Remove ai-assist's models, backups, settings and shortcuts "
+                + "— keeps the jar and your saved meeting notes");
+        uninstallButton.addActionListener(e -> uninstall());
+        JPanel feedbackLeftGroup = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        feedbackLeftGroup.add(sized(feedbackClear));
+        feedbackLeftGroup.add(sized(feedbackSubmit));
+        feedbackLeftGroup.add(feedbackStatus);
+        JPanel uninstallGroup = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 2));
+        uninstallGroup.setBorder(javax.swing.BorderFactory.createEmptyBorder(0, 0, 0, 10));
+        uninstallGroup.add(sized(uninstallButton));
+        JPanel feedbackButtonsRow = new JPanel(new BorderLayout());
+        feedbackButtonsRow.add(feedbackLeftGroup, BorderLayout.WEST);
+        feedbackButtonsRow.add(uninstallGroup, BorderLayout.EAST);
+        feedbackButtonsRow.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
+        feedbackButtonsRow.setMaximumSize(new java.awt.Dimension(Integer.MAX_VALUE, 40));
+        helpPanels.add(feedbackButtonsRow);
+        helpPanels.add(feedbackLeftGroup);
+        helpPanels.add(uninstallGroup);
+        panel.add(feedbackButtonsRow);
 
         // A read-only copy of the last submitted feedback, shown after Submit.
         panel.add(javax.swing.Box.createVerticalStrut(8));
@@ -2603,6 +2634,133 @@ public class MeetingConsole {
             return !sessions.get(sessionId).utterances().isEmpty();
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    /**
+     * Removes everything ai-assist writes outside the jar and the user's own
+     * saved meeting notes: the models folder, the model-backup .zips inside
+     * meeting-notes, the app's settings folder (~/.ai-assist — API token,
+     * first-run marker), saved preferences (dark mode, auto-start, model
+     * choice), and the Desktop shortcuts. Never touches the running jar or
+     * the meeting-notes folder itself (only its model-backups subfolder).
+     * Releases any loaded native models first — llama.cpp/whisper.cpp can
+     * mmap model files, which Windows refuses to delete while mapped — so
+     * this works the same way on Windows and macOS. Closes the app after.
+     */
+    private void uninstall() {
+        LiveTranscriptionService.Status status = liveTranscription.status();
+        boolean meetingActive = status.sessionId() != null
+                && (status.state() == LiveTranscriptionService.State.LISTENING
+                    || status.state() == LiveTranscriptionService.State.PAUSED
+                    || status.state() == LiveTranscriptionService.State.PREPARING);
+        if (meetingActive || savingNotes) {
+            showStyledMessage("Finish or stop the current meeting before uninstalling.",
+                    "Uninstall ai-assist", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        int choice = showStyledConfirm(
+                "Remove ai-assist's models, backups, settings and shortcuts?\n"
+                        + "The jar and your saved meeting notes are kept. The app will close.",
+                "Uninstall ai-assist", new String[] {"Uninstall", "Cancel"}, 1);
+        if (choice != 0) {
+            return;
+        }
+
+        // Release any loaded native models before touching their files.
+        try {
+            liveTranscription.releaseModel();
+        } catch (Exception ignored) {
+            // best-effort
+        }
+        try {
+            whisperTranscriber.releaseModel();
+        } catch (Exception ignored) {
+            // best-effort
+        }
+        try {
+            localLlmService.unload();
+        } catch (Exception ignored) {
+            // best-effort
+        }
+
+        java.util.List<String> problems = new java.util.ArrayList<>();
+        deleteRecursively(com.aiassist.setup.UserPaths.modelsDir(), problems);
+        deleteRecursively(com.aiassist.setup.UserPaths.modelBackupDir(), problems);
+        deleteRecursively(com.aiassist.setup.UserPaths.home().resolve(".ai-assist"), problems);
+        deleteDesktopShortcuts(problems);
+        try {
+            prefs.removeNode();
+            prefs.flush();
+        } catch (Exception e) {
+            problems.add("preferences (" + e.getMessage() + ")");
+        }
+        // Documents/ai-assist has no other purpose than the models folder just removed.
+        deleteIfEmptyDir(com.aiassist.setup.UserPaths.documents().resolve("ai-assist"), problems);
+
+        if (!problems.isEmpty()) {
+            showStyledMessage("Removed most ai-assist data, but could not remove:\n"
+                    + String.join("\n", problems), "Uninstall ai-assist", JOptionPane.WARNING_MESSAGE);
+        }
+
+        if (refreshTimer != null) {
+            refreshTimer.stop();
+        }
+        try {
+            liveTranscription.stopActivityMonitor();
+        } catch (Exception ignored) {
+            // shutting down anyway
+        }
+        monitorControl.shutdownNow();
+        frame.dispose();
+        System.exit(0);
+    }
+
+    /** Deletes a file or directory tree; records a short reason per failure, best-effort. */
+    private static void deleteRecursively(java.nio.file.Path root, java.util.List<String> problems) {
+        if (root == null || !java.nio.file.Files.exists(root)) {
+            return;
+        }
+        try (var walk = java.nio.file.Files.walk(root)) {
+            walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                try {
+                    java.nio.file.Files.delete(p);
+                } catch (java.io.IOException e) {
+                    problems.add(p + " (" + e.getMessage() + ")");
+                }
+            });
+        } catch (java.io.IOException e) {
+            problems.add(root + " (" + e.getMessage() + ")");
+        }
+    }
+
+    /** Deletes a directory only if it is now empty (best-effort). */
+    private static void deleteIfEmptyDir(java.nio.file.Path dir, java.util.List<String> problems) {
+        if (dir == null || !java.nio.file.Files.isDirectory(dir)) {
+            return;
+        }
+        try (var children = java.nio.file.Files.list(dir)) {
+            if (children.findAny().isEmpty()) {
+                java.nio.file.Files.delete(dir);
+            }
+        } catch (java.io.IOException e) {
+            problems.add(dir + " (" + e.getMessage() + ")");
+        }
+    }
+
+    /** Removes the Desktop shortcuts created on first run, on whichever OS created them. */
+    private static void deleteDesktopShortcuts(java.util.List<String> problems) {
+        java.nio.file.Path desktop = com.aiassist.setup.UserPaths.home().resolve("Desktop");
+        if (!java.nio.file.Files.isDirectory(desktop)) {
+            return;
+        }
+        for (String name : new String[] {
+                "ai-assist meeting-notes", "ai-assist", "ai-assist.lnk", "ai-assist.command", "ai-assist.desktop"}) {
+            try {
+                java.nio.file.Files.deleteIfExists(desktop.resolve(name));
+            } catch (java.io.IOException e) {
+                problems.add(desktop.resolve(name) + " (" + e.getMessage() + ")");
+            }
         }
     }
 }
