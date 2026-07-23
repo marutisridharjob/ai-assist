@@ -141,7 +141,7 @@ public class MeetingConsole {
     private JPanel statusStackPanel;
     private java.util.List<JPanel> meetingButtonRows = java.util.List.of();
     /** One button size across the whole app, so every button matches. */
-    private static final java.awt.Dimension BUTTON_SIZE = new java.awt.Dimension(66, 28);
+    private static final java.awt.Dimension BUTTON_SIZE = new java.awt.Dimension(80, 28);
     private JButton startButton;
     private JButton pauseButton;
     private JButton stopButton;
@@ -1866,7 +1866,7 @@ public class MeetingConsole {
             setFocusPainted(false);
             setOpaque(false);
             setBackground(new java.awt.Color(0xE8E8E8));
-            setBorder(javax.swing.BorderFactory.createEmptyBorder(5, 6, 5, 6));
+            setBorder(javax.swing.BorderFactory.createEmptyBorder(5, 12, 5, 12));
             // Plain (not bold) label — Metal makes button text bold by default.
             if (getFont() != null) {
                 setFont(getFont().deriveFont(java.awt.Font.PLAIN));
