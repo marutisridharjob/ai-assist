@@ -456,17 +456,15 @@ public class LiveTranscriptionService {
         modelManager.unpackDroppedZipsNow();
     }
 
-    private final java.util.prefs.Preferences prefs =
-            java.util.prefs.Preferences.userNodeForPackage(LiveTranscriptionService.class);
-
     /**
      * The model to use: the in-session choice, else the one saved from a
-     * previous run (persisted across restarts), else the first available.
+     * previous run (persisted across restarts in {@code .ai-assist/settings.properties}
+     * via {@link com.aiassist.setup.AppSettings}), else the first available.
      */
     public String activeModelName() {
         String requested = requestedModelName;
         if (requested == null) {
-            requested = prefs.get("model", null);
+            requested = com.aiassist.setup.AppSettings.modelName();
         }
         return requested != null ? requested : modelManager.defaultModelName();
     }
@@ -518,7 +516,7 @@ public class LiveTranscriptionService {
         boolean wasActive = before.state() == State.LISTENING || before.state() == State.PREPARING;
         stopWorkers();
         requestedModelName = name;
-        prefs.put("model", name); // remembered across restarts until changed
+        com.aiassist.setup.AppSettings.setModelName(name); // remembered across restarts until changed
         log.info("Speech model switched to '{}'", name);
         if (wasActive && before.sessionId() != null) {
             status.set(new Status(State.PAUSED, before.sessionId(), before.devices(),

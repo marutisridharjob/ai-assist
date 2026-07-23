@@ -63,9 +63,6 @@ public class MeetingConsole {
     private javax.swing.JDialog modelNoticeDialog;
     private javax.swing.JEditorPane modelNoticePane;
 
-    private final java.util.prefs.Preferences prefs =
-            java.util.prefs.Preferences.userNodeForPackage(MeetingConsole.class);
-
     private JFrame frame;
     private javax.swing.JTextPane transcript;
     private JTextArea summaryArea;
@@ -381,7 +378,7 @@ public class MeetingConsole {
         darkModeToggle.setToolTipText("Switch between light and dark mode");
         darkModeToggle.addActionListener(e -> {
             applyTheme(darkModeToggle.isSelected());
-            prefs.putBoolean("darkMode", darkModeToggle.isSelected());
+            com.aiassist.setup.AppSettings.setDarkMode(darkModeToggle.isSelected());
         });
 
         // Model picker: built-in default plus any Vosk model unpacked into
@@ -445,9 +442,9 @@ public class MeetingConsole {
                 + "It uses the system audio only — never your microphone. It listens on the built-in "
                 + "tap (macOS/Windows) or a loopback/monitor device (Linux); if no system-audio source "
                 + "exists it falls back to app detection.</html>");
-        autoStartToggle.setSelected(prefs.getBoolean("autoStart", true));
+        autoStartToggle.setSelected(com.aiassist.setup.AppSettings.autoStart(true));
         autoStartToggle.addActionListener(e -> {
-            prefs.putBoolean("autoStart", autoStartToggle.isSelected());
+            com.aiassist.setup.AppSettings.setAutoStart(autoStartToggle.isSelected());
             if (!autoStartToggle.isSelected()) {
                 cancelAutoStartPrompt();
                 setMonitorWanted(false);
@@ -612,7 +609,7 @@ public class MeetingConsole {
         frame.setResizable(true);
         frame.setLocationRelativeTo(null); // center on screen instead of the corner
 
-        darkModeToggle.setSelected(prefs.getBoolean("darkMode", false));
+        darkModeToggle.setSelected(com.aiassist.setup.AppSettings.darkMode(false));
         applyTheme(darkModeToggle.isSelected());
         frame.setVisible(true);
 
@@ -2651,14 +2648,14 @@ public class MeetingConsole {
     /**
      * Removes everything ai-assist writes outside the jar and the user's own
      * saved meeting notes: the models folder, the model-backup .zips inside
-     * minutes-of-meeting, the app's settings folder (.ai-assist, next to the
-     * jar — API token, first-run marker), saved preferences (dark mode,
-     * auto-start), and the Desktop shortcuts. Never touches the running jar
-     * or the minutes-of-meeting folder itself (only its model-backups
-     * subfolder). Releases any loaded native models first — llama.cpp/
-     * whisper.cpp can mmap model files, which Windows refuses to delete while
-     * mapped — so this works the same way on Windows and macOS. Closes the
-     * app after.
+     * minutes-of-meeting, and the app's settings folder (.ai-assist, next to
+     * the jar — API token, first-run marker, and settings.properties with
+     * dark mode, auto-start, and the chosen speech model), plus the Desktop
+     * shortcuts. Never touches the running jar or the minutes-of-meeting
+     * folder itself (only its model-backups subfolder). Releases any loaded
+     * native models first — llama.cpp/whisper.cpp can mmap model files,
+     * which Windows refuses to delete while mapped — so this works the same
+     * way on Windows and macOS. Closes the app after.
      */
     private void uninstall() {
         LiveTranscriptionService.Status status = liveTranscription.status();
@@ -2699,14 +2696,11 @@ public class MeetingConsole {
         java.util.List<String> problems = new java.util.ArrayList<>();
         deleteRecursively(com.aiassist.setup.UserPaths.modelsDir(), problems);
         deleteRecursively(com.aiassist.setup.UserPaths.modelBackupDir(), problems);
+        // Deletes .ai-assist, which now holds every saved setting (dark mode,
+        // auto-start, chosen speech model) as well as the API token and
+        // first-run marker — no separate Preferences store to clean up.
         deleteRecursively(com.aiassist.setup.UserPaths.configDir(), problems);
         deleteDesktopShortcuts(problems);
-        try {
-            prefs.removeNode();
-            prefs.flush();
-        } catch (Exception e) {
-            problems.add("preferences (" + e.getMessage() + ")");
-        }
         // Documents/ai-assist has no other purpose than the models folder just removed.
         deleteIfEmptyDir(com.aiassist.setup.UserPaths.documents().resolve("ai-assist"), problems);
 
