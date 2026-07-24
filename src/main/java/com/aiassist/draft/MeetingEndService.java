@@ -60,6 +60,21 @@ public class MeetingEndService {
         return t;
     });
 
+    /**
+     * How many finishNotes() calls are currently in flight. Whisper and the
+     * local LLM are each a single native model instance behind a
+     * synchronized method — they can only do one thing at a time by design
+     * (the underlying native library isn't safe to call concurrently), so if
+     * a second meeting ends while the first's transcription/summary is still
+     * running, the second call would simply queue behind the first, and the
+     * bounded timeouts above don't prevent that: they bound time spent
+     * running, not time spent waiting to even start. Tracked here so a
+     * meeting that ends while another is still being processed skips
+     * straight to the fast fallback instead of queueing.
+     */
+    private final java.util.concurrent.atomic.AtomicInteger notesInFlight =
+            new java.util.concurrent.atomic.AtomicInteger();
+
     private final SessionStore sessions;
     private final LiveTranscriptionService liveTranscription;
     private final WhisperTranscriber whisper;
@@ -112,28 +127,45 @@ public class MeetingEndService {
      * saves the notes file.
      */
     public Draft finishNotes(PendingNotes pending, DraftOptions options) {
-        ListeningSession session = sessions.get(pending.sessionId());
-        List<Utterance> utterances = runWithTimeout("Whisper transcription", TRANSCRIPTION_TIMEOUT,
-                () -> transcribeRecordingOrLive(session, pending.recordings()), session::utterances);
-        String transcript = utterances.stream().map(Utterance::text)
-                .reduce((a, b) -> a + "\n" + b).orElse("");
-        if (transcript.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "Meeting " + pending.sessionId()
-                    + " ended but nothing was captured, so there is nothing to save");
+        boolean concurrentWithAnother = notesInFlight.incrementAndGet() > 1;
+        try {
+            ListeningSession session = sessions.get(pending.sessionId());
+            List<Utterance> utterances;
+            if (concurrentWithAnother) {
+                log.info("Meeting {} is ending while another meeting's notes are still being processed; "
+                        + "using the live captions instead of Whisper to avoid queueing behind it",
+                        pending.sessionId());
+                pending.recordings().values().forEach(this::deleteQuietly);
+                utterances = session.utterances();
+            } else {
+                utterances = runWithTimeout("Whisper transcription", TRANSCRIPTION_TIMEOUT,
+                        () -> transcribeRecordingOrLive(session, pending.recordings()), session::utterances);
+            }
+            String transcript = utterances.stream().map(Utterance::text)
+                    .reduce((a, b) -> a + "\n" + b).orElse("");
+            if (transcript.isBlank()) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "Meeting " + pending.sessionId()
+                        + " ended but nothing was captured, so there is nothing to save");
+            }
+            // Summary + action points: the same path as the Meeting tab's Apply,
+            // so a dropped-in LLM writes them (falling back to the offline drafter).
+            String summaryText = stripMarkdownHeadings(concurrentWithAnother
+                    ? styleRewrite.offlineSummary(transcript)
+                    : runWithTimeout("Meeting summary generation", SUMMARY_TIMEOUT,
+                            () -> styleRewrite.summarizeMeeting(transcript, null),
+                            () -> styleRewrite.offlineSummary(transcript)));
+            Draft notes = new Draft(session.topic(), "MEETING_NOTES", "PROFESSIONAL", "",
+                    List.of(new Draft.Section("Summary", summaryText)),
+                    List.of(), List.of(), summaryText, "summary", Instant.now(), null);
+            Draft draft = AttributedTranscript.appendTo(notes, utterances);
+            Path saved = fileWriter.save(draft);
+            log.info("Meeting {} finished with {} utterances; notes saved to {}",
+                    pending.sessionId(), utterances.size(), saved);
+            return saved == null ? draft : draft.withSavedTo(saved.toString());
+        } finally {
+            notesInFlight.decrementAndGet();
         }
-        // Summary + action points: the same path as the Meeting tab's Apply,
-        // so a dropped-in LLM writes them (falling back to the offline drafter).
-        String summaryText = stripMarkdownHeadings(runWithTimeout("Meeting summary generation", SUMMARY_TIMEOUT,
-                () -> styleRewrite.summarizeMeeting(transcript, null), () -> styleRewrite.offlineSummary(transcript)));
-        Draft notes = new Draft(session.topic(), "MEETING_NOTES", "PROFESSIONAL", "",
-                List.of(new Draft.Section("Summary", summaryText)),
-                List.of(), List.of(), summaryText, "summary", Instant.now(), null);
-        Draft draft = AttributedTranscript.appendTo(notes, utterances);
-        Path saved = fileWriter.save(draft);
-        log.info("Meeting {} finished with {} utterances; notes saved to {}",
-                pending.sessionId(), utterances.size(), saved);
-        return saved == null ? draft : draft.withSavedTo(saved.toString());
     }
 
     /**
