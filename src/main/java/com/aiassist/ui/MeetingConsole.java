@@ -352,6 +352,7 @@ public class MeetingConsole {
         transcript.setMargin(new java.awt.Insets(8, 8, 8, 8));
         JScrollPane scroll = new JScrollPane(transcript,
                 JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        roundTextArea(transcript, scroll);
 
         // Summary area below the transcript, filled by Apply (and on Stop).
         summaryArea = new JTextArea();
@@ -362,9 +363,10 @@ public class MeetingConsole {
         summaryArea.setMargin(new java.awt.Insets(8, 8, 8, 8));
         JPanel summaryPane = new JPanel(new BorderLayout());
         summaryPane.add(themedLabel("  Summary (click Apply):"), BorderLayout.NORTH);
-        summaryPane.add(new JScrollPane(summaryArea,
-                JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER),
-                BorderLayout.CENTER);
+        JScrollPane summaryScroll = new JScrollPane(summaryArea,
+                JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        roundTextArea(summaryArea, summaryScroll);
+        summaryPane.add(summaryScroll, BorderLayout.CENTER);
         meetingSplit = new javax.swing.JSplitPane(javax.swing.JSplitPane.VERTICAL_SPLIT, scroll, summaryPane);
         meetingSplit.setResizeWeight(0.7);
         meetingSummaryPane = summaryPane;
@@ -394,6 +396,7 @@ public class MeetingConsole {
         // the ./models folder next to the app. Reloaded each time it opens.
         modelCombo = new javax.swing.JComboBox<>();
         modelCombo.setFont(uiFont(Font.PLAIN, 13));
+        roundComboBox(modelCombo);
         modelCombo.setToolTipText("<html><b>Live-caption speech model — pick one built for real time.</b><br>"
                 + "Live captions must decode faster than you speak (two streams at once), so use a "
                 + "streaming model:<br>"
@@ -575,6 +578,7 @@ public class MeetingConsole {
         meetingTab.add(bottom, BorderLayout.SOUTH);
         meetingTabPanel = meetingTab;
         tabs = new javax.swing.JTabbedPane();
+        tabs.setUI(new RoundedTabbedPaneUI());
         tabs.addTab("Meeting", meetingTab);
         tabs.addTab("Compose", buildAssistTab());
         tabs.addTab("Settings", buildHelpTab());
@@ -863,6 +867,11 @@ public class MeetingConsole {
         scroll.setBorder(new RoundedBorder(12));
     }
 
+    /** Gives a dropdown a curved outline, matching the text fields/areas. */
+    private static void roundComboBox(javax.swing.JComboBox<?> combo) {
+        combo.setBorder(new RoundedBorder(10));
+    }
+
     /** Native file dialog: Finder sheet on macOS, Explorer dialog on Windows. */
     private String chooseFile(boolean save) {
         java.awt.FileDialog dialog = new java.awt.FileDialog(frame,
@@ -1058,13 +1067,16 @@ public class MeetingConsole {
         // Your content on TOP, the modified result below it.
         JPanel top = new JPanel(new BorderLayout());
         top.add(themedLabel("  Your content (type, paste, or Load a file):"), BorderLayout.NORTH);
-        top.add(new JScrollPane(composeFeed,
-                JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER),
-                BorderLayout.CENTER);
+        JScrollPane composeFeedScroll = new JScrollPane(composeFeed,
+                JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        roundTextArea(composeFeed, composeFeedScroll);
+        top.add(composeFeedScroll, BorderLayout.CENTER);
         JPanel bottom = new JPanel(new BorderLayout());
         bottom.add(themedLabel("  After modification:"), BorderLayout.NORTH);
-        bottom.add(new JScrollPane(composeResult,
-                JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER),
+        JScrollPane composeResultScroll = new JScrollPane(composeResult,
+                JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        roundTextArea(composeResult, composeResultScroll);
+        bottom.add(composeResultScroll,
                 BorderLayout.CENTER);
         composeSplit = new javax.swing.JSplitPane(javax.swing.JSplitPane.VERTICAL_SPLIT, top, bottom);
         composeSplit.setResizeWeight(0.5);
@@ -1182,6 +1194,7 @@ public class MeetingConsole {
         panel.add(javax.swing.Box.createVerticalStrut(6));
         ratingCombo = new javax.swing.JComboBox<>(new Integer[] {0, 1, 2, 3, 4, 5});
         ratingCombo.setFont(uiFont(Font.PLAIN, 13));
+        roundComboBox(ratingCombo);
         ratingCombo.setRenderer(new javax.swing.DefaultListCellRenderer() {
             @Override
             public java.awt.Component getListCellRendererComponent(javax.swing.JList<?> list, Object value,
@@ -2259,6 +2272,49 @@ public class MeetingConsole {
         @Override
         public int getIconHeight() {
             return SIZE;
+        }
+
+        private static boolean isDarkish(java.awt.Color c) {
+            return (c.getRed() + c.getGreen() + c.getBlue()) / 3 < 128;
+        }
+    }
+
+    /**
+     * Tab headers with rounded top corners, matching the app's rounded
+     * buttons/fields. Metal (the only look-and-feel this app uses) draws
+     * sharp-cornered tabs by default, so the background/border painting is
+     * overridden here; everything else (layout, focus, text) is left to the
+     * Metal base class. The fill/outline shape is drawn taller than the tab
+     * and clipped to its bounds — the extra height's bottom corners get
+     * clipped away, leaving a flat bottom (where the tab meets the content
+     * pane) and rounded top corners.
+     */
+    private static final class RoundedTabbedPaneUI extends javax.swing.plaf.metal.MetalTabbedPaneUI {
+        private static final int ARC = 10;
+
+        @Override
+        protected void paintTabBackground(java.awt.Graphics g, int tabPlacement, int tabIndex,
+                int x, int y, int w, int h, boolean isSelected) {
+            java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+            g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
+                    java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.clipRect(x, y, w, h);
+            g2.setColor(tabPane.getBackgroundAt(tabIndex));
+            g2.fillRoundRect(x, y, w - 1, h - 1 + ARC, ARC, ARC);
+            g2.dispose();
+        }
+
+        @Override
+        protected void paintTabBorder(java.awt.Graphics g, int tabPlacement, int tabIndex,
+                int x, int y, int w, int h, boolean isSelected) {
+            java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+            g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
+                    java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.clipRect(x, y, w, h);
+            g2.setColor(isDarkish(tabPane.getBackground()) ? new java.awt.Color(0x5A5A5A)
+                    : new java.awt.Color(0xB0B0B0));
+            g2.drawRoundRect(x, y, w - 1, h - 1 + ARC, ARC, ARC);
+            g2.dispose();
         }
 
         private static boolean isDarkish(java.awt.Color c) {
