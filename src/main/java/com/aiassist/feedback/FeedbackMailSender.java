@@ -31,16 +31,18 @@ import org.springframework.stereotype.Service;
 
 /**
  * Sends the feedback message straight over SMTP from the app itself — no
- * desktop mail client is opened and, unless a relay is configured, no account
- * sits in the middle: the message is delivered directly to the recipient
- * domain's mail server (looked up via its MX records) on port 25, upgrading to
- * TLS with STARTTLS when the server offers it. This uses only the JDK (raw
- * sockets, JNDI DNS, the built-in TLS stack) — no third-party mail library.
+ * desktop mail client is opened. This uses only the JDK (raw sockets, JNDI
+ * DNS, the built-in TLS stack) — no third-party mail library.
  *
- * <p>Direct delivery depends on outbound port 25 being open and the receiving
- * server accepting unauthenticated mail from this machine; many home and
- * corporate networks block one or both. Set {@code ai-assist.feedback.relay-host}
- * (and, if needed, a username/password) to route through an SMTP relay instead.
+ * <p>Delivers via an authenticated relay when {@code ai-assist.feedback.relay-host}
+ * is set (the default, Gmail's SMTP) — the reliable path. When cleared,
+ * falls back to delivering unauthenticated straight to the recipient
+ * domain's mail server (looked up via its MX records) on port 25, upgrading
+ * to TLS with STARTTLS when offered; this direct path depends on outbound
+ * port 25 being open (many networks block it) and, even then, is routinely
+ * accepted by the receiving server and then silently spam-foldered, since
+ * an unauthenticated sender with no SPF/DKIM has no reputation to speak of —
+ * a failure this class has no way to detect or report.
  */
 @Service
 public class FeedbackMailSender {

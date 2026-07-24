@@ -66,14 +66,28 @@ ai-assist:
     base-url: http://localhost:11434
     model: llama3.2
     timeout-seconds: 120
-  # Feedback email delivery. Defaults send directly with no account in the
-  # middle; set relay-* to route through an SMTP relay. Never commit real
-  # credentials — supply username/password at runtime (JVM -D properties or an
-  # external, git-ignored application.yml). See README "Configuration".
+  # Feedback email delivery, via Gmail's SMTP relay (authenticated) rather
+  # than direct-to-server delivery: sending unauthenticated straight to a
+  # recipient's mail server almost never actually arrives — most home/office
+  # networks block outbound port 25 outright, and even when the connection
+  # succeeds, Gmail's spam filtering typically accepts the message (SMTP
+  # "250 OK") and then silently drops or spam-folders it, since the sending
+  # machine has no reverse-DNS and the from-address has no SPF/DKIM behind
+  # it — a failure the app has no way to detect or report.
+  #
+  # To actually receive feedback, fill in username/password below with a
+  # Gmail account and an App Password (myaccount.google.com/apppasswords —
+  # requires 2-Step Verification to be on; a regular Gmail password will not
+  # work here). Also set "from" to that SAME Gmail address: Gmail requires
+  # (or otherwise rewrites) the From header to match the authenticated
+  # account. Never commit real credentials — supply username/password at
+  # runtime (JVM -D properties or an external, git-ignored application.yml).
+  # See README "Configuration". Clearing relay-host reverts to the old
+  # (unreliable) direct-delivery behavior.
   feedback:
     from: noreply@ai-assist.com
     to: marutisridhar.job@gmail.com
-    relay-host: ""
+    relay-host: smtp.gmail.com
     relay-port: 587
     username: ""
     password: ""

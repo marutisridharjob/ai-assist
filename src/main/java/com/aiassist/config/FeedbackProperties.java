@@ -3,11 +3,14 @@ package com.aiassist.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Feedback email settings. By default the app delivers the feedback message
- * directly to the recipient's mail server over SMTP — no desktop mail app and
- * no account in the middle. Optionally point it at an SMTP relay (host + port,
- * with credentials when the relay requires them) for reliable delivery on
- * networks that block direct outbound mail.
+ * Feedback email settings. By default this routes through Gmail's SMTP relay
+ * (requires a Gmail {@code username}/App Password to actually send — see
+ * README "Configuration"), since delivering unauthenticated straight to the
+ * recipient's mail server rarely arrives in practice: most networks block
+ * outbound port 25, and even when it connects, Gmail's spam filtering
+ * typically accepts the message and then silently drops or spam-folders it —
+ * a failure with no way to detect from the sending side. Clearing
+ * {@code relay-host} reverts to that direct-delivery behavior.
  */
 @ConfigurationProperties(prefix = "ai-assist.feedback")
 public record FeedbackProperties(String from, String to, String relayHost, int relayPort,

@@ -163,16 +163,18 @@ A fourth tab with three sections:
   technology stack. Type a word and press **Search** to highlight every match;
   **Close** (bottom-right) dismisses the window.
 - **Feedback** — type a note, pick a **Rating** (0–5), and press **Submit**.
-  The app sends the email itself, directly over SMTP (subject *Feedback on
-  ai-assist with rating N*, body = your note plus your rating, machine IP, user
-  name, and time zone/region) — **no desktop mail app is opened** and, by
-  default, no account sits in the middle: the message is delivered straight to
-  the recipient's mail server (found via its MX records) on port 25, upgrading
-  to TLS with STARTTLS when offered. On success the form greys out, shows
-  **Submitted**, then clears; if delivery fails it shows **Send failed**, and
-  with no internet it shows **No Internet**, then re-enables. Direct delivery
-  needs outbound port 25 open and the receiving server to accept the mail;
-  where that is blocked, set an SMTP relay under `ai-assist.feedback` (below).
+  The app sends the email itself (subject *Feedback on ai-assist with rating
+  N*, body = your note plus your rating, machine IP, user name, and time
+  zone/region) — **no desktop mail app is opened**. On success the form greys
+  out, shows **Submitted**, then clears; if delivery fails it shows **Send
+  failed**, and with no internet it shows **No Internet**, then re-enables.
+  By default this goes through Gmail's SMTP relay (`ai-assist.feedback`,
+  below) — you need to fill in a Gmail address + App Password for it to
+  actually send (see "Configuration"). Sending unauthenticated straight to a
+  recipient's mail server (the old default) almost never arrives in
+  practice: most networks block outbound port 25, and even when it connects,
+  Gmail's spam filtering typically accepts the message and then silently
+  drops or spam-folders it — a failure the app has no way to detect.
 
 ### How a meeting is processed — two engines, both offline
 
@@ -478,12 +480,12 @@ ai-assist:
     allow-download: false      # keep false: no runtime network access
     preferred-device: ""       # optional explicit meeting-audio device
   feedback:
-    from: noreply@ai-assist.com   # From address on the feedback email
+    from: noreply@ai-assist.com   # set to your Gmail address — must match the relay account below
     to: marutisridhar.job@gmail.com  # where feedback is delivered
-    relay-host: ""             # blank = deliver directly to the recipient's mail server
+    relay-host: smtp.gmail.com # blank = deliver directly to the recipient's mail server (unreliable — see above)
     relay-port: 587            # used only when relay-host is set
-    username: ""               # relay credentials, if the relay requires auth
-    password: ""
+    username: ""               # your Gmail address; required for smtp.gmail.com
+    password: ""               # a Gmail App Password (myaccount.google.com/apppasswords), not your login password
     start-tls: true            # upgrade to TLS with STARTTLS when the server offers it
   security:
     api-token: ""              # blank = auto-generate & persist to .ai-assist/api-token next to the jar
@@ -492,20 +494,21 @@ ai-assist:
 ```
 
 **Keep SMTP credentials out of the repo.** Leave `username`/`password` blank in
-the committed `application.yml`. To use a relay, supply them at runtime where
-they are never version-controlled — either as JVM system properties:
+the committed `application.yml`. Supply them at runtime where they are never
+version-controlled — either as JVM system properties:
 
 ```bash
-java -Dai-assist.feedback.relay-host=smtp.example.com \
-     -Dai-assist.feedback.username=you@example.com \
+java -Dai-assist.feedback.from=you@gmail.com \
+     -Dai-assist.feedback.username=you@gmail.com \
      -Dai-assist.feedback.password=app-password \
      -jar ai-assist-<version>.jar
 ```
 
 or in an `application.yml` you place next to the jar (or in a `config/`
 subfolder) and add to `.gitignore`. Spring Boot loads that external file over
-the packaged defaults, so the secret stays on your machine only. Prefer a
-provider **app password** over your real account password.
+the packaged defaults, so the secret stays on your machine only. Use a Gmail
+**App Password** (myaccount.google.com/apppasswords — requires 2-Step
+Verification), never your real account password.
 
 ## Platforms
 
