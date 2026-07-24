@@ -2,10 +2,17 @@ package com.aiassist.draft;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import com.aiassist.audio.LiveTranscriptionService;
@@ -24,14 +31,34 @@ import org.springframework.web.server.ResponseStatusException;
  * Ends a meeting: stops live capture, locks the session, converts the
  * recorded voice into text with Whisper (the accurate complete-conversation
  * transcription; falls back to the live captions when Whisper or a recording
- * is unavailable), and saves that verbatim transcript. No AI drafting or
- * summarizing happens here — that is applied only on demand from the Editor
- * and Compose tabs.
+ * is unavailable), drafts the summary (the local LLM when installed, else the
+ * offline rules — same path as the Meeting/Editor tabs' Apply), and saves the
+ * notes file. Both the transcription and the summary are bounded-time: ending
+ * a meeting must always finish and save something, even if a native call
+ * (Whisper/llama.cpp) is running unreasonably slowly on the machine's CPU.
  */
 @Service
 public class MeetingEndService {
 
     private static final Logger log = LoggerFactory.getLogger(MeetingEndService.class);
+
+    /**
+     * How long to wait for Whisper/the LLM before giving up and using the
+     * fallback (live captions / offline drafter) instead. Generous — a real
+     * meeting recording can legitimately take minutes to transcribe/summarize
+     * on a modest CPU — but bounded, so "saving the notes" can never block
+     * forever: the abandoned call (not forcibly cancelled — a blocking native
+     * call can't be interrupted safely) simply keeps running in the
+     * background and its result is discarded.
+     */
+    private static final Duration TRANSCRIPTION_TIMEOUT = Duration.ofMinutes(10);
+    private static final Duration SUMMARY_TIMEOUT = Duration.ofMinutes(5);
+
+    private static final ExecutorService FINISH_NOTES_EXECUTOR = Executors.newCachedThreadPool(runnable -> {
+        Thread t = new Thread(runnable, "finish-notes-worker");
+        t.setDaemon(true);
+        return t;
+    });
 
     private final SessionStore sessions;
     private final LiveTranscriptionService liveTranscription;
@@ -86,7 +113,8 @@ public class MeetingEndService {
      */
     public Draft finishNotes(PendingNotes pending, DraftOptions options) {
         ListeningSession session = sessions.get(pending.sessionId());
-        List<Utterance> utterances = transcribeRecordingOrLive(session, pending.recordings());
+        List<Utterance> utterances = runWithTimeout("Whisper transcription", TRANSCRIPTION_TIMEOUT,
+                () -> transcribeRecordingOrLive(session, pending.recordings()), session::utterances);
         String transcript = utterances.stream().map(Utterance::text)
                 .reduce((a, b) -> a + "\n" + b).orElse("");
         if (transcript.isBlank()) {
@@ -96,7 +124,8 @@ public class MeetingEndService {
         }
         // Summary + action points: the same path as the Meeting tab's Apply,
         // so a dropped-in LLM writes them (falling back to the offline drafter).
-        String summaryText = stripMarkdownHeadings(styleRewrite.summarizeMeeting(transcript, null));
+        String summaryText = stripMarkdownHeadings(runWithTimeout("Meeting summary generation", SUMMARY_TIMEOUT,
+                () -> styleRewrite.summarizeMeeting(transcript, null), () -> styleRewrite.offlineSummary(transcript)));
         Draft notes = new Draft(session.topic(), "MEETING_NOTES", "PROFESSIONAL", "",
                 List.of(new Draft.Section("Summary", summaryText)),
                 List.of(), List.of(), summaryText, "summary", Instant.now(), null);
@@ -105,6 +134,27 @@ public class MeetingEndService {
         log.info("Meeting {} finished with {} utterances; notes saved to {}",
                 pending.sessionId(), utterances.size(), saved);
         return saved == null ? draft : draft.withSavedTo(saved.toString());
+    }
+
+    /**
+     * Runs {@code task} on a background thread and waits up to {@code timeout}
+     * for it; past that, logs and returns {@code fallback.get()} instead
+     * without cancelling the task — a blocking native call (Whisper/llama.cpp)
+     * can't be safely force-interrupted, so it's left to finish on its own in
+     * the background and its result is simply discarded.
+     */
+    private <T> T runWithTimeout(String what, Duration timeout, Callable<T> task, Supplier<T> fallback) {
+        var future = FINISH_NOTES_EXECUTOR.submit(task);
+        try {
+            return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            log.warn("{} did not finish within {}; using the fallback so the meeting still saves",
+                    what, timeout);
+            return fallback.get();
+        } catch (Exception e) {
+            log.warn("{} failed ({}); using the fallback so the meeting still saves", what, e.getMessage());
+            return fallback.get();
+        }
     }
 
     /** Synchronous end-to-end (used by the REST API): stop then finish. */

@@ -181,6 +181,18 @@ public class StyleRewriteService {
         if (llm.isPresent()) {
             return llm.get();
         }
+        return offlineSummary(text);
+    }
+
+    /**
+     * The same meeting summary, skipping the LLM entirely — instant and always
+     * available, since it's pure Java with no native model call. Used as a
+     * bounded-time fallback when the LLM is taking unreasonably long (see
+     * MeetingEndService.finishNotes): ending a meeting must always finish and
+     * save something in bounded time, never block indefinitely on a slow or
+     * stuck native call.
+     */
+    public String offlineSummary(String text) {
         Draft draft = drafter.draft("Meeting notes", text,
                 new DraftOptions(DraftOptions.ContentType.MEETING_NOTES, DraftOptions.Tone.PROFESSIONAL));
         return draft.fullText();
