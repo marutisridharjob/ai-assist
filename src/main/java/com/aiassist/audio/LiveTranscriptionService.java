@@ -285,6 +285,17 @@ public class LiveTranscriptionService {
     private volatile Process monitorProcess;
     private volatile int monitorLevel;
     private volatile long monitorLastLoud;
+    // A second, independent channel on the microphone, run alongside the
+    // system-audio one above — a system-audio tap/loopback only ever carries
+    // what the computer plays back, so it stays silent for an in-person
+    // conversation (nothing playing through the speakers) even though people
+    // are clearly talking. Tracking the mic too means the ambient "still
+    // listening" indicator and the generic (non-known-app) start prompt work
+    // for that case as well, not only for a remote meeting's audio.
+    private volatile Thread micMonitorThread;
+    private volatile javax.sound.sampled.TargetDataLine micMonitorLine;
+    private volatile int micMonitorLevel;
+    private volatile long micMonitorLastLoud;
 
     /** The best system-audio ("other") source, or null when none is available. */
     private AudioDeviceService.DeviceSelection systemAudioSelection() {
@@ -296,36 +307,48 @@ public class LiveTranscriptionService {
                 .findFirst().orElse(null);
     }
 
-    /** Begins level-only monitoring of the system audio (no transcription/recording). */
+    /**
+     * Begins level-only monitoring (no transcription/recording) of the system
+     * audio, when available, and the microphone, always attempted — so
+     * either channel can drive the "listening" indicator and the generic
+     * start prompt regardless of which one a given meeting actually uses.
+     */
     public synchronized void startActivityMonitor() {
         if (monitorRunning) {
             return;
         }
-        AudioDeviceService.DeviceSelection sys = systemAudioSelection();
-        if (sys == null) {
-            return; // no system-audio source on this machine; caller falls back to app-only detection
-        }
         monitorRunning = true;
         monitorLevel = 0;
-        monitorThread = new Thread(() -> {
-            try {
-                if (sys.systemTap()) {
-                    monitorViaTap();
-                } else {
-                    monitorViaLine(sys.deviceName());
+        micMonitorLevel = 0;
+        AudioDeviceService.DeviceSelection sys = systemAudioSelection();
+        if (sys != null) {
+            monitorThread = new Thread(() -> {
+                try {
+                    if (sys.systemTap()) {
+                        monitorViaTap();
+                    } else {
+                        monitorViaLine(sys.deviceName());
+                    }
+                } catch (Throwable t) {
+                    log.warn("System-audio monitor unavailable ({}); auto-start will fall back to app detection",
+                            rootMessage(t));
                 }
+            }, "sys-audio-monitor");
+            monitorThread.setDaemon(true);
+            monitorThread.start();
+        }
+        micMonitorThread = new Thread(() -> {
+            try {
+                monitorMic();
             } catch (Throwable t) {
-                log.warn("System-audio monitor unavailable ({}); auto-start will fall back to app detection",
-                        rootMessage(t));
-            } finally {
-                monitorRunning = false;
+                log.warn("Microphone activity monitor unavailable ({})", rootMessage(t));
             }
-        }, "sys-audio-monitor");
-        monitorThread.setDaemon(true);
-        monitorThread.start();
+        }, "mic-audio-monitor");
+        micMonitorThread.setDaemon(true);
+        micMonitorThread.start();
     }
 
-    /** Stops the activity monitor and frees the audio source. Safe to call any time. */
+    /** Stops the activity monitor and frees the audio sources. Safe to call any time. */
     public synchronized void stopActivityMonitor() {
         monitorRunning = false;
         javax.sound.sampled.TargetDataLine l = monitorLine;
@@ -343,25 +366,93 @@ public class LiveTranscriptionService {
             p.destroy();
             monitorProcess = null;
         }
-        Thread t = monitorThread;
-        if (t != null) {
+        javax.sound.sampled.TargetDataLine micLine = micMonitorLine;
+        if (micLine != null) {
             try {
-                t.join(1000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+                micLine.stop();
+                micLine.close();
+            } catch (Exception ignored) {
+                // closing best-effort
             }
-            monitorThread = null;
+            micMonitorLine = null;
         }
+        // Joined so the microphone is guaranteed free the moment this returns
+        // — a real meeting's own capture opens the same device right after.
+        joinQuietly(monitorThread);
+        monitorThread = null;
+        joinQuietly(micMonitorThread);
+        micMonitorThread = null;
         monitorLevel = 0;
+        micMonitorLevel = 0;
+    }
+
+    private static void joinQuietly(Thread t) {
+        if (t == null) {
+            return;
+        }
+        try {
+            t.join(1000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     public boolean monitorRunning() {
         return monitorRunning;
     }
 
-    /** True when the system audio has been loud within the last {@code withinMs}. */
+    /**
+     * The activity monitor's current level, 0-100 (0 when it isn't running):
+     * the louder of the system-audio and microphone channels. Shown live in
+     * the UI so the user can see the app is actually listening while it
+     * waits to offer starting a meeting — not just for the meeting apps it
+     * recognizes by name, but for any audio source, including a
+     * browser-based meeting tool or an in-person conversation picked up on
+     * the microphone.
+     */
+    public int monitorLevel() {
+        return monitorRunning ? Math.max(monitorLevel, micMonitorLevel) : 0;
+    }
+
+    /**
+     * True when the system audio specifically has been loud within the last
+     * {@code withinMs}. Deliberately mic-blind — the hands-free auto-start
+     * for a recognized meeting app only ever triggers once its own audio is
+     * confirmed, never from ambient room noise on the microphone.
+     */
     public boolean systemAudioActiveWithin(long withinMs) {
         return monitorRunning && (System.currentTimeMillis() - monitorLastLoud) < withinMs;
+    }
+
+    /**
+     * True when either channel — system audio or microphone — has been loud
+     * within the last {@code withinMs}. Used only for the generic (no known
+     * app recognized) start prompt, which always requires an explicit click
+     * to actually start, so triggering it from room noise is harmless.
+     */
+    public boolean anyAudioActiveWithin(long withinMs) {
+        long now = System.currentTimeMillis();
+        return monitorRunning
+                && (now - monitorLastLoud < withinMs || now - micMonitorLastLoud < withinMs);
+    }
+
+    private void monitorMic() throws Exception {
+        javax.sound.sampled.TargetDataLine line = audioDevices.openBestCaptureLine(null);
+        micMonitorLine = line;
+        int frame = Math.max(2, line.getFormat().getFrameSize());
+        line.start();
+        byte[] buffer = new byte[BUFFER_BYTES * frame];
+        while (monitorRunning) {
+            int n = line.read(buffer, 0, buffer.length);
+            if (n <= 0) {
+                continue;
+            }
+            int level = peakLevel(buffer, n);
+            micMonitorLevel = level;
+            if (level >= MONITOR_ACTIVE_LEVEL) {
+                micMonitorLastLoud = System.currentTimeMillis();
+            }
+        }
     }
 
     private void monitorViaLine(String deviceName) throws Exception {

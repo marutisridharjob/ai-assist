@@ -54,21 +54,20 @@ JDK — not a browser):
   heavy for real-time** on most CPUs and will drop most live captions; the saved
   transcript is produced by Whisper regardless, so a lighter live model does not
   reduce your notes' quality,
-- an **Auto-start** toggle (top-right, off by default): when on, the app
-  watches for a meeting application (Microsoft Teams, Webex, Zoom, Slack) and,
-  when one is detected, shows a short **cancelable countdown**
-  (*"Zoom detected — starting in 10s"* with **Start now** / **Not now**) before
-  it begins recording — so you never forget to press Start. It never triggers
-  from your microphone alone. It works best with apps launched per meeting
-  (Webex, Zoom); Teams and Slack run in the background, so you may need to
-  dismiss one prompt at launch. The choice is remembered across launches.
-  A stronger **on meeting audio** sub-option makes it wait until the meeting is
-  actually **playing audio** (the other participants talking) before starting,
-  not just when the app is open — ideal for always-running Teams. It listens to
-  the **system audio only** (never your mic) via the same source the meeting
-  uses (the built-in tap on macOS/Windows, or a loopback/PulseAudio-monitor
-  device on Linux); if no system-audio source exists it falls back to plain app
-  detection,
+- an **Auto-start** toggle (on by default): while armed, a small line at the
+  bottom of the window always shows it's actually listening, with the live
+  audio level (e.g. *"Listening for a meeting… (audio 6%)"*) — never silently
+  doing nothing. Two tiers, so it isn't limited to a fixed list of apps:
+  - **Microsoft Teams, Webex, Zoom, or Slack**: once that app is confirmed
+    **playing audio** (the other participants talking, via the system-audio
+    tap/loopback — never the microphone), a short **cancelable countdown**
+    (*"Zoom detected — starting in 10s"* with **Start now** / **Not now**)
+    starts recording hands-free.
+  - **Anything else** — a meeting running in a browser tab, a tool this app
+    doesn't recognize by name, or an in-person conversation with no meeting
+    app at all — never starts on its own. Once there's real sustained audio
+    on *either* the system-audio source or the microphone, it asks
+    *"Audio detected (NN%) — start recording?"*; one click confirms.
 - a **Dark** toggle (top-right) switching the whole window between light and
   dark mode; the choice is remembered across launches. The UI uses the
   JDK's own cross-platform look-and-feel, so the window looks and behaves the

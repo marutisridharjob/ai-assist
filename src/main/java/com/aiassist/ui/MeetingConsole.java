@@ -111,9 +111,17 @@ public class MeetingConsole {
     private javax.swing.JCheckBox autoStartToggle;
     private JPanel autoStartPanel;
     private JLabel autoStartLabel;
+    private JPanel autoStartButtonsRow;   // Start now/Not now — hidden during the ambient "listening" state
     private long autoStartDeadline;      // 0 = no countdown running
     private String autoStartHandledApp;  // app already prompted for this episode
     private long autoStartCooldownUntil;  // don't re-prompt before this time
+    // Generic (no recognized app) start prompt: driven purely by sustained
+    // audio on either channel, so any meeting tool — a browser tab, one this
+    // app doesn't know by name — or an in-person conversation still gets
+    // noticed. Always requires an explicit click; never starts hands-free.
+    private static final long GENERIC_PROMPT_SUSTAIN_MS = 3_000; // recent loud audio needed to trigger
+    private static final long GENERIC_PROMPT_QUIET_MS = 8_000;   // quiet this long before the prompt withdraws
+    private boolean genericPromptActive;
     // Serialises system-audio monitor start/stop off the UI thread.
     private final java.util.concurrent.ExecutorService monitorControl =
             java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
@@ -435,13 +443,14 @@ public class MeetingConsole {
         titleLabel.setFont(uiFont(Font.PLAIN, 13));
         autoStartToggle = new javax.swing.JCheckBox("Auto-start");
         autoStartToggle.setFont(uiFont(Font.PLAIN, 13));
-        autoStartToggle.setToolTipText("<html>Start recording automatically when you join a meeting: "
-                + "the app watches for a meeting application (Microsoft Teams, Webex, Zoom, Slack) and "
-                + "waits until the meeting is actually <b>playing audio</b> (the other participants "
-                + "talking) before a short, cancelable countdown starts capture.<br>"
-                + "It uses the system audio only — never your microphone. It listens on the built-in "
-                + "tap (macOS/Windows) or a loopback/monitor device (Linux); if no system-audio source "
-                + "exists it falls back to app detection.</html>");
+        autoStartToggle.setToolTipText("<html>Watches for a meeting and offers to record it — a small "
+                + "line at the bottom of the window shows it's listening, with the live audio level.<br>"
+                + "For a recognized app (Microsoft Teams, Webex, Zoom, Slack) it waits until that app is "
+                + "actually <b>playing audio</b>, then a short, cancelable countdown starts capture "
+                + "hands-free.<br>"
+                + "For anything else — a meeting in a browser tab, a different tool, an in-person "
+                + "conversation — once there's real sustained audio (system audio or the microphone) it "
+                + "asks <b>\"start recording?\"</b> instead of starting on its own; one click confirms.</html>");
         autoStartToggle.setSelected(com.aiassist.setup.AppSettings.autoStart(true));
         autoStartToggle.addActionListener(e -> {
             com.aiassist.setup.AppSettings.setAutoStart(autoStartToggle.isSelected());
@@ -572,21 +581,28 @@ public class MeetingConsole {
         indicatorPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
         indicatorPanel.add(meetingIndicator);
         indicatorPanel.setVisible(false);
-        // Cancelable auto-start countdown bar (hidden unless armed and a meeting
-        // app is detected).
+        // Cancelable auto-start countdown / generic start prompt (hidden unless
+        // armed) plus an ambient "still listening" state with no buttons yet.
         autoStartLabel = themedLabel(" ");
         autoStartLabel.setFont(autoStartLabel.getFont().deriveFont(Font.PLAIN, 12f));
         JButton autoStartNow = button("Start now");
         autoStartNow.addActionListener(e -> {
             cancelAutoStartPrompt();
+            // Synchronous: the ambient monitor may still be holding the mic
+            // line at the instant this is clicked (the generic prompt keeps
+            // it running); startMeeting()'s own capture needs that device
+            // actually free, not just asked to free itself in the background.
+            stopMonitorNow();
             startMeeting();
         });
         JButton autoStartNotNow = button("Not now");
         autoStartNotNow.addActionListener(e -> dismissAutoStart());
+        autoStartButtonsRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        autoStartButtonsRow.add(sized(autoStartNow));
+        autoStartButtonsRow.add(sized(autoStartNotNow));
         autoStartPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
         autoStartPanel.add(autoStartLabel);
-        autoStartPanel.add(sized(autoStartNow));
-        autoStartPanel.add(sized(autoStartNotNow));
+        autoStartPanel.add(autoStartButtonsRow);
         autoStartPanel.setVisible(false);
         // Only the cross-tab bits live at the frame bottom now: the auto-start
         // countdown prompt and the "meeting in progress" indicator (shown while
@@ -1081,19 +1097,19 @@ public class MeetingConsole {
 
         // Section 1 — About.
         panel.add(leftRow(aboutHeading, themedLabel("Architecture & Design by Maruti, version 0.1")));
-        panel.add(javax.swing.Box.createVerticalStrut(8));
+        panel.add(javax.swing.Box.createVerticalStrut(4));
 
         // Section 2 — Appearance (the Dark-mode toggle, on the same row as the heading).
         darkModeToggle.setText("Dark mode");
         panel.add(leftRow(appearanceHeading, darkModeToggle));
-        panel.add(javax.swing.Box.createVerticalStrut(8));
+        panel.add(javax.swing.Box.createVerticalStrut(4));
 
         // Section — Speech model (moved off the Meeting tab so every tab's
         // chrome stays consistent; the Meeting tab keeps only Title/Auto-start).
         // The heading already says "Speech model", so the dropdown needs no
         // separate "Model:" label.
         panel.add(leftRow(speechModelHeading, modelCombo));
-        panel.add(javax.swing.Box.createVerticalStrut(8));
+        panel.add(javax.swing.Box.createVerticalStrut(4));
 
         // Section 3 — Instructions (a link that opens the instructions window),
         // heading and link on the same row.
@@ -1105,7 +1121,7 @@ public class MeetingConsole {
             }
         });
         panel.add(leftRow(instructionsHeading, instructionsLink));
-        panel.add(javax.swing.Box.createVerticalStrut(8));
+        panel.add(javax.swing.Box.createVerticalStrut(4));
 
         // Section 4 — Feedback.
         panel.add(leftRow(feedbackHeading));
@@ -1696,10 +1712,12 @@ public class MeetingConsole {
                 + "<li>The <b>Title</b> defaults to <i>Minutes of meeting</i> and appears at the top of the "
                 + "saved notes; the file itself is always named "
                 + "<code>Minutes-&lt;date-time&gt;.rtf</code>.</li>"
-                + "<li>Pick a speech model from the <b>Model:</b> dropdown on the <b>Settings</b> tab. "
-                + "Your choice is remembered.</li>"
-                + "<li>Press <b>Start</b> — or leave <b>Auto-start</b> ticked and the app starts by itself "
-                + "when a meeting app (Teams, Webex, Zoom) is playing audio.</li>"
+                + "<li>Pick a speech model from the dropdown under <b>Speech model:</b> on the "
+                + "<b>Settings</b> tab. Your choice is remembered.</li>"
+                + "<li>Press <b>Start</b> — or leave <b>Auto-start</b> ticked: for Teams/Webex/Zoom/Slack "
+                + "the app starts by itself once that app is playing audio; for anything else (a "
+                + "browser-based tool, an in-person conversation) it asks first once it hears real "
+                + "sustained audio.</li>"
                 + "<li>The transcript shows a single <b>Recording started</b> date/time header at the top; "
                 + "individual lines are not timestamped. <b>Your own speech is shown in blue</b>; the other "
                 + "participants use the normal colour.</li>"
@@ -1978,7 +1996,7 @@ public class MeetingConsole {
             throws javax.swing.text.BadLocationException {
         var attrs = new javax.swing.text.SimpleAttributeSet();
         javax.swing.text.StyleConstants.setForeground(attrs, color);
-        javax.swing.text.StyleConstants.setFontFamily(attrs, Font.SANS_SERIF);
+        javax.swing.text.StyleConstants.setFontFamily(attrs, UiStyle.FONT_FAMILY);
         javax.swing.text.StyleConstants.setFontSize(attrs, size);
         javax.swing.text.StyleConstants.setBold(attrs, bold);
         doc.insertString(doc.getLength(), text, attrs);
@@ -2453,13 +2471,26 @@ public class MeetingConsole {
     private static final long AUTO_START_COOLDOWN_MS = 45_000;
 
     /**
-     * Opt-in hands-free start: when a meeting app is detected and the app is
-     * idle, run a short cancelable countdown and then start capture. Never
-     * triggers from the microphone — only from a detected meeting app.
+     * Opt-in "watch for a meeting" behavior, with two tiers:
+     * <ul>
+     *   <li>a recognized app (Teams/Webex/Zoom/Slack) whose own audio is
+     *       confirmed active: unchanged hands-free path — a short cancelable
+     *       countdown, then capture starts automatically;</li>
+     *   <li>anything else — a browser-based tool this app doesn't recognize
+     *       by process name, a different meeting product entirely, or an
+     *       in-person conversation with no "app" at all — never starts
+     *       hands-free; instead, once there has been real sustained audio
+     *       (system audio or the microphone), a small prompt asks whether to
+     *       start, and stays up until answered or things go quiet again.</li>
+     * </ul>
+     * Either way, the system-audio + microphone monitor runs the whole time
+     * auto-start is armed and idle, and a live "still listening" line with
+     * the current audio level is always visible — so it's never silently
+     * doing nothing with no feedback.
      */
     private void updateAutoStart(LiveTranscriptionService.Status status) {
         if (autoStartToggle == null || !autoStartToggle.isSelected()) {
-            if (autoStartDeadline > 0) {
+            if (autoStartDeadline > 0 || genericPromptActive || autoStartPanel.isVisible()) {
                 cancelAutoStartPrompt();
             }
             setMonitorWanted(false);
@@ -2479,46 +2510,109 @@ public class MeetingConsole {
         boolean idle = !savingNotes
                 && status.state() == LiveTranscriptionService.State.IDLE
                 && modelsAvailable;
-        // Auto-start always waits for real meeting audio (the other participants
-        // talking) before triggering — never the microphone.
-        boolean gate = true;
 
+        if (!idle) {
+            if (autoStartDeadline > 0 || genericPromptActive || autoStartPanel.isVisible()) {
+                cancelAutoStartPrompt();
+            }
+            setMonitorWanted(false);
+            return;
+        }
+
+        // A known-app countdown already armed: unchanged hands-free path.
         if (autoStartDeadline > 0) {
             long remaining = autoStartDeadline - System.currentTimeMillis();
-            if (!idle || app == null) {
-                cancelAutoStartPrompt(); // conditions changed (or the app closed)
+            if (app == null) {
+                cancelAutoStartPrompt(); // the app closed before the countdown finished
                 return;
             }
             if (remaining <= 0) {
                 cancelAutoStartPrompt();
+                stopMonitorNow(); // guard: confirms the mic/system-audio line is actually free
                 startMeeting(); // hands-free start
                 return;
             }
+            setAutoStartBlinking(true);
             autoStartLabel.setText("▶ " + app + " detected — starting in "
                     + (remaining / 1000 + 1) + "s");
             return;
         }
 
-        // Armed and waiting. Are we clear to consider this app?
-        boolean appReady = idle && app != null
+        // Always watch — system audio and the microphone both — whenever armed
+        // and idle, regardless of whether a recognized app is running, so any
+        // meeting tool (including a browser tab) and an in-person conversation
+        // all get the same live "listening" feedback.
+        setMonitorWanted(true);
+        int level = liveTranscription.monitorLevel();
+
+        boolean appReady = app != null
                 && System.currentTimeMillis() >= autoStartCooldownUntil
                 && !app.equals(autoStartHandledApp);
-
-        // Stronger mode: keep a lightweight system-audio monitor running while
-        // we wait, and only trigger once the meeting is actually playing audio.
-        setMonitorWanted(gate && appReady);
-        boolean audioReady = !gate || liveTranscription.systemAudioActiveWithin(3000);
-
-        if (appReady && audioReady) {
+        if (appReady && liveTranscription.systemAudioActiveWithin(3000)) {
+            genericPromptActive = false;
             autoStartHandledApp = app;
             autoStartDeadline = System.currentTimeMillis() + AUTO_START_COUNTDOWN_MS;
             setMonitorWanted(false); // release the audio source before the meeting opens it
+            autoStartButtonsRow.setVisible(true);
+            setAutoStartBlinking(true);
+            autoStartLabel.setText("▶ " + app + " detected — starting in "
+                    + (AUTO_START_COUNTDOWN_MS / 1000) + "s");
+            autoStartPanel.setVisible(true);
+            frame.revalidate();
+            return;
+        }
+
+        // No recognized app (or its own audio isn't confirmed yet) — the
+        // generic, audio-only prompt. Unlike the countdown above, this never
+        // starts on its own; it only ever waits for "Start now".
+        if (genericPromptActive) {
+            if (!liveTranscription.anyAudioActiveWithin(GENERIC_PROMPT_QUIET_MS)) {
+                cancelAutoStartPrompt();
+                return;
+            }
+            setAutoStartBlinking(true);
+            autoStartLabel.setText("Audio detected (" + level + "%) — start recording?");
+            return;
+        }
+        if (System.currentTimeMillis() >= autoStartCooldownUntil
+                && liveTranscription.anyAudioActiveWithin(GENERIC_PROMPT_SUSTAIN_MS)) {
+            genericPromptActive = true;
+            autoStartButtonsRow.setVisible(true);
+            setAutoStartBlinking(true);
+            autoStartLabel.setText("Audio detected (" + level + "%) — start recording?");
+            autoStartPanel.setVisible(true);
+            frame.revalidate();
+            return;
+        }
+
+        // Ambient "still watching" state — nothing actionable yet, just live
+        // confirmation the app is actually listening (addresses "no
+        // indication of listening" even before anything is loud enough to
+        // prompt).
+        setAutoStartBlinking(false);
+        autoStartButtonsRow.setVisible(false);
+        autoStartLabel.setText(app != null
+                ? ("Listening for " + app + "'s audio (" + level + "%)…")
+                : ("Listening for a meeting… (audio " + level + "%)"));
+        if (!autoStartPanel.isVisible()) {
             autoStartPanel.setVisible(true);
             frame.revalidate();
         }
     }
 
-    /** Turns the background system-audio monitor on/off, off the UI thread. */
+    /** Blue and blinking when there's something to act on; quiet and steady otherwise. */
+    private void setAutoStartBlinking(boolean blinking) {
+        if (!blinking) {
+            autoStartLabel.setForeground(UiStyle.mutedText(darkMode));
+            return;
+        }
+        blinkOn = !blinkOn;
+        autoStartLabel.setForeground(blinkOn
+                ? new java.awt.Color(0x2D6CDF)
+                : (darkMode ? new java.awt.Color(0x2A3A5A) : new java.awt.Color(0xAEC4EC)));
+    }
+
+    /** Turns the background system-audio/microphone monitor on/off, off the UI thread. */
     private void setMonitorWanted(boolean wanted) {
         if (monitorWanted == wanted) {
             return;
@@ -2537,8 +2631,30 @@ public class MeetingConsole {
         });
     }
 
+    /**
+     * Stops the monitor and blocks until its microphone/system-audio lines
+     * are actually closed, unlike {@link #setMonitorWanted}'s asynchronous
+     * stop. Called right before a real meeting opens its own capture — the
+     * generic (non-known-app) prompt can still have the monitor running the
+     * instant "Start now" is clicked, and starting the meeting's capture
+     * before the monitor's mic line is actually released would race it for
+     * the same device.
+     */
+    private void stopMonitorNow() {
+        monitorWanted = false;
+        try {
+            liveTranscription.stopActivityMonitor();
+        } catch (Exception e) {
+            log.warn("System-audio monitor stop failed: {}", e.getMessage());
+        }
+    }
+
     private void cancelAutoStartPrompt() {
         autoStartDeadline = 0;
+        // Reset so a later burst of audio re-enters the "first triggered" branch
+        // in updateAutoStart (which shows the panel), rather than getting stuck
+        // updating an already-hidden panel's label forever.
+        genericPromptActive = false;
         if (autoStartPanel != null && autoStartPanel.isVisible()) {
             autoStartPanel.setVisible(false);
             frame.revalidate();
@@ -2724,18 +2840,42 @@ public class MeetingConsole {
             // best-effort
         }
 
-        java.util.List<String> problems = new java.util.ArrayList<>();
-        deleteRecursively(com.aiassist.setup.UserPaths.modelsDir(), problems);
-        deleteRecursively(com.aiassist.setup.UserPaths.modelBackupDir(), problems);
-        // Deletes .ai-assist, which now holds every saved setting (dark mode,
+        // Resolved once, and reused (not re-resolved) below in the shutdown-hook
+        // sweep — UserPaths' accessors re-create a folder if it's missing, which
+        // would undo a folder this same method just finished deleting.
+        java.nio.file.Path modelsDir = com.aiassist.setup.UserPaths.modelsDir();
+        java.nio.file.Path modelBackupDir = com.aiassist.setup.UserPaths.modelBackupDir();
+        // .ai-assist, next to the jar: every saved setting (dark mode,
         // auto-start, chosen speech model) as well as the API token and
         // first-run marker — no separate Preferences store to clean up.
-        deleteRecursively(com.aiassist.setup.UserPaths.configDir(), problems);
+        java.nio.file.Path configDir = com.aiassist.setup.UserPaths.configDir();
+        java.nio.file.Path documentsAiAssistDir = com.aiassist.setup.UserPaths.documents().resolve("ai-assist");
+
+        java.util.List<String> problems = new java.util.ArrayList<>();
+        deleteRecursively(modelsDir, problems);
+        deleteRecursively(modelBackupDir, problems);
+        deleteRecursively(configDir, problems);
         deleteDesktopShortcuts(problems);
-        // Documents/ai-assist has no other purpose than the models folder just removed.
-        deleteIfEmptyDir(com.aiassist.setup.UserPaths.documents().resolve("ai-assist"), problems);
+        // Documents/ai-assist has no other purpose than the models folder just
+        // removed above — delete the whole folder outright (not just "if empty"):
+        // Windows/macOS routinely leave a stray desktop.ini/.DS_Store behind,
+        // which made the old empty-only check never actually remove it.
+        deleteRecursively(documentsAiAssistDir, problems);
 
         if (!problems.isEmpty()) {
+            // One more real attempt at the moment this JVM actually exits, when
+            // whatever transient hold a file had (antivirus scan, indexing, a
+            // native library that briefly mmap'd something) has almost
+            // certainly cleared. More reliable than File.deleteOnExit(), whose
+            // reverse-registration-order deletion can't be trusted to remove a
+            // directory strictly after the files inside it.
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                java.util.List<String> ignored = new java.util.ArrayList<>();
+                deleteRecursively(modelsDir, ignored);
+                deleteRecursively(modelBackupDir, ignored);
+                deleteRecursively(configDir, ignored);
+                deleteRecursively(documentsAiAssistDir, ignored);
+            }, "uninstall-final-sweep"));
             showStyledMessage("Removed most ai-assist data, but could not remove:\n"
                     + String.join("\n", problems), "Uninstall ai-assist", JOptionPane.WARNING_MESSAGE);
         }
@@ -2801,19 +2941,6 @@ public class MeetingConsole {
         }
     }
 
-    /** Deletes a directory only if it is now empty (best-effort). */
-    private static void deleteIfEmptyDir(java.nio.file.Path dir, java.util.List<String> problems) {
-        if (dir == null || !java.nio.file.Files.isDirectory(dir)) {
-            return;
-        }
-        try (var children = java.nio.file.Files.list(dir)) {
-            if (children.findAny().isEmpty()) {
-                java.nio.file.Files.delete(dir);
-            }
-        } catch (java.io.IOException e) {
-            problems.add(dir + " (" + e.getMessage() + ")");
-        }
-    }
 
     /** Removes the Desktop shortcuts created on first run, on whichever OS created them. */
     private static void deleteDesktopShortcuts(java.util.List<String> problems) {

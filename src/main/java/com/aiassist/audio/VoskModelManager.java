@@ -168,13 +168,34 @@ public class VoskModelManager {
     }
 
     /**
-     * Models the user can pick from: the built-in default plus any unpacked
-     * Vosk model folder found in ./models next to the app.
+     * Ranks installed models by how well-suited they are as the automatic
+     * default for live captioning when the user hasn't picked one — not by
+     * raw accuracy, since the single most accurate Vosk model
+     * (vosk-model-en-us-0.22) is explicitly too heavy to keep up with live
+     * speech (see the Settings tab's model tooltip) and would make captions
+     * drop. "lgraph" is the real-time-capable sweet spot; the small model is
+     * a safe, fast fallback; the full model is listed last so it's still
+     * available to pick by hand but never auto-chosen over a lighter option.
+     * Anything not in this list (a future or unrecognized model) sorts after
+     * all of these, in whatever order it was found.
      */
-    /** First available model — the default until the user picks another. */
+    private static final java.util.List<String> PREFERRED_DEFAULT_MODEL_ORDER = java.util.List.of(
+            "vosk-model-en-us-0.22-lgraph",
+            "vosk-model-small-en-us-0.15",
+            "vosk-model-en-us-0.22");
+
+    /** The best of the installed models — the default until the user picks another. */
     public String defaultModelName() {
         var available = listAvailableModels();
-        return available.isEmpty() ? properties.modelName() : available.getFirst();
+        if (available.isEmpty()) {
+            return properties.modelName();
+        }
+        for (String preferred : PREFERRED_DEFAULT_MODEL_ORDER) {
+            if (available.contains(preferred)) {
+                return preferred;
+            }
+        }
+        return available.getFirst();
     }
 
     public java.util.List<String> listAvailableModels() {
