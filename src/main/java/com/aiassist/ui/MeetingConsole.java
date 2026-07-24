@@ -2416,7 +2416,18 @@ public class MeetingConsole {
 
     /** Begins a fresh meeting (a new session), e.g. after Stop or a startup error. */
     private void startMeeting() {
-        setMonitorWanted(false); // free the system-audio source for the meeting
+        // Synchronous: guarantees the monitor's mic/system-audio line is
+        // actually closed before the meeting's own capture tries to open the
+        // same device below. setMonitorWanted(false) alone (as this used to
+        // call) only asynchronously requests the stop and returns immediately
+        // — opening the real capture line while the monitor's line was still
+        // live raced it for the same microphone, which some platforms
+        // recover from gracefully and others don't, showing up as a capture
+        // line that's technically open but never carries real audio (a
+        // stuck 0% level for the whole meeting). Already done this way at
+        // every other startMeeting() call site; this covers the plain
+        // manual Start button too. A cheap no-op if already stopped.
+        stopMonitorNow();
         clearSavedNotesLink();   // the previous meeting's link goes away now
         try {
             if (liveTranscription.status().state() == LiveTranscriptionService.State.PAUSED
