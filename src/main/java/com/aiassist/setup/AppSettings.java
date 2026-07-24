@@ -23,7 +23,15 @@ public final class AppSettings {
 
     public static boolean darkMode(boolean defaultValue) {
         String value = load().getProperty("darkMode");
-        return value == null ? defaultValue : Boolean.parseBoolean(value);
+        if (value != null) {
+            return Boolean.parseBoolean(value);
+        }
+        Boolean legacy = legacyBoolean("com/aiassist/ui", "darkMode");
+        if (legacy != null) {
+            setDarkMode(legacy);
+            return legacy;
+        }
+        return defaultValue;
     }
 
     public static void setDarkMode(boolean dark) {
@@ -34,7 +42,15 @@ public final class AppSettings {
 
     public static boolean autoStart(boolean defaultValue) {
         String value = load().getProperty("autoStart");
-        return value == null ? defaultValue : Boolean.parseBoolean(value);
+        if (value != null) {
+            return Boolean.parseBoolean(value);
+        }
+        Boolean legacy = legacyBoolean("com/aiassist/ui", "autoStart");
+        if (legacy != null) {
+            setAutoStart(legacy);
+            return legacy;
+        }
+        return defaultValue;
     }
 
     public static void setAutoStart(boolean autoStart) {
@@ -45,13 +61,42 @@ public final class AppSettings {
 
     /** The last chosen speech model, or null when none has been chosen yet. */
     public static String modelName() {
-        return load().getProperty("modelName");
+        String value = load().getProperty("modelName");
+        if (value != null) {
+            return value;
+        }
+        String legacy = legacyString("com/aiassist/audio", "model");
+        if (legacy != null) {
+            setModelName(legacy);
+        }
+        return legacy;
     }
 
     public static void setModelName(String name) {
         Properties props = load();
         props.setProperty("modelName", name);
         save(props);
+    }
+
+    /**
+     * A one-time read of a value from the JDK Preferences store this setting
+     * used before it moved into {@code settings.properties} — so upgrading
+     * to a settings file never silently resets a choice the user already
+     * made (e.g. turning auto-start off) back to its default. Once read, the
+     * caller immediately persists it into the file, so this path is only
+     * ever taken once per setting.
+     */
+    private static Boolean legacyBoolean(String legacyPackagePath, String key) {
+        String raw = legacyString(legacyPackagePath, key);
+        return raw == null ? null : Boolean.valueOf(raw);
+    }
+
+    private static String legacyString(String legacyPackagePath, String key) {
+        try {
+            return java.util.prefs.Preferences.userRoot().node(legacyPackagePath).get(key, null);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private static Path file() {

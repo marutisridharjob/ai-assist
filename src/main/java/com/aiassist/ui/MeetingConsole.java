@@ -1066,20 +1066,33 @@ public class MeetingConsole {
         panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
         panel.setBorder(javax.swing.BorderFactory.createEmptyBorder(8, 16, 8, 16));
 
-        // Section 1 — About. The label is a heading like the others below it
-        // (bold); only the value after it is plain.
-        panel.add(leftRow(sectionHeading("About:"), themedLabel("  Architecture & Design by Maruti, version 0.1")));
+        // Every section heading below shares one fixed-width column (the
+        // widest heading's width), so each row's content — the description,
+        // the Dark mode checkbox, the Model dropdown, the Instructions link —
+        // all start at the same horizontal position regardless of how long
+        // that section's own heading text is.
+        JLabel aboutHeading = sectionHeading("About:");
+        JLabel appearanceHeading = sectionHeading("Appearance:");
+        JLabel speechModelHeading = sectionHeading("Speech model:");
+        JLabel instructionsHeading = sectionHeading("Instructions:");
+        JLabel feedbackHeading = sectionHeading("Feedback:");
+        alignHeadingColumn(aboutHeading, appearanceHeading, speechModelHeading,
+                instructionsHeading, feedbackHeading);
+
+        // Section 1 — About.
+        panel.add(leftRow(aboutHeading, themedLabel("Architecture & Design by Maruti, version 0.1")));
         panel.add(javax.swing.Box.createVerticalStrut(8));
 
         // Section 2 — Appearance (the Dark-mode toggle, on the same row as the heading).
         darkModeToggle.setText("Dark mode");
-        panel.add(leftRow(sectionHeading("Appearance"), darkModeToggle));
+        panel.add(leftRow(appearanceHeading, darkModeToggle));
         panel.add(javax.swing.Box.createVerticalStrut(8));
 
         // Section — Speech model (moved off the Meeting tab so every tab's
         // chrome stays consistent; the Meeting tab keeps only Title/Auto-start).
-        // Heading and its control share one row, like Appearance above.
-        panel.add(leftRow(sectionHeading("Speech model"), themedLabel("  Model:"), modelCombo));
+        // The heading already says "Speech model", so the dropdown needs no
+        // separate "Model:" label.
+        panel.add(leftRow(speechModelHeading, modelCombo));
         panel.add(javax.swing.Box.createVerticalStrut(8));
 
         // Section 3 — Instructions (a link that opens the instructions window),
@@ -1091,11 +1104,11 @@ public class MeetingConsole {
                 showInstructionsWindow();
             }
         });
-        panel.add(leftRow(sectionHeading("Instructions"), instructionsLink));
+        panel.add(leftRow(instructionsHeading, instructionsLink));
         panel.add(javax.swing.Box.createVerticalStrut(8));
 
         // Section 4 — Feedback.
-        panel.add(leftRow(sectionHeading("Feedback")));
+        panel.add(leftRow(feedbackHeading));
         feedbackArea = multiLineArea();
         ((javax.swing.text.AbstractDocument) feedbackArea.getDocument())
                 .setDocumentFilter(new LengthLimitFilter(FEEDBACK_MAX_CHARS));
@@ -1217,17 +1230,35 @@ public class MeetingConsole {
     /** A bold, slightly larger heading label that also follows the theme. */
     private JLabel sectionHeading(String text) {
         JLabel label = themedLabel(text);
-        label.setFont(label.getFont().deriveFont(Font.BOLD, 16f));
+        label.setFont(label.getFont().deriveFont(Font.BOLD, UiStyle.HEADING_SIZE));
         return label;
     }
 
     /** A blue, underlined, hand-cursor label that behaves like a hyperlink. */
     private JLabel linkLabel(String text) {
         JLabel label = new JLabel("<html><u>" + text + "</u></html>");
-        label.setForeground(new java.awt.Color(0x3B82F6));
+        label.setForeground(UiStyle.LINK_COLOR);
         label.setFont(uiFont(Font.PLAIN, 13));
         label.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
         return label;
+    }
+
+    /**
+     * Widens every given heading label to the widest one among them (plus a
+     * little breathing room), so each heading's row content — the Dark mode
+     * checkbox, the Model dropdown, the Instructions link, etc. — all start
+     * at the same horizontal position instead of trailing right after
+     * headings of different lengths.
+     */
+    private static void alignHeadingColumn(JLabel... headings) {
+        int widest = 0;
+        for (JLabel heading : headings) {
+            widest = Math.max(widest, heading.getPreferredSize().width);
+        }
+        java.awt.Dimension size = new java.awt.Dimension(widest + 8, headings[0].getPreferredSize().height);
+        for (JLabel heading : headings) {
+            heading.setPreferredSize(size);
+        }
     }
 
     /** Left-aligned row that plays nicely inside the vertical BoxLayout. */

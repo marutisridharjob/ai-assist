@@ -1,6 +1,5 @@
 package com.aiassist.setup;
 
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -138,19 +137,31 @@ public final class UserPaths {
         return out.toString();
     }
 
-    /** {@code ~/Documents/minutes-of-meeting} — created if missing. */
+    /**
+     * {@code ~/Documents/minutes-of-meeting} — created if missing, falling
+     * back to a folder next to the jar if that can't be done (see
+     * {@link #ensureWithFallback}).
+     */
     public static Path meetingNotesDir() {
-        return ensure(documents().resolve("minutes-of-meeting"));
+        return ensureWithFallback(documents().resolve("minutes-of-meeting"),
+                () -> com.aiassist.audio.VoskModelManager.appHome().resolve("minutes-of-meeting"));
     }
 
-    /** {@code ~/Documents/minutes-of-meeting/model-backups} — created if missing. */
+    /** {@code ~/Documents/minutes-of-meeting/model-backups} — created if missing, with the same fallback. */
     public static Path modelBackupDir() {
-        return ensure(documents().resolve("minutes-of-meeting").resolve("model-backups"));
+        return ensureWithFallback(documents().resolve("minutes-of-meeting").resolve("model-backups"),
+                () -> com.aiassist.audio.VoskModelManager.appHome()
+                        .resolve("minutes-of-meeting").resolve("model-backups"));
     }
 
-    /** {@code ~/Documents/ai-assist/models} — created if missing. */
+    /**
+     * {@code ~/Documents/ai-assist/models} — created if missing, falling back
+     * to {@code models} next to the jar (already one of the folders
+     * {@code VoskModelManager} searches) if that can't be done.
+     */
     public static Path modelsDir() {
-        return ensure(documents().resolve("ai-assist").resolve("models"));
+        return ensureWithFallback(documents().resolve("ai-assist").resolve("models"),
+                () -> com.aiassist.audio.VoskModelManager.appHome().resolve("models"));
     }
 
     /**
@@ -168,9 +179,35 @@ public final class UserPaths {
     private static Path ensure(Path dir) {
         try {
             Files.createDirectories(dir);
-        } catch (IOException e) {
+        } catch (Exception e) {
+            // Catches more than IOException on purpose: an unusual Windows
+            // profile (a broken OneDrive redirection, an oddly-encoded
+            // registry value, restricted permissions) can make this throw a
+            // RuntimeException (e.g. InvalidPathException) rather than an
+            // IOException, and a folder silently failing to appear here is
+            // exactly the "not created" reports this guards against.
             log.warn("Could not create {} ({})", dir, e.getMessage());
         }
         return dir;
+    }
+
+    /**
+     * Creates {@code preferred} (normally somewhere under Documents) and
+     * returns it if that actually produced a real directory; otherwise
+     * creates and returns {@code fallback} (a location next to the jar)
+     * instead, so the app always ends up with a real, writable folder
+     * somewhere the user can find rather than silently having none. Guards
+     * against Documents-folder resolution or creation failing in some
+     * Windows environment this couldn't be reproduced and fixed directly for.
+     */
+    private static Path ensureWithFallback(Path preferred, java.util.function.Supplier<Path> fallback) {
+        Path created = ensure(preferred);
+        if (Files.isDirectory(created)) {
+            return created;
+        }
+        Path fallbackDir = fallback.get();
+        log.warn("Could not use {} for ai-assist's files; using {} next to the jar instead",
+                preferred, fallbackDir);
+        return ensure(fallbackDir);
     }
 }
