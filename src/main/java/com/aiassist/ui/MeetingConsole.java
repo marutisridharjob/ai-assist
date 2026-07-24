@@ -1260,11 +1260,9 @@ public class MeetingConsole {
         return helpScroll;
     }
 
-    /** A bold, slightly larger heading label that also follows the theme. */
+    /** A label for a Settings-tab row, styled the same as labels on every other tab. */
     private JLabel sectionHeading(String text) {
-        JLabel label = themedLabel(text);
-        label.setFont(label.getFont().deriveFont(Font.BOLD, UiStyle.HEADING_SIZE));
-        return label;
+        return themedLabel(text);
     }
 
     /** A blue, underlined, hand-cursor label that behaves like a hyperlink. */
@@ -1839,13 +1837,19 @@ public class MeetingConsole {
         updatingModels = true;
         try {
             modelCombo.removeAllItems();
-            for (String name : liveTranscription.availableModels()) {
+            var available = liveTranscription.availableModels();
+            for (String name : available) {
                 modelCombo.addItem(name);
             }
             for (String name : liveTranscription.unpackingModels()) {
                 modelCombo.addItem(name + UNPACKING_SUFFIX);
             }
-            modelCombo.setSelectedItem(liveTranscription.activeModelName());
+            // With nothing actually installed, activeModelName() falls back to
+            // the configured default's name (needed elsewhere, to tell the user
+            // what to name a model they add) — but selecting that here would
+            // show a model that plainly does not exist as if it were chosen.
+            // Leave the (empty) dropdown with nothing selected instead.
+            modelCombo.setSelectedItem(available.isEmpty() ? null : liveTranscription.activeModelName());
         } finally {
             updatingModels = false;
         }

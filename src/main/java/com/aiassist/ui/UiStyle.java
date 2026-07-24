@@ -26,7 +26,6 @@ final class UiStyle {
     static final String FONT_FAMILY = resolveFontFamily();
     static final float BODY_SIZE = 13f;
     static final float SMALL_SIZE = 11f;
-    static final float HEADING_SIZE = 16f;
     static final Color LINK_COLOR = new Color(0x3B82F6);
     static final Dimension BUTTON_SIZE = new Dimension(80, 28);
 

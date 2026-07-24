@@ -104,19 +104,16 @@ Notes:
 
 ## Is the model actually being used?
 
-After you press **Apply** on the Editor or Compose tab, the status line ends
-with a **`[LLM: …]`** note that tells you exactly what happened:
+The Meeting/Editor/Compose tabs show only the actual summary or rewritten
+text — no diagnostic model info is mixed into that content. To check whether
+the LLM actually ran, launch the jar from a terminal (`java -jar
+ai-assist-<version>.jar`) and watch the console:
 
-- `[LLM: used <model> (1234 ms)]` — the model ran. ✅
-- `[LLM: no .gguf model found (looked in: …)]` — the file isn't in a folder the
-  app searches. The paths it looked in are listed — put the `.gguf` in one of
-  them (the simplest is right next to the jar, or a `models/` folder next to
-  the jar). Note: "next to the jar" means the folder containing the
-  `ai-assist-<version>.jar` you actually launched, not the source checkout.
-- `[LLM: <model> failed to load/run: …]` — the file was found but couldn't be
-  loaded (a corrupt/partial download, or a GGUF too new for the bundled
-  llama.cpp). Re-download it, or try a different quant.
-
-If it says "no model found", check the listed paths first — the most common
-cause is the model sitting next to the source tree while the jar runs from
-somewhere else.
+- `Local LLM '<model>' loaded in <N> ms` — the model loaded and is being used.
+- No such line — no `.gguf` was found in a folder the app searches (the
+  simplest is right next to the jar, or a `models/` folder next to it — "next
+  to the jar" means the folder containing the `ai-assist-<version>.jar` you
+  actually launched, not the source checkout), or it failed to load (a
+  corrupt/partial download, or a GGUF too new for the bundled llama.cpp —
+  re-download it or try a different quant). Either way, the app silently
+  falls back to the offline rule-based drafter, so Apply still works.
