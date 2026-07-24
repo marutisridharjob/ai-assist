@@ -471,6 +471,7 @@ public class MeetingConsole {
         extractionBar = new javax.swing.JProgressBar();
         extractionBar.setIndeterminate(true);
         extractionLabel = themedLabel(" ");
+        extractionLabel.setFont(uiFont(Font.PLAIN, UiStyle.SMALL_SIZE));
         extractionPanel = new JPanel(new BorderLayout(6, 0));
         extractionPanel.add(extractionLabel, BorderLayout.WEST);
         extractionPanel.add(extractionBar, BorderLayout.CENTER);
@@ -487,11 +488,11 @@ public class MeetingConsole {
 
         statusLabel = new JLabel(" ");
         // Small and muted — status sits quietly in the lower-left corner.
-        statusLabel.setFont(uiFont(Font.PLAIN, 11f));
+        statusLabel.setFont(uiFont(Font.PLAIN, UiStyle.SMALL_SIZE));
         // Live caption: in-progress words before the recognizer finalizes them.
         captionLabel = new JLabel(" ");
         captionLabel.setForeground(java.awt.Color.GRAY);
-        captionLabel.setFont(uiFont(Font.PLAIN, 11f));
+        captionLabel.setFont(uiFont(Font.PLAIN, UiStyle.SMALL_SIZE));
         startButton = new IndicatorButton("Start");
         startButton.setToolTipText("Begin a new meeting");
         startButton.addActionListener(e -> startMeeting());
@@ -536,6 +537,9 @@ public class MeetingConsole {
         // Clickable link to the last saved notes file (shown after Stop→Save,
         // until the next meeting starts or the app closes).
         notesLink = linkLabel("Open saved notes");
+        // Sits right under the status line, so it matches that line's size
+        // rather than a regular (body-size) link.
+        notesLink.setFont(uiFont(Font.PLAIN, UiStyle.SMALL_SIZE));
         notesLink.setVisible(false);
         notesLink.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
@@ -577,14 +581,14 @@ public class MeetingConsole {
         // On the Editor/Compose tabs the meeting chrome (title row, status,
         // buttons) is hidden; a blinking indicator shows a live meeting.
         meetingIndicator = new JLabel(" ");
-        meetingIndicator.setFont(uiFont(Font.PLAIN, 11f));
+        meetingIndicator.setFont(uiFont(Font.PLAIN, UiStyle.SMALL_SIZE));
         indicatorPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
         indicatorPanel.add(meetingIndicator);
         indicatorPanel.setVisible(false);
         // Cancelable auto-start countdown / generic start prompt (hidden unless
         // armed) plus an ambient "still listening" state with no buttons yet.
         autoStartLabel = themedLabel(" ");
-        autoStartLabel.setFont(autoStartLabel.getFont().deriveFont(Font.PLAIN, 12f));
+        autoStartLabel.setFont(uiFont(Font.PLAIN, UiStyle.SMALL_SIZE));
         JButton autoStartNow = button("Start now");
         autoStartNow.addActionListener(e -> {
             cancelAutoStartPrompt();
@@ -1015,7 +1019,7 @@ public class MeetingConsole {
         saveButton.setToolTipText("Save the result to a file");
         saveButton.addActionListener(e -> downloadAssistFile());
         composeStatus = new JLabel(" ");
-        composeStatus.setFont(uiFont(Font.PLAIN, 11f));
+        composeStatus.setFont(uiFont(Font.PLAIN, UiStyle.SMALL_SIZE));
         // Button order: Clear, Apply, Save.
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));
         controls.add(sized(clearButton));
@@ -1132,7 +1136,7 @@ public class MeetingConsole {
         feedbackScroll.setPreferredSize(new java.awt.Dimension(560, 78));
         roundTextArea(feedbackArea, feedbackScroll);
         feedbackCount = themedLabel(FEEDBACK_MAX_CHARS + " characters left");
-        feedbackCount.setFont(feedbackCount.getFont().deriveFont(11f));
+        feedbackCount.setFont(uiFont(Font.PLAIN, UiStyle.SMALL_SIZE));
         feedbackArea.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             private void update() {
                 int left = FEEDBACK_MAX_CHARS - feedbackArea.getText().length();
@@ -1187,7 +1191,7 @@ public class MeetingConsole {
         feedbackSubmit = button("Submit");
         feedbackSubmit.addActionListener(e -> submitFeedback());
         feedbackStatus = new JLabel(" ");
-        feedbackStatus.setFont(uiFont(Font.PLAIN, 11f));
+        feedbackStatus.setFont(uiFont(Font.PLAIN, UiStyle.SMALL_SIZE));
         themedLabels.add(feedbackStatus);
 
         // Uninstall sits on the same row as Clear/Submit, pinned to the right
@@ -1803,11 +1807,10 @@ public class MeetingConsole {
         new Thread(() -> {
             try {
                 String result = runOptions(composeChecks, feed, composeInstructions.getText());
-                String llm = "  [LLM: " + styleRewriteService.llmReport() + "]";
                 SwingUtilities.invokeLater(() -> {
                     composeResult.setText(result);
                     composeResult.setCaretPosition(0);
-                    composeStatus.setText((summary ? "Summary ready." : "Applied.") + llm);
+                    composeStatus.setText(summary ? "Summary ready." : "Applied.");
                 });
             } catch (Exception ex) {
                 SwingUtilities.invokeLater(() ->
@@ -2042,7 +2045,7 @@ public class MeetingConsole {
                     : (darkMode ? new java.awt.Color(0x2A3A5A) : new java.awt.Color(0xAEC4EC)));
         } else if (active) {
             blinkOn = !blinkOn;
-            meetingIndicator.setText("● MEETING IN PROGRESS");
+            meetingIndicator.setText("● Meeting in progress");
             meetingIndicator.setForeground(blinkOn
                     ? new java.awt.Color(0xE74C3C)
                     : (darkMode ? new java.awt.Color(0x5A2A2A) : new java.awt.Color(0xF5C6C2)));
@@ -2437,12 +2440,9 @@ public class MeetingConsole {
                         setStatus(savedMsg, false);
                     } else {
                         // A new meeting is already running; don't disturb its
-                        // live view, but still tell the user where the previous
-                        // meeting's notes went (a non-blocking popup).
+                        // live view. showSavedNotesLink() above already updated
+                        // the quiet "Open saved notes" link with no popup needed.
                         log.info("Previous meeting notes saved to {}", draft.savedTo());
-                        if (draft.savedTo() != null) {
-                            showBackgroundNote("Previous meeting notes saved to:\n" + draft.savedTo(), false);
-                        }
                     }
                 });
             } catch (Exception e) {
@@ -2718,10 +2718,8 @@ public class MeetingConsole {
                     return;
                 }
                 String text = styleRewriteService.summarizeMeeting(transcriptText, null);
-                String footer = "\n\n———\n[LLM: " + styleRewriteService.llmReport()
-                        + " · transcript: " + words + " words]";
                 SwingUtilities.invokeLater(() -> {
-                    summaryArea.setText(text + footer);
+                    summaryArea.setText(text);
                     summaryArea.setCaretPosition(0);
                     setStatus("Summary ready.", false);
                 });

@@ -33,6 +33,14 @@ interface VoskNative extends Library {
 
     void vosk_recognizer_free(Pointer recognizer);
 
+    /**
+     * Turns on per-word confidence scores in {@code result()}'s JSON (a
+     * {@code "result"} array of {@code {word, conf, start, end}}), off by
+     * default. Used to tell real speech apart from music/background noise
+     * the recognizer otherwise happily guesses words for.
+     */
+    int vosk_recognizer_set_words(Pointer recognizer, int words);
+
     int vosk_recognizer_accept_waveform(Pointer recognizer, byte[] data, int length);
 
     String vosk_recognizer_result(Pointer recognizer);

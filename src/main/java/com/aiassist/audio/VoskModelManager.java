@@ -164,6 +164,42 @@ public class VoskModelManager {
             } catch (IOException e) {
                 log.warn("Could not unpack dropped model zips in {}: {}", root, e.getMessage());
             }
+            // Whisper (.bin) and LLM (.gguf) files aren't zips — there's
+            // nothing to unpack, they're used directly from wherever they're
+            // found — but they got no safekeeping copy at all before, unlike
+            // a Vosk model's original .zip. Keep one alongside it for the
+            // same reason: protection against an accidental delete/overwrite
+            // of the copy actually in use.
+            try (var files = Files.list(root)) {
+                for (Path file : files.filter(VoskModelManager::isBackupWorthyModelFile).toList()) {
+                    backupModelFileCopy(file);
+                }
+            } catch (IOException e) {
+                log.warn("Could not check {} for model files to back up: {}", root, e.getMessage());
+            }
+        }
+    }
+
+    private static boolean isBackupWorthyModelFile(Path p) {
+        if (!Files.isRegularFile(p)) {
+            return false;
+        }
+        String n = p.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+        return (n.startsWith("ggml-") && n.endsWith(".bin")) || n.endsWith(".gguf");
+    }
+
+    /** Keeps a safekeeping copy in model-backups; the original stays in place and in use. */
+    private void backupModelFileCopy(Path file) {
+        try {
+            Path backupDir = com.aiassist.setup.UserPaths.modelBackupDir();
+            Path target = backupDir.resolve(file.getFileName().toString());
+            if (Files.exists(target)) {
+                return; // already backed up
+            }
+            Files.copy(file, target);
+            log.info("Backed up model file to {}", target);
+        } catch (IOException e) {
+            log.warn("Could not back up model file {} ({})", file, e.getMessage());
         }
     }
 

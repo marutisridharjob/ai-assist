@@ -19,6 +19,10 @@ public final class SpeechRecognizer implements AutoCloseable {
         if (handle == null) {
             throw new IllegalStateException("Could not create speech recognizer");
         }
+        // Per-word confidence, so LiveTranscriptionService can tell real speech
+        // apart from music/background noise the recognizer otherwise happily
+        // guesses "words" for.
+        VoskNative.INSTANCE.vosk_recognizer_set_words(handle, 1);
     }
 
     /** Feeds PCM audio; returns true when a completed phrase is ready in {@link #result()}. */

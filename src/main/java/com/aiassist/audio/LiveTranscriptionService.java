@@ -550,14 +550,21 @@ public class LiveTranscriptionService {
     /**
      * The model to use: the in-session choice, else the one saved from a
      * previous run (persisted across restarts in {@code .ai-assist/settings.properties}
-     * via {@link com.aiassist.setup.AppSettings}), else the first available.
+     * via {@link com.aiassist.setup.AppSettings}), else the best available.
+     * Either of the first two is only honoured while it's actually still
+     * present in a models folder — a previously chosen (or saved) model that
+     * was later deleted or moved would otherwise keep being shown as
+     * selected and attempted to load even though it no longer exists.
      */
     public String activeModelName() {
         String requested = requestedModelName;
         if (requested == null) {
             requested = com.aiassist.setup.AppSettings.modelName();
         }
-        return requested != null ? requested : modelManager.defaultModelName();
+        if (requested != null && modelManager.listAvailableModels().contains(requested)) {
+            return requested;
+        }
+        return modelManager.defaultModelName();
     }
 
     /** Models still unpacking from dropped zips (shown disabled in the UI). */
@@ -681,6 +688,15 @@ public class LiveTranscriptionService {
         // meeting audio ("other") keeps the low threshold so quiet remote voices
         // are not dropped.
         private static final int MIC_SPEECH_LEVEL = 30;
+        // Vosk's per-word confidence (0.0-1.0, enabled by
+        // SpeechRecognizer's vosk_recognizer_set_words) for genuine speech
+        // clusters tightly near 1.0; background music or other non-speech
+        // noise still gets "recognized" as some word each time (the model
+        // always guesses something), but with much lower, more scattered
+        // confidence. Deliberately conservative — low enough that it should
+        // only catch a phrase the model itself was unsure about, not cut off
+        // real (if imperfectly heard) speech.
+        private static final double MIN_SPEECH_CONFIDENCE = 0.3;
         private volatile int phrasePeak;
         private Thread thread;
         // Recognition runs on its own thread, fed by this bounded queue, so a
@@ -957,12 +973,37 @@ public class LiveTranscriptionService {
                 int threshold = "you".equals(selection.label()) ? MIC_SPEECH_LEVEL : MIN_SPEECH_LEVEL;
                 boolean hadSpeech = phrasePeak >= threshold;
                 phrasePeak = 0; // start measuring the next phrase
-                if (!text.isBlank() && hadSpeech && !session.isEnded()) {
+                if (!text.isBlank() && hadSpeech && !isLikelyNonSpeech(node) && !session.isEnded()) {
                     session.addUtterance(text, selection.label());
                 }
             } catch (Exception e) {
                 log.warn("Could not parse recognizer result: {}", resultJson, e);
             }
+        }
+
+        /**
+         * True when the recognizer's own per-word confidence for this phrase
+         * is too low to trust as real speech — the model still returns
+         * "recognized" words for music or other background noise (it always
+         * guesses something), just with much lower confidence than it has for
+         * actual speech. Never filters when a model doesn't return per-word
+         * confidence at all (an empty/missing "result" array): that means "no
+         * data to judge by", not "reject this".
+         */
+        private static boolean isLikelyNonSpeech(JsonNode node) {
+            JsonNode words = node.path("result");
+            if (!words.isArray() || words.isEmpty()) {
+                return false;
+            }
+            double total = 0;
+            int count = 0;
+            for (JsonNode w : words) {
+                if (w.has("conf")) {
+                    total += w.path("conf").asDouble(1.0);
+                    count++;
+                }
+            }
+            return count > 0 && (total / count) < MIN_SPEECH_CONFIDENCE;
         }
 
         private void updatePartial(String partialJson) {
