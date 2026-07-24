@@ -987,10 +987,20 @@ public class LiveTranscriptionService {
                 String text = node.path("text").asText("");
                 // Capture every recognized phrase, labelled only by its source
                 // ([you] = mic, [other] = system audio), but drop phrases that
-                // carried no real audio energy — those are silence artefacts —
-                // or that only spiked briefly (a click/pop, not a spoken word).
-                // The mic needs 30%+ (muted-in-app room noise otherwise gets drafted).
-                boolean hadSpeech = phrasePeak >= speechThreshold() && loudChunks >= MIN_LOUD_CHUNKS;
+                // carried no real audio energy — those are silence artefacts.
+                // The mic needs 30%+ (muted-in-app room noise otherwise gets drafted),
+                // AND to have stayed loud for several consecutive chunks, not just
+                // spiked once — a physical mic's acoustic noise floor (clicks, pops,
+                // electrical hum) can cross the threshold for an instant the way real
+                // speech does, but rarely sustains the way an actual spoken word does.
+                // "other" is a clean digital tap of what's playing, not an acoustic
+                // signal with that failure mode, so it only needs the original
+                // single-instant peak check — requiring sustained loudness there too
+                // would drop genuine but brief audio (a short remote word, a quick
+                // reply) that a noisy capture path never produced in the first place.
+                boolean hadSpeech = "you".equals(selection.label())
+                        ? phrasePeak >= MIC_SPEECH_LEVEL && loudChunks >= MIN_LOUD_CHUNKS
+                        : phrasePeak >= MIN_SPEECH_LEVEL;
                 phrasePeak = 0; // start measuring the next phrase
                 loudChunks = 0;
                 if (!text.isBlank() && hadSpeech && !isLikelyNonSpeech(node) && !session.isEnded()) {
