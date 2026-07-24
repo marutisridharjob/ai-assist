@@ -2991,6 +2991,14 @@ public class MeetingConsole {
         // first-run marker — no separate Preferences store to clean up.
         java.nio.file.Path configDir = com.aiassist.setup.UserPaths.configDir();
         java.nio.file.Path documentsAiAssistDir = com.aiassist.setup.UserPaths.documents().resolve("ai-assist");
+        // Belt-and-suspenders: also remove a stray copy at the plain, non-
+        // OneDrive-redirected Documents path. windowsKnownFolder() resolves
+        // the redirection by shelling out to `reg query` on every call, so a
+        // run where that happened to fail (still starting up, a permissions
+        // hiccup) would have created/used the classic path instead — leaving
+        // a second ai-assist folder there that the line above never visits.
+        java.nio.file.Path classicDocumentsAiAssistDir =
+                com.aiassist.setup.UserPaths.home().resolve("Documents").resolve("ai-assist");
 
         java.util.List<String> problems = new java.util.ArrayList<>();
         deleteRecursively(modelsDir, problems);
@@ -3002,6 +3010,9 @@ public class MeetingConsole {
         // Windows/macOS routinely leave a stray desktop.ini/.DS_Store behind,
         // which made the old empty-only check never actually remove it.
         deleteRecursively(documentsAiAssistDir, problems);
+        if (!classicDocumentsAiAssistDir.equals(documentsAiAssistDir)) {
+            deleteRecursively(classicDocumentsAiAssistDir, problems);
+        }
 
         if (!problems.isEmpty()) {
             // One more real attempt at the moment this JVM actually exits, when
@@ -3016,9 +3027,18 @@ public class MeetingConsole {
                 deleteRecursively(modelBackupDir, ignored);
                 deleteRecursively(configDir, ignored);
                 deleteRecursively(documentsAiAssistDir, ignored);
+                if (!classicDocumentsAiAssistDir.equals(documentsAiAssistDir)) {
+                    deleteRecursively(classicDocumentsAiAssistDir, ignored);
+                }
             }, "uninstall-final-sweep"));
+            // Keep the dialog short: a model folder can hold dozens of files,
+            // and listing every single one made this dialog unreadably tall.
+            int shownCount = Math.min(problems.size(), 6);
+            String shown = String.join("\n", problems.subList(0, shownCount));
+            String more = problems.size() > shownCount
+                    ? "\n...and " + (problems.size() - shownCount) + " more" : "";
             showStyledMessage("Removed most ai-assist data, but could not remove:\n"
-                    + String.join("\n", problems), "Uninstall ai-assist", JOptionPane.WARNING_MESSAGE);
+                    + shown + more, "Uninstall ai-assist", JOptionPane.WARNING_MESSAGE);
         }
 
         if (refreshTimer != null) {
@@ -3039,10 +3059,36 @@ public class MeetingConsole {
         if (root == null || !java.nio.file.Files.exists(root)) {
             return;
         }
+        int before = problems.size();
         try (var walk = java.nio.file.Files.walk(root)) {
             walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> deleteWithRetry(p, problems));
         } catch (java.io.IOException e) {
-            problems.add(root + " (" + e.getMessage() + ")");
+            problems.add(shortName(root) + " (" + e.getMessage() + ")");
+        }
+        if (java.nio.file.Files.exists(root) && isWindows()) {
+            // Last resort. A folder OneDrive is actively syncing can hold its
+            // files as "cloud" placeholders (reparse points), and clearing
+            // the DOS read-only attribute via Files.setAttribute — which
+            // works for a plain desktop.ini — can silently no-op on those
+            // (the exception is swallowed the same as "already writable"),
+            // so the walk above still leaves them behind. Windows' own
+            // recursive removal handles read-only/hidden/system files and
+            // these placeholders correctly (it's what Explorer's own Delete
+            // uses under the hood), so shell out to it before giving up.
+            try {
+                new ProcessBuilder("cmd", "/c", "rd", "/s", "/q", root.toAbsolutePath().toString())
+                        .redirectErrorStream(true).start().waitFor(15, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (Exception ignored) {
+                // best-effort; falls through to the existence check below
+            }
+            if (!java.nio.file.Files.exists(root)) {
+                // The fallback above cleared everything the walk had flagged
+                // under this root — drop just those entries (by position, not
+                // by re-matching text) so the caller's report reflects reality.
+                while (problems.size() > before) {
+                    problems.remove(problems.size() - 1);
+                }
+            }
         }
     }
 
@@ -3077,10 +3123,16 @@ public class MeetingConsole {
         }
         if (java.nio.file.Files.isRegularFile(p)) {
             p.toFile().deleteOnExit();
-            problems.add(p + " (in use; will be removed when the app closes)");
+            problems.add(shortName(p) + " (in use; will be removed when the app closes)");
         } else {
-            problems.add(p + (last == null ? "" : " (" + last.getMessage() + ")"));
+            problems.add(shortName(p) + (last == null ? "" : " (" + last.getMessage() + ")"));
         }
+    }
+
+    /** Just the file/folder name, not its full path — keeps the Uninstall report short. */
+    private static String shortName(java.nio.file.Path p) {
+        java.nio.file.Path name = p.getFileName();
+        return name == null ? p.toString() : name.toString();
     }
 
     /**
@@ -3101,6 +3153,10 @@ public class MeetingConsole {
         } catch (Exception ignored) {
             // not Windows, already writable, or already gone
         }
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win");
     }
 
 
