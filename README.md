@@ -1,5 +1,7 @@
 # ai-assist — listen & draft meeting notes
 
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
+
 A self-contained desktop assistant (Java 21 / Spring Boot) that **listens** to
 a meeting happening on this computer — MS Teams, Webex, or any platform, plus
 the room via the microphone — transcribes the **English** speech locally, and
@@ -20,7 +22,7 @@ proprietary libraries, models, or cloud services anywhere:
 
 | Component | License |
 |---|---|
-| ai-assist code and its native helper sources | this repository |
+| ai-assist code and its native helper sources | [GPL-3.0](LICENSE) |
 | Spring Boot, Jackson | Apache-2.0 |
 | Vosk speech engine (live captions) | Apache-2.0 |
 | Whisper / whisper.cpp + whisper-jni (final transcript) | MIT |
@@ -521,11 +523,11 @@ Verification), never your real account password.
 ## Build & test
 
 ```bash
-mvn test                    # 43 tests, no audio hardware or network needed
-mvn package                 # self-contained jar (model ships in resources)
+mvn test                    # 76 tests, no audio hardware or network needed
+mvn package                 # jar; ships with no model — see models/README.md
 ```
 
 ## Stack
 
-Java 21 · Spring Boot 3.5 · Swing (JDK-built-in window) · Java Sound API ·
+Java 21 · Spring Boot 4.0 · Swing (JDK-built-in window) · Java Sound API ·
 [Vosk](https://alphacephei.com/vosk/) English speech models (Apache-2.0).

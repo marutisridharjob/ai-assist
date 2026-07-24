@@ -111,7 +111,7 @@ flowchart TB
 | Layer | Technology | Purpose | License |
 |---|---|---|---|
 | UI | Java 21 + Swing (Metal L&F) | Native desktop window, same on every OS | GPLv2+CE (OpenJDK) |
-| App wiring / API | Spring Boot 3.5 + Tomcat | Dependency injection, optional local REST API | Apache-2.0 |
+| App wiring / API | Spring Boot 4.0 + Tomcat | Dependency injection, optional local REST API | Apache-2.0 |
 | Live captions | Vosk 0.3.45 | Real-time speech-to-text | Apache-2.0 |
 | Final transcript | whisper.cpp via whisper-jni 1.7.1 | Accurate offline transcription on Stop | MIT |
 | Summaries / rewrites | llama.cpp via de.kherud:llama 4.1.0 | In-process LLM (GGUF model) | MIT |
