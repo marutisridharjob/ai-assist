@@ -383,6 +383,7 @@ public class MeetingConsole {
         });
         darkModeToggle = new javax.swing.JCheckBox("Dark");
         darkModeToggle.setFont(uiFont(Font.PLAIN, 13));
+        darkModeToggle.setIcon(new RoundedCheckIcon());
         darkModeToggle.setToolTipText("Switch between light and dark mode");
         darkModeToggle.addActionListener(e -> {
             applyTheme(darkModeToggle.isSelected());
@@ -443,6 +444,7 @@ public class MeetingConsole {
         titleLabel.setFont(uiFont(Font.PLAIN, 13));
         autoStartToggle = new javax.swing.JCheckBox("Auto-start");
         autoStartToggle.setFont(uiFont(Font.PLAIN, 13));
+        autoStartToggle.setIcon(new RoundedCheckIcon());
         autoStartToggle.setToolTipText("<html>Watches for a meeting and offers to record it — a small "
                 + "line at the bottom of the window shows it's listening, with the live audio level.<br>"
                 + "For a recognized app (Microsoft Teams, Webex, Zoom, Slack) it waits until that app is "
@@ -695,6 +697,7 @@ public class MeetingConsole {
         var check = new javax.swing.JCheckBox(text);
         check.setOpaque(true);
         check.setFont(uiFont(Font.PLAIN, 13));
+        check.setIcon(new RoundedCheckIcon());
         themedChecks.add(check);
         return check;
     }
@@ -2204,6 +2207,57 @@ public class MeetingConsole {
         public void setEnabled(boolean enabled) {
             super.setEnabled(enabled);
             setForeground(enabled ? ACTIVE : INACTIVE);
+        }
+    }
+
+    /** A rounded-square checkbox indicator, matching the rounded buttons/fields. */
+    private static final class RoundedCheckIcon implements javax.swing.Icon {
+        private static final int SIZE = 15;
+        private static final int ARC = 5;
+
+        @Override
+        public void paintIcon(java.awt.Component c, java.awt.Graphics g, int x, int y) {
+            javax.swing.AbstractButton b = (javax.swing.AbstractButton) c;
+            java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+            g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
+                    java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+            java.awt.Color background = c.getBackground() == null ? java.awt.Color.WHITE : c.getBackground();
+            boolean dark = isDarkish(background);
+            boolean selected = b.isSelected();
+            boolean enabled = b.isEnabled();
+
+            java.awt.Color fill = selected
+                    ? (enabled ? UiStyle.LINK_COLOR : UiStyle.LINK_COLOR.darker())
+                    : (dark ? new java.awt.Color(0x3A3A3A) : java.awt.Color.WHITE);
+            java.awt.Color outline = dark ? new java.awt.Color(0x777777) : new java.awt.Color(0x999999);
+
+            g2.setColor(fill);
+            g2.fillRoundRect(x, y, SIZE, SIZE, ARC, ARC);
+            g2.setColor(selected ? fill.darker() : outline);
+            g2.drawRoundRect(x, y, SIZE - 1, SIZE - 1, ARC, ARC);
+
+            if (selected) {
+                g2.setColor(java.awt.Color.WHITE);
+                g2.setStroke(new java.awt.BasicStroke(1.6f,
+                        java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND));
+                g2.drawLine(x + 3, y + 8, x + 6, y + 11);
+                g2.drawLine(x + 6, y + 11, x + 12, y + 4);
+            }
+            g2.dispose();
+        }
+
+        @Override
+        public int getIconWidth() {
+            return SIZE;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return SIZE;
+        }
+
+        private static boolean isDarkish(java.awt.Color c) {
+            return (c.getRed() + c.getGreen() + c.getBlue()) / 3 < 128;
         }
     }
 
