@@ -52,7 +52,7 @@ public class DraftController {
         ListeningSession session = store.get(id);
         String transcript = session.transcript();
         if (transcript.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
                     "Session " + id + " has no captured utterances to draft from");
         }
         DraftOptions options = request == null

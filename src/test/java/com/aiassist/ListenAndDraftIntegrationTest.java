@@ -9,16 +9,18 @@ import com.aiassist.listen.Utterance;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
+import org.springframework.boot.restclient.RestTemplateCustomizer;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.boot.web.client.RestTemplateCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@AutoConfigureTestRestTemplate
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
                 // keep tests hands-off: no audio capture, no window, no scheduling side effects
@@ -120,7 +122,7 @@ class ListenAndDraftIntegrationTest {
     void endingAnEmptyMeetingIsRejected() {
         String id = rest.postForEntity("/api/sessions", Map.of(), SessionView.class).getBody().id();
         ResponseEntity<String> response = rest.postForEntity("/api/sessions/{id}/end", Map.of(), String.class, id);
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
     }
 
     @Test
@@ -143,7 +145,7 @@ class ListenAndDraftIntegrationTest {
     void draftingAnEmptySessionIsRejected() {
         String id = rest.postForEntity("/api/sessions", Map.of(), SessionView.class).getBody().id();
         ResponseEntity<String> response = rest.postForEntity("/api/sessions/{id}/draft", Map.of(), String.class, id);
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
     }
 
     @Test

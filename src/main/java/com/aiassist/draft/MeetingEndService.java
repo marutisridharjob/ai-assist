@@ -90,7 +90,7 @@ public class MeetingEndService {
         String transcript = utterances.stream().map(Utterance::text)
                 .reduce((a, b) -> a + "\n" + b).orElse("");
         if (transcript.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
                     "Meeting " + pending.sessionId()
                     + " ended but nothing was captured, so there is nothing to save");
         }
