@@ -93,7 +93,7 @@ public class MeetingConsole {
     private javax.swing.JTextField composeInstructions;
     private OptionChecks composeChecks;
     private JPanel composeInstrRow;
-    private JPanel composeOptionStack;
+    private JPanel composeButtonsRow;
     private final java.util.List<javax.swing.JCheckBox> themedChecks = new java.util.ArrayList<>();
     private final java.util.List<JLabel> themedLabels = new java.util.ArrayList<>();
     private final java.util.List<JButton> themedButtons = new java.util.ArrayList<>();
@@ -712,7 +712,7 @@ public class MeetingConsole {
      * out in a tidy grid and sorted alphabetically.
      */
     private final class OptionChecks {
-        final JPanel panel = new JPanel(new java.awt.GridLayout(0, 4, 12, 1));
+        final JPanel panel = new JPanel(new java.awt.GridLayout(0, 5, 12, 1));
         final javax.swing.JCheckBox grammar = themedCheck("Grammar");
         final javax.swing.JCheckBox compact = themedCheck("Compact");
         final javax.swing.JCheckBox detailed = themedCheck("Detailed");
@@ -1040,17 +1040,12 @@ public class MeetingConsole {
         fileRow.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 8, 4, 8));
 
         composeChecks = new OptionChecks();
-        composeInstructions = new javax.swing.JTextField(41);
+        composeInstructions = new javax.swing.JTextField(20);
         roundTextField(composeInstructions);
         composeInstructions.setFont(uiFont(Font.PLAIN, 13));
         JPanel instrRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
         instrRow.add(themedLabel("Additional instructions:"));
         instrRow.add(composeInstructions);
-        JPanel optionStack = new JPanel();
-        optionStack.setLayout(new javax.swing.BoxLayout(optionStack, javax.swing.BoxLayout.Y_AXIS));
-        optionStack.add(composeChecks.panel);
-        optionStack.add(javax.swing.Box.createVerticalStrut(12)); // space before instructions
-        optionStack.add(instrRow);
 
         JButton clearButton = button("Clear");
         clearButton.setToolTipText("Clear both boxes and unselect all options");
@@ -1069,13 +1064,20 @@ public class MeetingConsole {
         controls.add(sized(applyButton));
         controls.add(sized(saveButton));
 
+        // Instructions share the buttons' row (rather than a stacked row of
+        // their own above it), freeing a full row of vertical space for the
+        // text areas.
+        JPanel buttonsRow = new JPanel(new BorderLayout());
+        buttonsRow.add(instrRow, BorderLayout.WEST);
+        buttonsRow.add(composeStatus, BorderLayout.CENTER);
+        buttonsRow.add(controls, BorderLayout.EAST);
+
         JPanel south = new JPanel(new BorderLayout());
-        south.add(optionStack, BorderLayout.NORTH);
-        south.add(composeStatus, BorderLayout.CENTER);
-        south.add(controls, BorderLayout.EAST);
+        south.add(composeChecks.panel, BorderLayout.NORTH);
+        south.add(buttonsRow, BorderLayout.CENTER);
         south.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 8, 4, 8));
         composeInstrRow = instrRow;
-        composeOptionStack = optionStack;
+        composeButtonsRow = buttonsRow;
 
         // Your content on TOP, the modified result below it.
         JPanel top = new JPanel(new BorderLayout());
@@ -2411,7 +2413,7 @@ public class MeetingConsole {
         for (JPanel panel : java.util.List.of(topPanel, bottomPanel, buttonsPanel, controlsPanel,
                 editorFileRow, autoStartPanel, statusStackPanel,
                 composePanel, composeTopPanel, composeBottomPanel, composeSouthPanel,
-                composeChecks.panel, composeInstrRow, composeOptionStack,
+                composeChecks.panel, composeInstrRow, composeButtonsRow,
                 composeControlsPanel, indicatorPanel, southWrapPanel,
                 meetingTabPanel, meetingTopRow, extractionPanel)) {
             // Aqua only honors panel backgrounds when the panel is opaque.
@@ -2967,13 +2969,6 @@ public class MeetingConsole {
         if (meetingActive || savingNotes) {
             showStyledMessage("Finish or stop the current meeting before uninstalling.",
                     "Uninstall ai-assist", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-        int choice = showStyledConfirm(
-                "Remove ai-assist's models, backups, settings and shortcuts?\n"
-                        + "The jar and your saved meeting notes are kept. The app will close.",
-                "Uninstall ai-assist", new String[] {"Uninstall", "Cancel"}, 1);
-        if (choice != 0) {
             return;
         }
 
