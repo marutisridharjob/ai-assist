@@ -3059,6 +3059,7 @@ public class MeetingConsole {
     private static void deleteWithRetry(java.nio.file.Path p, java.util.List<String> problems) {
         java.io.IOException last = null;
         for (int attempt = 0; attempt < 5; attempt++) {
+            clearReadOnly(p);
             try {
                 java.nio.file.Files.delete(p);
                 return;
@@ -3079,6 +3080,26 @@ public class MeetingConsole {
             problems.add(p + " (in use; will be removed when the app closes)");
         } else {
             problems.add(p + (last == null ? "" : " (" + last.getMessage() + ")"));
+        }
+    }
+
+    /**
+     * Clears the Windows read-only attribute, if any. OneDrive drops a
+     * hidden/system/<b>read-only</b> {@code desktop.ini} into every folder it
+     * syncs (to customize the folder's icon), and Windows' DeleteFile refuses
+     * a read-only file with access-denied regardless of how many times it's
+     * retried — unlike a transient antivirus/indexer lock, retrying alone
+     * never clears it, which left a stray {@code desktop.ini} behind and, in
+     * turn, its non-empty parent folder (e.g. the OneDrive-redirected
+     * Documents/ai-assist) undeleted by Uninstall. A no-op wherever the "dos"
+     * attribute view isn't supported (macOS/Linux) or the file is already
+     * gone/writable.
+     */
+    private static void clearReadOnly(java.nio.file.Path p) {
+        try {
+            java.nio.file.Files.setAttribute(p, "dos:readonly", false);
+        } catch (Exception ignored) {
+            // not Windows, already writable, or already gone
         }
     }
 
