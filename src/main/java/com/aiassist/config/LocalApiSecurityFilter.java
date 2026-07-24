@@ -14,10 +14,12 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Hardens the local REST API while authentication is not yet in place. The API
- * is bound to loopback (see {@code server.address}), but a loopback bind alone
- * does not stop a malicious web page in the user's own browser from reaching it
- * via DNS-rebinding or a cross-site request. This filter closes that gap:
+ * Hardens the local REST API ahead of (and independent of) the bearer-token
+ * check in {@link com.aiassist.security.ApiTokenAuthFilter}, which runs
+ * right after this filter. The API is bound to loopback (see
+ * {@code server.address}), but a loopback bind alone does not stop a
+ * malicious web page in the user's own browser from reaching it via
+ * DNS-rebinding or a cross-site request. This filter closes that gap:
  *
  * <ul>
  *   <li>rejects any request whose {@code Host} is not a loopback name — the
@@ -28,8 +30,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
  *   <li>adds conservative security response headers on every reply.</li>
  * </ul>
  *
- * This is defence-in-depth, not a substitute for authentication, which is
- * planned separately.
+ * This is defence-in-depth: the token check is the actual authentication,
+ * this filter narrows who can even attempt it (same-machine, same-origin
+ * browser calls, or any non-browser client).
  */
 @Component
 @Order(org.springframework.core.Ordered.HIGHEST_PRECEDENCE)
