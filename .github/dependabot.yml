@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # Maven dependencies (Spring Boot, Vosk, whisper-jni, llama, JNA, ...).
+  # Grouped and monthly rather than the default weekly/individual PRs — the
+  # native-library dependencies here are deliberately version-pinned (see
+  # comments in pom.xml), so each bump needs a real look, not an auto-merge.
+  - package-ecosystem: "maven"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 10
+
+  # GitHub Actions used by the workflows in .github/workflows/.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"

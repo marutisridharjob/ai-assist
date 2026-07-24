@@ -1,0 +1,28 @@
+name: Test
+
+# Runs the test suite on every push and pull request so a broken build is
+# caught before merge — the only workflow that previously ran automatically
+# (package.yml) only builds installers on a manual trigger or version tag.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Run tests
+        run: mvn -B test
+
+      - name: Verify the jar still packages
+        run: mvn -B package -DskipTests
