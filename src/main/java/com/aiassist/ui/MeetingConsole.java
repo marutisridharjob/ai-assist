@@ -589,21 +589,34 @@ public class MeetingConsole {
         // armed) plus an ambient "still listening" state with no buttons yet.
         autoStartLabel = themedLabel(" ");
         autoStartLabel.setFont(uiFont(Font.PLAIN, UiStyle.SMALL_SIZE));
-        JButton autoStartNow = button("Start now");
-        autoStartNow.addActionListener(e -> {
-            cancelAutoStartPrompt();
-            // Synchronous: the ambient monitor may still be holding the mic
-            // line at the instant this is clicked (the generic prompt keeps
-            // it running); startMeeting()'s own capture needs that device
-            // actually free, not just asked to free itself in the background.
-            stopMonitorNow();
-            startMeeting();
+        // Hyperlinks, not buttons — same small size as the indicator text they
+        // sit beside, so the whole line reads as one compact status message.
+        JLabel autoStartNow = linkLabel("Start now");
+        autoStartNow.setFont(uiFont(Font.PLAIN, UiStyle.SMALL_SIZE));
+        autoStartNow.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                cancelAutoStartPrompt();
+                // Synchronous: the ambient monitor may still be holding the mic
+                // line at the instant this is clicked (the generic prompt keeps
+                // it running); startMeeting()'s own capture needs that device
+                // actually free, not just asked to free itself in the background.
+                stopMonitorNow();
+                startMeeting();
+            }
         });
-        JButton autoStartNotNow = button("Not now");
-        autoStartNotNow.addActionListener(e -> dismissAutoStart());
+        JLabel autoStartNotNow = linkLabel("Not now");
+        autoStartNotNow.setFont(uiFont(Font.PLAIN, UiStyle.SMALL_SIZE));
+        autoStartNotNow.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                dismissAutoStart();
+            }
+        });
         autoStartButtonsRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        autoStartButtonsRow.add(sized(autoStartNow));
-        autoStartButtonsRow.add(sized(autoStartNotNow));
+        autoStartButtonsRow.setOpaque(false); // shows autoStartPanel's own themed background through
+        autoStartButtonsRow.add(autoStartNow);
+        autoStartButtonsRow.add(autoStartNotNow);
         autoStartPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
         autoStartPanel.add(autoStartLabel);
         autoStartPanel.add(autoStartButtonsRow);
