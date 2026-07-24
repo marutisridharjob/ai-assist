@@ -593,7 +593,7 @@ public class MeetingConsole {
         autoStartLabel.setFont(uiFont(Font.PLAIN, UiStyle.SMALL_SIZE));
         // Hyperlinks, not buttons — same small size as the indicator text they
         // sit beside, so the whole line reads as one compact status message.
-        JLabel autoStartNow = linkLabel("Start now");
+        JLabel autoStartNow = linkLabel("Start");
         autoStartNow.setFont(uiFont(Font.PLAIN, UiStyle.SMALL_SIZE));
         autoStartNow.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
