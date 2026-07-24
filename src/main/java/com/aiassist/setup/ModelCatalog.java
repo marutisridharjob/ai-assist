@@ -68,7 +68,7 @@ public final class ModelCatalog {
 
     /** The catalogue, most important first. */
     public static final List<ModelSpec> MODELS = List.of(
-            new ModelSpec("vosk", "Vosk small English speech model", Tier.REQUIRED,
+            new ModelSpec("vosk", "Vosk English speech model", Tier.REQUIRED,
                     "live captions while the meeting runs",
                     "vosk-model-small-en-us-0.15.zip",
                     "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip",
