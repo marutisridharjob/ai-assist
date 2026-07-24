@@ -57,13 +57,24 @@ public class AiAssistApplication {
      * confusing way (confirmed: it surfaced as a missing Bean Validation
      * provider, nothing to do with validation at all).
      *
+     * <p>Copies rather than moves the jar, then relaunches from the copy and
+     * only best-effort-deletes the original: on Windows, the running JVM
+     * keeps its own jar file open for as long as classes might still load
+     * from it (true for this entire process's lifetime, since Spring Boot's
+     * loader reads bundled {@code BOOT-INF/lib/*.jar} entries lazily well
+     * into context startup, not all upfront) — a same-process {@code
+     * Files.move} of that open file can fail with a sharing violation
+     * depending on how it was opened, which would make this whole feature a
+     * silent no-op. Copying only ever needs read access, so it isn't
+     * affected either way; deleting the original is a nice-to-have cleanup,
+     * not something the relocation depends on.
+     *
      * <p>Best-effort and silent on any failure — skipped entirely for an
      * IDE/exploded classpath or a jpackage native launcher (neither is a
      * plain jar to begin with), if a jar already exists at the destination
-     * (e.g. a previous version — never overwritten), or if the move or
-     * relaunch fails for any reason (a jar can be briefly locked by its own
-     * running JVM on Windows) — this process just continues normally from
-     * wherever it already is, as if nothing happened.
+     * (e.g. a previous version — never overwritten), or if the copy or
+     * relaunch fails for any reason — this process just continues normally
+     * from wherever it already is, as if nothing happened.
      */
     private static boolean relocateJarIntoDocumentsOnFirstRun(String[] args) {
         try {
@@ -85,9 +96,17 @@ public class AiAssistApplication {
                 return false; // don't overwrite a jar already there
             }
             java.nio.file.Files.createDirectories(targetDir);
-            java.nio.file.Files.move(jar, target);
-            log.info("Moved {} into {} on first run; relaunching from there", jar, target);
+            java.nio.file.Files.copy(jar, target);
+            log.info("Copied {} into {} on first run; relaunching from there", jar, target);
             relaunch(target, args);
+            try {
+                java.nio.file.Files.delete(jar);
+            } catch (IOException cleanupFailure) {
+                // Harmless: the original download is just left in place (e.g. Windows
+                // still had it open, or a permissions quirk); the copy is what matters.
+                log.debug("Could not remove the original jar {} after copying it ({})",
+                        jar, cleanupFailure.getMessage());
+            }
             return true;
         } catch (Exception e) {
             log.debug("Could not relocate the jar into Documents/ai-assist ({}); continuing from where it is",
