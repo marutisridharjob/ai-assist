@@ -69,7 +69,7 @@ public final class DesktopShortcuts {
     private static void shortcutToFolder(Path desktop, String name, Path target) {
         try {
             if (isWindows()) {
-                createWindowsLnk(desktop.resolve(name + ".lnk"), target, null, null);
+                createWindowsLnk(desktop.resolve(name + ".lnk"), target, null, null, null);
             } else {
                 // A symlink shows up as a normal folder shortcut in Finder / file managers.
                 Path link = desktop.resolve(name);
@@ -103,7 +103,9 @@ public final class DesktopShortcuts {
             } else if (isWindows()) {
                 Path exe = windowsAppExe();
                 if (exe != null) {
-                    createWindowsLnk(desktop.resolve("ai-assist.lnk"), exe, null, exe.getParent());
+                    // The installed .exe already has ai-assist's icon baked in by
+                    // jpackage's own --icon build step; no override needed here.
+                    createWindowsLnk(desktop.resolve("ai-assist.lnk"), exe, null, exe.getParent(), null);
                     return;
                 }
                 // Otherwise the installer's own --win-shortcut already placed one
@@ -143,13 +145,18 @@ public final class DesktopShortcuts {
         return Files.isRegularFile(jar) ? java.util.Optional.of(jar) : java.util.Optional.empty();
     }
 
-    /** Windows: a .lnk that runs {@code javaw -jar <jar>} (no console window). */
+    /**
+     * Windows: a .lnk that runs {@code javaw -jar <jar>} (no console window).
+     * Its target is javaw.exe itself, so without an explicit icon the
+     * shortcut would show the generic Java coffee-cup icon rather than
+     * ai-assist's — pass the extracted .ico so it looks like a real app.
+     */
     private static void createWindowsJarLauncher(Path desktop, Path jar) {
         try {
             Path javaw = Path.of(System.getProperty("java.home", ""), "bin", "javaw.exe");
             Path javaExe = Files.isRegularFile(javaw) ? javaw : Path.of("javaw.exe");
             createWindowsLnk(desktop.resolve("ai-assist.lnk"), javaExe,
-                    "-jar \"" + jar + "\"", jar.getParent());
+                    "-jar \"" + jar + "\"", jar.getParent(), extractIcon("/icons/ai-assist.ico", "ai-assist.ico"));
         } catch (Exception e) {
             log.info("Skipped jar-launcher shortcut ({})", e.getMessage());
         }
@@ -177,6 +184,7 @@ public final class DesktopShortcuts {
             if (Files.exists(link)) {
                 return;
             }
+            Path icon = extractIcon("/icons/ai-assist.png", "ai-assist.png");
             Files.writeString(link, "[Desktop Entry]\n"
                     + "Type=Application\n"
                     + "Name=ai-assist\n"
@@ -184,10 +192,38 @@ public final class DesktopShortcuts {
                     + "Exec=java -jar \"" + jar + "\"\n"
                     + "Path=" + jar.getParent() + "\n"
                     + "Terminal=false\n"
+                    + (icon != null ? "Icon=" + icon + "\n" : "")
                     + "Categories=Office;\n");
             link.toFile().setExecutable(true);
         } catch (Exception e) {
             log.info("Skipped jar-launcher shortcut ({})", e.getMessage());
+        }
+    }
+
+    /**
+     * Extracts a bundled icon resource to the app's config folder (next to
+     * the jar) once, so a shortcut can point at a real file on disk — a
+     * classpath resource inside the jar isn't something a .lnk/.desktop file
+     * can reference directly. Returns null (never blocks shortcut creation)
+     * if the resource is missing or can't be written.
+     */
+    private static Path extractIcon(String classpathResource, String fileName) {
+        try {
+            Path icon = UserPaths.configDir().resolve(fileName);
+            if (Files.isRegularFile(icon)) {
+                return icon;
+            }
+            try (var in = DesktopShortcuts.class.getResourceAsStream(classpathResource)) {
+                if (in == null) {
+                    return null;
+                }
+                Files.copy(in, icon);
+            }
+            return icon;
+        } catch (Exception e) {
+            log.info("Could not extract the app icon ({}); the shortcut will use a default icon",
+                    e.getMessage());
+            return null;
         }
     }
 
@@ -223,9 +259,12 @@ public final class DesktopShortcuts {
     /**
      * Creates a Windows .lnk shortcut via the built-in WScript.Shell (no extra
      * tools). Uses a temporary VBScript so it works on any Windows version.
-     * {@code arguments} and {@code workingDir} may be null when not needed.
+     * {@code arguments}, {@code workingDir} and {@code iconPath} may be null
+     * when not needed — without an explicit IconLocation, a .lnk falls back
+     * to whatever icon its target file carries (e.g. javaw.exe's own Java
+     * coffee-cup icon, not ai-assist's).
      */
-    private static void createWindowsLnk(Path lnk, Path target, String arguments, Path workingDir)
+    private static void createWindowsLnk(Path lnk, Path target, String arguments, Path workingDir, Path iconPath)
             throws IOException, InterruptedException {
         if (Files.exists(lnk)) {
             return;
@@ -236,6 +275,9 @@ public final class DesktopShortcuts {
                 + (arguments != null ? "lnk.Arguments = \"" + vbsEscape(arguments) + "\"\r\n" : "")
                 + (workingDir != null
                         ? "lnk.WorkingDirectory = \"" + vbsEscape(workingDir.toAbsolutePath().toString()) + "\"\r\n"
+                        : "")
+                + (iconPath != null
+                        ? "lnk.IconLocation = \"" + vbsEscape(iconPath.toAbsolutePath().toString()) + "\"\r\n"
                         : "")
                 + "lnk.Save\r\n";
         Path script = Files.createTempFile("ai-assist-lnk", ".vbs");
