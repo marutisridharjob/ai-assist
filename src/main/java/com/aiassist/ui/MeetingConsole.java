@@ -931,14 +931,19 @@ public class MeetingConsole {
      * format, from which we extract readable runs best-effort.
      */
     private static String readDocument(java.nio.file.Path file, String ext) throws java.io.IOException {
-        switch (ext) {
-            case "docx":
-                return readDocx(file);
-            case "doc":
-                return readLegacyDoc(file);
-            default:
-                return java.nio.file.Files.readString(file);
-        }
+        String text = switch (ext) {
+            case "docx" -> readDocx(file);
+            case "doc" -> readLegacyDoc(file);
+            default -> java.nio.file.Files.readString(file);
+        };
+        // A file authored on Windows (Notepad, etc.) uses CRLF line endings;
+        // Files.readString() returns them verbatim. Left as-is, the stray '\r'
+        // before every '\n' isn't one of the drafter's or the RTF writer's
+        // recognized separators, so text split/rewritten downstream comes out
+        // with a raw control character stuck at the end of every line —
+        // exactly the kind of "weird result" this never shows on macOS/Linux
+        // (LF-only), so normalize to '\n' right here, once, for every source.
+        return text.replace("\r\n", "\n").replace("\r", "\n");
     }
 
     private static String readDocx(java.nio.file.Path file) throws java.io.IOException {

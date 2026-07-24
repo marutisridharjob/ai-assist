@@ -80,7 +80,11 @@ public class DraftFileWriter {
         }
         for (Draft.Section section : draft.sections()) {
             rtf.append("\\par{\\b\\fs26 ").append(escape(section.heading())).append("\\par}\n");
-            for (String line : section.body().split("\n")) {
+            // Normalize CRLF/CR first: split("\n") alone would leave a stray
+            // '\r' at the end of every line for text that came from a
+            // Windows-authored source, which renders as visible garbage here.
+            String body = section.body().replace("\r\n", "\n").replace("\r", "\n");
+            for (String line : body.split("\n")) {
                 if (line.startsWith("- ")) {
                     rtf.append("\\bullet  ").append(escape(line.substring(2))).append("\\par\n");
                 } else if (line.isBlank()) {

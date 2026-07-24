@@ -697,7 +697,18 @@ public class LiveTranscriptionService {
         // only catch a phrase the model itself was unsure about, not cut off
         // real (if imperfectly heard) speech.
         private static final double MIN_SPEECH_CONFIDENCE = 0.3;
+        // A single loud audio chunk (~100-150ms) is as likely to be a click,
+        // a pop, or electrical noise as it is real speech — Windows machines
+        // in particular tend to have noisier mic front-ends/AGC than macOS,
+        // and Vosk still "recognizes" a short word from that instant of noise
+        // (it always guesses something), including occasionally a real word
+        // that reads as a false transcript out of nowhere. Requiring the
+        // level to stay above threshold for several consecutive chunks
+        // (~300ms+) filters those out while any actually-spoken word,
+        // even a short one, easily clears it.
+        private static final int MIN_LOUD_CHUNKS = 3;
         private volatile int phrasePeak;
+        private volatile int loudChunks;
         private Thread thread;
         // Recognition runs on its own thread, fed by this bounded queue, so a
         // slow model (e.g. a large Vosk model that can't decode in real time)
@@ -889,6 +900,11 @@ public class LiveTranscriptionService {
             }
         }
 
+        /** The mic needs to be much louder than meeting audio to count as speech (see MIC_SPEECH_LEVEL). */
+        private int speechThreshold() {
+            return "you".equals(selection.label()) ? MIC_SPEECH_LEVEL : MIN_SPEECH_LEVEL;
+        }
+
         /**
          * Recognition-thread step: feed 16 kHz mono PCM to Vosk. A phrase is
          * committed only when the speaker pauses (Vosk's own end-of-phrase
@@ -897,6 +913,9 @@ public class LiveTranscriptionService {
         private void recognize(SpeechRecognizer recognizer, byte[] pcm, int length) {
             if (level > phrasePeak) {
                 phrasePeak = level; // track the loudest moment of this phrase
+            }
+            if (level >= speechThreshold()) {
+                loudChunks++; // track how long it stayed loud, not just the peak
             }
             if (recognizer.acceptWaveform(pcm, length)) {
                 appendResult(recognizer.result());
@@ -968,11 +987,12 @@ public class LiveTranscriptionService {
                 String text = node.path("text").asText("");
                 // Capture every recognized phrase, labelled only by its source
                 // ([you] = mic, [other] = system audio), but drop phrases that
-                // carried no real audio energy — those are silence artefacts.
+                // carried no real audio energy — those are silence artefacts —
+                // or that only spiked briefly (a click/pop, not a spoken word).
                 // The mic needs 30%+ (muted-in-app room noise otherwise gets drafted).
-                int threshold = "you".equals(selection.label()) ? MIC_SPEECH_LEVEL : MIN_SPEECH_LEVEL;
-                boolean hadSpeech = phrasePeak >= threshold;
+                boolean hadSpeech = phrasePeak >= speechThreshold() && loudChunks >= MIN_LOUD_CHUNKS;
                 phrasePeak = 0; // start measuring the next phrase
+                loudChunks = 0;
                 if (!text.isBlank() && hadSpeech && !isLikelyNonSpeech(node) && !session.isEnded()) {
                     session.addUtterance(text, selection.label());
                 }
