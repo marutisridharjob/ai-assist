@@ -819,7 +819,7 @@ public class MeetingConsole {
      * breaks — JOptionPane renders each line as its own row.
      */
     private int showStyledConfirm(String message, String title, String[] labels, int defaultIndex) {
-        JOptionPane pane = new JOptionPane(message, JOptionPane.QUESTION_MESSAGE,
+        JOptionPane pane = new JOptionPane(wrapForDialog(message), JOptionPane.QUESTION_MESSAGE,
                 JOptionPane.DEFAULT_OPTION, null, new Object[0]);
         JButton[] buttons = new JButton[labels.length];
         for (int i = 0; i < labels.length; i++) {
@@ -847,13 +847,26 @@ public class MeetingConsole {
      * JOptionPane.{INFORMATION,WARNING,ERROR}_MESSAGE.
      */
     private void showStyledMessage(String message, String title, int messageType) {
-        JOptionPane pane = new JOptionPane(message, messageType, JOptionPane.DEFAULT_OPTION, null, new Object[0]);
+        JOptionPane pane = new JOptionPane(wrapForDialog(message), messageType, JOptionPane.DEFAULT_OPTION, null,
+                new Object[0]);
         JButton ok = sized(dialogButton("OK", darkMode));
         ok.addActionListener(e -> pane.setValue("OK"));
         pane.setOptions(new Object[] {ok});
         pane.setInitialValue(ok);
         JDialog dialog = pane.createDialog(frame, title);
         dialog.setVisible(true);
+    }
+
+    /**
+     * Wraps a plain message as width-constrained HTML so a long line (a full
+     * file path, an OS error message) wraps onto several lines instead of
+     * stretching the dialog very wide — plain-String JOptionPane messages
+     * split on "\n" but never wrap a single long line on their own.
+     */
+    private static String wrapForDialog(String message) {
+        String escaped = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                .replace("\n", "<br>");
+        return "<html><div style='width:320px'>" + escaped + "</div></html>";
     }
 
     /** Gives a single-line text field a curved outline and a compact height. */
@@ -3009,9 +3022,9 @@ public class MeetingConsole {
         // removed above — delete the whole folder outright (not just "if empty"):
         // Windows/macOS routinely leave a stray desktop.ini/.DS_Store behind,
         // which made the old empty-only check never actually remove it.
-        deleteRecursively(documentsAiAssistDir, problems);
+        deleteAiAssistFolder(documentsAiAssistDir, problems);
         if (!classicDocumentsAiAssistDir.equals(documentsAiAssistDir)) {
-            deleteRecursively(classicDocumentsAiAssistDir, problems);
+            deleteAiAssistFolder(classicDocumentsAiAssistDir, problems);
         }
 
         if (!problems.isEmpty()) {
@@ -3020,16 +3033,16 @@ public class MeetingConsole {
             // native library that briefly mmap'd something) has almost
             // certainly cleared. More reliable than File.deleteOnExit(), whose
             // reverse-registration-order deletion can't be trusted to remove a
-            // directory strictly after the files inside it.
+            // directory strictly after the files inside it. Not tried again
+            // here for documentsAiAssistDir/classicDocumentsAiAssistDir — see
+            // deleteAiAssistFolder, which already handed those to a detached
+            // helper that runs after this process (and its working-directory
+            // lock on that very folder, if it has one) is actually gone.
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 java.util.List<String> ignored = new java.util.ArrayList<>();
                 deleteRecursively(modelsDir, ignored);
                 deleteRecursively(modelBackupDir, ignored);
                 deleteRecursively(configDir, ignored);
-                deleteRecursively(documentsAiAssistDir, ignored);
-                if (!classicDocumentsAiAssistDir.equals(documentsAiAssistDir)) {
-                    deleteRecursively(classicDocumentsAiAssistDir, ignored);
-                }
             }, "uninstall-final-sweep"));
             // Keep the dialog short: a model folder can hold dozens of files,
             // and listing every single one made this dialog unreadably tall.
@@ -3052,6 +3065,61 @@ public class MeetingConsole {
         monitorControl.shutdownNow();
         frame.dispose();
         System.exit(0);
+    }
+
+    /**
+     * Deletes {@code folder} (an ai-assist folder under Documents) the normal
+     * way, then — if it's still there — hands it to a detached helper
+     * instead of reporting it as a "could not remove" problem. On Windows
+     * this folder is very often the running app's own <em>current working
+     * directory</em>: {@code AiAssistApplication.relocateJarIntoDocumentsOnFirstRun}
+     * moves the jar here on first run, and the launcher it then relaunches
+     * from (and the Desktop-shortcut jar launcher) both set this same folder
+     * as the new process's working directory. Windows refuses to remove a
+     * directory that is any live process's current directory no matter how
+     * it's attempted — not a plain delete, not clearing attributes, not even
+     * a native {@code rd /s /q} child process (which inherits this same
+     * working directory unless told otherwise, and hits the identical
+     * restriction) — so it can only actually go once this process has fully
+     * exited. There's nothing wrong to report here; {@link
+     * #scheduleDeferredDelete} takes it from here.
+     */
+    private void deleteAiAssistFolder(java.nio.file.Path folder, java.util.List<String> problems) {
+        if (folder == null || !java.nio.file.Files.exists(folder)) {
+            return;
+        }
+        int before = problems.size();
+        deleteRecursively(folder, problems);
+        if (java.nio.file.Files.exists(folder)) {
+            while (problems.size() > before) {
+                problems.remove(problems.size() - 1);
+            }
+            scheduleDeferredDelete(folder);
+        }
+    }
+
+    /**
+     * Removes {@code folder} from a brand-new, detached process a few
+     * seconds from now, once this JVM has actually exited (see {@link
+     * #deleteAiAssistFolder} for why that wait is unavoidable). Its own
+     * working directory is set to the system temp folder — well away from
+     * {@code folder} — since a plain child process would otherwise inherit
+     * this JVM's working directory (the very folder it needs to remove) and
+     * hit the identical restriction itself. Best-effort and unawaited: this
+     * app is exiting either way.
+     */
+    private static void scheduleDeferredDelete(java.nio.file.Path folder) {
+        if (!isWindows()) {
+            return;
+        }
+        try {
+            new ProcessBuilder("cmd", "/c",
+                    "ping 127.0.0.1 -n 4 >nul & rd /s /q \"" + folder.toAbsolutePath() + "\"")
+                    .directory(java.nio.file.Path.of(System.getProperty("java.io.tmpdir", ".")).toFile())
+                    .start();
+        } catch (Exception ignored) {
+            // best-effort — the folder just won't disappear until the next Uninstall
+        }
     }
 
     /** Deletes a file or directory tree; records a short reason per failure, best-effort. */
