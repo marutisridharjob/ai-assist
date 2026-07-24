@@ -235,10 +235,17 @@ public class VoskModelManager {
     }
 
     public java.util.List<String> listAvailableModels() {
+        // Deliberately excludes properties.modelDir() (an OS-managed temp
+        // folder, only ever populated by the opt-in allow-download path in
+        // ensureModel()): that folder is invisible to the user (not
+        // Documents, not next to the jar) and never cleaned up, so a model
+        // downloaded there once would otherwise keep winning as "active"
+        // forever, silently overriding a real model the user later placed in
+        // one of modelRoots() — surprising and impossible to notice by
+        // browsing. ensureModel() still finds and reuses it directly (its own
+        // check at the same path), so allow-download keeps working; it's
+        // just never offered/preferred in the visible model list.
         var names = new java.util.LinkedHashSet<String>();
-        if (isModelPresent(Path.of(properties.modelDir(), properties.modelName()))) {
-            names.add(properties.modelName());
-        }
         for (Path root : modelRoots()) {
             if (!Files.isDirectory(root)) {
                 continue;
