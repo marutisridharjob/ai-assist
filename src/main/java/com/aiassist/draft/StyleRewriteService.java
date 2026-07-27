@@ -84,7 +84,10 @@ public class StyleRewriteService {
 
     private static final Pattern SENTENCE_SPLIT = Pattern.compile("(?<=[.!?])\\s+|\\n+");
 
-    private static final int SUMMARY_TOKENS = 900;
+    // Generous enough that a real meeting's full Key points + Action items
+    // lists don't get cut off mid-list — 900 was tuned for a short paragraph,
+    // not an hour-long conversation with a dozen-plus action items.
+    private static final int SUMMARY_TOKENS = 1800;
     private static final int REWRITE_TOKENS = 1200;
 
     private final TextRewriteService textRewrite;
@@ -170,10 +173,13 @@ public class StyleRewriteService {
             return "Not enough was captured to summarize.";
         }
         StringBuilder request = new StringBuilder(
-                "You are a meeting-notes assistant. Write a clear summary of the following "
-                + "meeting transcript. Start with a short Overview paragraph, then a 'Key points' "
-                + "section as a bulleted list, then an 'Action items' section as a bulleted list "
-                + "with the owner and any due date when they are mentioned. Use plain text.");
+                "You are a meeting-notes assistant. Write a detailed, thorough summary of the "
+                + "following meeting transcript — do not compress it down to only the highlights. "
+                + "Start with a short Overview paragraph, then a 'Key points' section as a bulleted "
+                + "list covering every topic discussed, then an 'Action items' section as a bulleted "
+                + "list with the owner and any due date when they are mentioned. List every action "
+                + "item mentioned anywhere in the transcript, including small or informal ones, not "
+                + "just the first few — do not omit any. Use plain text.");
         if (instructions != null && !instructions.isBlank()) {
             request.append(" Also: ").append(instructions.strip());
         }

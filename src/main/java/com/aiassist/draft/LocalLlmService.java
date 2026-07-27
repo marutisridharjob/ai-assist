@@ -31,10 +31,20 @@ public class LocalLlmService {
 
     private static final Logger log = LoggerFactory.getLogger(LocalLlmService.class);
 
-    /** Context window; leaves room for the reply. Kept modest for tiny models. */
-    private static final int CONTEXT_TOKENS = 8192;
-    /** Roughly 4 chars per token — cap the prompt so it fits the context. */
-    private static final int MAX_INPUT_CHARS = 12_000;
+    /**
+     * Context window; leaves room for the reply. A real meeting transcript
+     * (not a short pasted paragraph) easily runs past 12,000 characters —
+     * the previous, much smaller MAX_INPUT_CHARS silently cut the transcript
+     * off there, which meant anything discussed after that point (very often
+     * the action items, since those tend to come near the end of a meeting)
+     * never reached the model at all. 16k tokens is comfortably within what
+     * modern 1-8B instruct models (Qwen2.5, Llama 3.2, etc.) support natively,
+     * and a model trained for a smaller context still runs fine — it just
+     * won't use the extra room.
+     */
+    private static final int CONTEXT_TOKENS = 16_384;
+    /** Roughly 4 chars per token — cap the prompt so it fits the context, leaving room for the reply. */
+    private static final int MAX_INPUT_CHARS = 40_000;
 
     private LlamaModel model;
     private String loadedModel;
