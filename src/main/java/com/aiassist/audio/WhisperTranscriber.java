@@ -124,6 +124,12 @@ public class WhisperTranscriber {
             // is an acceptable trade here since the live Vosk captions already
             // cover the low-confidence case as a fallback transcript.
             params.temperatureInc = 0f;
+            // Don't transcribe non-speech audio as if it were words: whisper.cpp
+            // can otherwise emit tokens for music, applause, ringtones, hold
+            // music, etc. as if someone said something. noSpeechThold (0.6,
+            // whisper-jni's own default) already skips silent/paused stretches
+            // on its own.
+            params.suppressNonSpeechTokens = true;
             long t0 = System.currentTimeMillis();
             int rc = whisper.full(context, params, samples, samples.length);
             double audioSeconds = samples.length / 16000.0;
