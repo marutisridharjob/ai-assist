@@ -74,6 +74,7 @@ public class MeetingConsole {
     private javax.swing.JTextField titleField;
     private javax.swing.JCheckBox darkModeToggle;
     private javax.swing.JComboBox<String> modelCombo;
+    private javax.swing.JComboBox<String> engineCombo;
     private boolean updatingModels;
     private JPanel controlsPanel;
     private JPanel topPanel;
@@ -1142,9 +1143,10 @@ public class MeetingConsole {
         JLabel aboutHeading = sectionHeading("About:");
         JLabel appearanceHeading = sectionHeading("Appearance:");
         JLabel speechModelHeading = sectionHeading("Speech model:");
+        JLabel engineHeading = sectionHeading("Notes engine:");
         JLabel instructionsHeading = sectionHeading("Instructions:");
         JLabel feedbackHeading = sectionHeading("Feedback:");
-        alignHeadingColumn(aboutHeading, appearanceHeading, speechModelHeading,
+        alignHeadingColumn(aboutHeading, appearanceHeading, speechModelHeading, engineHeading,
                 instructionsHeading, feedbackHeading);
 
         // Section 1 — About.
@@ -1161,6 +1163,25 @@ public class MeetingConsole {
         // The heading already says "Speech model", so the dropdown needs no
         // separate "Model:" label.
         panel.add(leftRow(speechModelHeading, modelCombo));
+        panel.add(javax.swing.Box.createVerticalStrut(4));
+
+        // Section — which engine writes the saved notes' transcript: Whisper
+        // (re-transcribes the recording, accurate, the default) or Vosk (the
+        // live captions as-is, instant, less accurate).
+        engineCombo = new javax.swing.JComboBox<>(new String[] {
+                "Whisper (accurate, recommended)", "Vosk live captions (fast)"});
+        engineCombo.setFont(uiFont(Font.PLAIN, 13));
+        roundComboBox(engineCombo);
+        engineCombo.setToolTipText("<html><b>Which engine writes the saved meeting notes' transcript.</b><br>"
+                + "Whisper re-transcribes the full recording after Stop — slower, but the most "
+                + "accurate.<br>"
+                + "Vosk live captions save instantly using what was already shown live during the "
+                + "meeting, skipping the Whisper pass entirely — faster, less accurate.</html>");
+        engineCombo.setSelectedIndex(
+                "vosk".equals(com.aiassist.setup.AppSettings.transcriptionEngine("whisper")) ? 1 : 0);
+        engineCombo.addActionListener(e -> com.aiassist.setup.AppSettings.setTranscriptionEngine(
+                engineCombo.getSelectedIndex() == 1 ? "vosk" : "whisper"));
+        panel.add(leftRow(engineHeading, engineCombo));
         panel.add(javax.swing.Box.createVerticalStrut(4));
 
         // Section 3 — Instructions (a link that opens the instructions window),
@@ -2458,6 +2479,8 @@ public class MeetingConsole {
         composeStatus.setForeground(muted);
         modelCombo.setBackground(comboBg);
         modelCombo.setForeground(comboFg);
+        engineCombo.setBackground(comboBg);
+        engineCombo.setForeground(comboFg);
         tabs.setBackground(panelBg);
         tabs.setForeground(textFg);
         updateTabColors();

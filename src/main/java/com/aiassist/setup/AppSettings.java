@@ -79,6 +79,23 @@ public final class AppSettings {
     }
 
     /**
+     * Which engine produces the saved meeting notes' transcript: {@code
+     * "whisper"} (accurate, the default — re-transcribes the recording with
+     * Whisper) or {@code "vosk"} (use the live captions as-is, skipping
+     * Whisper entirely, for speed).
+     */
+    public static String transcriptionEngine(String defaultValue) {
+        String value = load().getProperty("transcriptionEngine");
+        return value != null ? value : defaultValue;
+    }
+
+    public static void setTranscriptionEngine(String engine) {
+        Properties props = load();
+        props.setProperty("transcriptionEngine", engine);
+        save(props);
+    }
+
+    /**
      * A one-time read of a value from the JDK Preferences store this setting
      * used before it moved into {@code settings.properties} — so upgrading
      * to a settings file never silently resets a choice the user already

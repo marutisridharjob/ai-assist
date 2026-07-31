@@ -130,11 +130,17 @@ public class MeetingEndService {
         boolean concurrentWithAnother = notesInFlight.incrementAndGet() > 1;
         try {
             ListeningSession session = sessions.get(pending.sessionId());
+            boolean useWhisper = !"vosk".equals(com.aiassist.setup.AppSettings.transcriptionEngine("whisper"));
             List<Utterance> utterances;
             if (concurrentWithAnother) {
                 log.info("Meeting {} is ending while another meeting's notes are still being processed; "
                         + "using the live captions instead of Whisper to avoid queueing behind it",
                         pending.sessionId());
+                pending.recordings().values().forEach(this::deleteQuietly);
+                utterances = session.utterances();
+            } else if (!useWhisper) {
+                log.info("Transcription engine is set to Vosk; using the live captions for meeting {} "
+                        + "instead of re-transcribing with Whisper", pending.sessionId());
                 pending.recordings().values().forEach(this::deleteQuietly);
                 utterances = session.utterances();
             } else {
