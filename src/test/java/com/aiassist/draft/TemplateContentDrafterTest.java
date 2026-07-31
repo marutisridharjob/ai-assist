@@ -45,6 +45,13 @@ class TemplateContentDrafterTest {
     }
 
     @Test
+    void detectActionItemsMatchesWhatDraftItselfFinds() {
+        Draft draft = drafter.draft("Q3 planning", NOTES, DraftOptions.defaults());
+
+        assertThat(drafter.detectActionItems(NOTES)).isEqualTo(draft.actionItems());
+    }
+
+    @Test
     void emailDraftHasGreetingBodyAndClosing() {
         Draft draft = drafter.draft("Renewal reminder", NOTES,
                 new DraftOptions(DraftOptions.ContentType.EMAIL, DraftOptions.Tone.FRIENDLY));

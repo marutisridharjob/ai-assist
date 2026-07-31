@@ -65,6 +65,16 @@ public class TemplateContentDrafter implements ContentDrafter {
             "well", "so", "like", "exactly", "cool", "great", "thanks", "thank you", "hello",
             "hi", "hey", "bye", "mm", "mhm", "yep", "alright", "fine", "good", "nice", "oh", "huh");
 
+    /**
+     * Sentences expressing a commitment or opening with an imperative verb,
+     * found by direct pattern matching over the transcript — deterministic
+     * and exhaustive (unlike an LLM's judgement call on what to include), so
+     * it can act as a safety net alongside an LLM-generated summary.
+     */
+    public List<String> detectActionItems(String transcript) {
+        return extractActionItems(meaningfulSentences(splitSentences(transcript)));
+    }
+
     @Override
     public Draft draft(String topic, String transcript, DraftOptions options) {
         List<String> sentences = splitSentences(transcript);

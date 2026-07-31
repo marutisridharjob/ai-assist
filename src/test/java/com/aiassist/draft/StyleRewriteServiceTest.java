@@ -42,7 +42,8 @@ class StyleRewriteServiceTest {
             new org.springframework.beans.factory.support.DefaultListableBeanFactory()
                     .getBeanProvider(OllamaStyleRewriter.class),
             new TemplateContentDrafter(),
-            new LocalLlmService());
+            new LocalLlmService(),
+            new TemplateContentDrafter());
 
     private static final String TEXT =
             "i think we should update the docs. don't forget the release notes. "
@@ -58,6 +59,29 @@ class StyleRewriteServiceTest {
                 .isEqualTo("Not enough was captured to summarize.");
         assertThat(StyleRewriteService.wordCount("hello there friend")).isEqualTo(3);
         assertThat(StyleRewriteService.wordCount("  ")).isZero();
+    }
+
+    @Test
+    void appendMissedActionItemsAddsWhatTheSummaryLeftOut() {
+        String transcript = "We need to finalize the security review. "
+                + "Sarah will follow up with the design team about onboarding.";
+        String llmSummaryMissingOne = "Overview: the team discussed the security review.\n\n"
+                + "Action items:\n- Finalize the security review.";
+
+        String result = service.appendMissedActionItems(llmSummaryMissingOne, transcript);
+
+        assertThat(result).contains("Action items detected directly in the transcript")
+                .containsIgnoringCase("Sarah will follow up");
+    }
+
+    @Test
+    void appendMissedActionItemsLeavesACompleteSummaryUnchanged() {
+        String transcript = "We need to finalize the security review.";
+        String llmSummaryCoveringIt = "Action items:\n- We need to finalize the security review.";
+
+        String result = service.appendMissedActionItems(llmSummaryCoveringIt, transcript);
+
+        assertThat(result).isEqualTo(llmSummaryCoveringIt);
     }
 
     @Test

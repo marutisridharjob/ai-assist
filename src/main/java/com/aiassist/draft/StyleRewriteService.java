@@ -94,15 +94,22 @@ public class StyleRewriteService {
     private final ObjectProvider<OllamaStyleRewriter> ollama;
     private final ContentDrafter drafter;
     private final LocalLlmService localLlm;
+    // Concrete (not the ContentDrafter interface, which OllamaContentDrafter can
+    // become @Primary for): its deterministic, regex-based action-item scan is
+    // always available regardless of which drafter is otherwise configured, and
+    // is used as a completeness safety net on the LLM summary path below.
+    private final TemplateContentDrafter templateDrafter;
 
     public StyleRewriteService(TextRewriteService textRewrite,
                                ObjectProvider<OllamaStyleRewriter> ollama,
                                ContentDrafter drafter,
-                               LocalLlmService localLlm) {
+                               LocalLlmService localLlm,
+                               TemplateContentDrafter templateDrafter) {
         this.textRewrite = textRewrite;
         this.ollama = ollama;
         this.drafter = drafter;
         this.localLlm = localLlm;
+        this.templateDrafter = templateDrafter;
     }
 
     /**
@@ -185,9 +192,44 @@ public class StyleRewriteService {
         }
         Optional<String> llm = runLlm(request.toString(), text, SUMMARY_TOKENS);
         if (llm.isPresent()) {
-            return llm.get();
+            return appendMissedActionItems(llm.get(), text);
         }
         return offlineSummary(text);
+    }
+
+    /**
+     * Cross-checks the LLM's summary against a deterministic, pattern-based
+     * scan of the transcript ({@link TemplateContentDrafter#detectActionItems})
+     * and appends anything the scan found that isn't already substantially
+     * present in the summary's own text, under its own clearly-labeled
+     * heading. An LLM is a judgement call on what to include and a small
+     * model especially can drop a real commitment; the deterministic scan
+     * can't skip a pattern match, so this guarantees nothing found that way
+     * is silently lost even if the LLM's own "Action items" section missed it.
+     */
+    String appendMissedActionItems(String llmSummary, String transcript) {
+        List<String> detected = templateDrafter.detectActionItems(transcript);
+        if (detected.isEmpty()) {
+            return llmSummary;
+        }
+        String normalizedSummary = normalizeForMatch(llmSummary);
+        List<String> missed = detected.stream()
+                .filter(item -> !normalizedSummary.contains(normalizeForMatch(item)))
+                .toList();
+        if (missed.isEmpty()) {
+            return llmSummary;
+        }
+        StringBuilder out = new StringBuilder(llmSummary.strip()).append(
+                "\n\nAction items detected directly in the transcript (automatic check, in case "
+                + "the summary above missed any):\n");
+        for (String item : missed) {
+            out.append("- ").append(item).append("\n");
+        }
+        return out.toString().strip();
+    }
+
+    private static String normalizeForMatch(String s) {
+        return s.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]+", " ").strip();
     }
 
     /**
