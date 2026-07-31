@@ -21,8 +21,8 @@ public final class AttributedTranscript {
     private AttributedTranscript() {
     }
 
-    private static final java.time.format.DateTimeFormatter TIME =
-            java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
+    private static final java.time.format.DateTimeFormatter TIMESTAMP =
+            java.time.format.DateTimeFormatter.ofPattern("EEE, d MMM yyyy · HH:mm:ss")
                     .withZone(java.time.ZoneId.systemDefault());
 
     /** Friendly speaker label for the saved document: You / Other. */
@@ -40,20 +40,33 @@ public final class AttributedTranscript {
     }
 
     /**
-     * The verbatim transcript text: a legend, then one line per utterance with
-     * the timestamp and the spoken content side by side, tagged You / Other.
+     * The verbatim transcript text: a legend, a single "Meeting started"
+     * timestamp, one line per non-blank utterance tagged You / Other (no
+     * per-line timestamp — the start/end timestamps already bound the whole
+     * conversation), and a single "Meeting ended" timestamp at the close.
+     * Utterances with no actual words (a silent/near-silent stretch that
+     * still produced an entry) are skipped rather than printed as an empty
+     * line.
      */
-    public static String rawText(List<Utterance> utterances) {
+    public static String rawText(List<Utterance> utterances, java.time.Instant startedAt,
+            java.time.Instant endedAt) {
         StringBuilder lines = new StringBuilder(LEGEND).append("\n");
+        lines.append("Meeting started: ").append(TIMESTAMP.format(startedAt)).append("\n\n");
         for (Utterance utterance : utterances) {
-            lines.append("\n[").append(TIME.format(utterance.capturedAt())).append("]  ")
-                    .append(speakerLabel(utterance.speaker())).append(":  ").append(utterance.text());
+            String text = utterance.text() == null ? "" : utterance.text().strip();
+            if (text.isEmpty()) {
+                continue;
+            }
+            lines.append(speakerLabel(utterance.speaker())).append(":  ").append(text).append("\n");
         }
+        lines.append("\nMeeting ended: ")
+                .append(TIMESTAMP.format(endedAt != null ? endedAt : java.time.Instant.now()));
         return lines.toString();
     }
 
-    public static Draft appendTo(Draft draft, List<Utterance> utterances) {
-        String lines = rawText(utterances);
+    public static Draft appendTo(Draft draft, List<Utterance> utterances,
+            java.time.Instant startedAt, java.time.Instant endedAt) {
+        String lines = rawText(utterances, startedAt, endedAt);
         List<Draft.Section> sections = new ArrayList<>(draft.sections());
         sections.add(new Draft.Section(HEADING, lines));
         return new Draft(draft.title(), draft.contentType(), draft.tone(), draft.summary(),

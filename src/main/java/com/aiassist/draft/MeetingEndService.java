@@ -158,7 +158,7 @@ public class MeetingEndService {
             Draft notes = new Draft(session.topic(), "MEETING_NOTES", "PROFESSIONAL", "",
                     List.of(new Draft.Section("Summary", summaryText)),
                     List.of(), List.of(), summaryText, "summary", Instant.now(), null);
-            Draft draft = AttributedTranscript.appendTo(notes, utterances);
+            Draft draft = AttributedTranscript.appendTo(notes, utterances, session.startedAt(), session.endedAt());
             Path saved = fileWriter.save(draft);
             log.info("Meeting {} finished with {} utterances; notes saved to {}",
                     pending.sessionId(), utterances.size(), saved);
