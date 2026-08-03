@@ -2898,7 +2898,15 @@ public class MeetingConsole {
                             true));
                     return;
                 }
-                String text = styleRewriteService.summarizeMeeting(transcriptText, null);
+                // Speaker-labeled, not the plain transcriptText above: lets the
+                // LLM attribute action items/points to You or Other when the
+                // transcript makes that clear, instead of an anonymous blob.
+                String attributedTranscript = sessions.get(id).utterances().stream()
+                        .filter(u -> u.text() != null && !u.text().isBlank())
+                        .map(u -> com.aiassist.draft.AttributedTranscript.speakerLabel(u.speaker()) + ": "
+                                + u.text())
+                        .collect(java.util.stream.Collectors.joining("\n"));
+                String text = styleRewriteService.summarizeMeeting(attributedTranscript, null);
                 SwingUtilities.invokeLater(() -> {
                     summaryArea.setText(text);
                     summaryArea.setCaretPosition(0);

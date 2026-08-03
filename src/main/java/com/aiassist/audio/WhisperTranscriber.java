@@ -114,16 +114,14 @@ public class WhisperTranscriber {
             WhisperFullParams params = new WhisperFullParams(WhisperSamplingStrategy.GREEDY);
             params.nThreads = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
             params.printProgress = false;
-            // Disable whisper.cpp's temperature-fallback loop: by default (temp
-            // step ~0.2) it RE-DECODES a chunk at increasingly random
-            // temperatures whenever its confidence thresholds aren't met —
-            // which real meeting audio (pauses, room noise, cross-talk) hits
-            // constantly, silently multiplying transcription time several-fold
-            // (a 30-minute recording taking an hour-plus is this, not a slow
-            // model). One greedy pass per ~30s chunk is dramatically faster and
-            // is an acceptable trade here since the live Vosk captions already
-            // cover the low-confidence case as a fallback transcript.
-            params.temperatureInc = 0f;
+            // Leave whisper.cpp's temperature-fallback loop at its own default
+            // (re-decodes a chunk at a higher temperature whenever its
+            // confidence thresholds aren't met, e.g. a pause, room noise,
+            // cross-talk). This costs real time — several-fold on a long
+            // recording — but accuracy is the priority for the saved notes,
+            // and MeetingEndService's TRANSCRIPTION_TIMEOUT is sized with
+            // that trade in mind, falling back to the live captions rather
+            // than blocking forever if it's still not done.
             // Don't transcribe non-speech audio as if it were words: whisper.cpp
             // can otherwise emit tokens for music, applause, ringtones, hold
             // music, etc. as if someone said something. noSpeechThold (0.6,

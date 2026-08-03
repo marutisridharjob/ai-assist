@@ -86,8 +86,11 @@ public class StyleRewriteService {
 
     // Generous enough that a real meeting's full Key points + Action items
     // lists don't get cut off mid-list — 900 was tuned for a short paragraph,
-    // not an hour-long conversation with a dozen-plus action items.
-    private static final int SUMMARY_TOKENS = 1800;
+    // not an hour-long conversation with a dozen-plus action items. Raised
+    // again (1800 -> 2600) for a genuinely lengthy, detailed summary rather
+    // than a compressed one; still comfortably inside CONTEXT_TOKENS (16384)
+    // alongside MAX_INPUT_CHARS' ~10,000-token input budget.
+    private static final int SUMMARY_TOKENS = 2600;
     private static final int REWRITE_TOKENS = 1200;
 
     private final TextRewriteService textRewrite;
@@ -182,11 +185,14 @@ public class StyleRewriteService {
         StringBuilder request = new StringBuilder(
                 "You are a meeting-notes assistant. Write a detailed, thorough summary of the "
                 + "following meeting transcript — do not compress it down to only the highlights. "
-                + "Start with a short Overview paragraph, then a 'Key points' section as a bulleted "
-                + "list covering every topic discussed, then an 'Action items' section as a bulleted "
-                + "list with the owner and any due date when they are mentioned. List every action "
-                + "item mentioned anywhere in the transcript, including small or informal ones, not "
-                + "just the first few — do not omit any. Use plain text.");
+                + "If lines are labeled with a speaker (e.g. 'You:' or 'Other:'), use those labels "
+                + "to say who raised each point and who owns each action item; if there are no "
+                + "such labels, write generally. Start with a short Overview paragraph, then a "
+                + "'Key points' section as a bulleted list covering every topic discussed, then an "
+                + "'Action items' section as a bulleted list with the owner and any due date when "
+                + "they are mentioned. List every action item mentioned anywhere in the transcript, "
+                + "including small or informal ones, not just the first few — do not omit any. "
+                + "Use plain text.");
         if (instructions != null && !instructions.isBlank()) {
             request.append(" Also: ").append(instructions.strip());
         }
@@ -208,7 +214,13 @@ public class StyleRewriteService {
      * is silently lost even if the LLM's own "Action items" section missed it.
      */
     String appendMissedActionItems(String llmSummary, String transcript) {
-        List<String> detected = templateDrafter.detectActionItems(transcript);
+        // detectActionItems() matches some patterns anchored to the start of
+        // a sentence (e.g. an imperative verb); transcript here may be the
+        // speaker-labeled version handed to the LLM ("You: Send the report
+        // Friday."), and that leading "You: "/"Other: " would defeat those
+        // anchored patterns for every single line. Strip it before scanning.
+        String plainTranscript = transcript.replaceAll("(?m)^(You|Other):\\s*", "");
+        List<String> detected = templateDrafter.detectActionItems(plainTranscript);
         if (detected.isEmpty()) {
             return llmSummary;
         }

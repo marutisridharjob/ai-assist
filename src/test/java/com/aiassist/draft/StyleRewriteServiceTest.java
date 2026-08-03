@@ -85,6 +85,20 @@ class StyleRewriteServiceTest {
     }
 
     @Test
+    void appendMissedActionItemsStripsSpeakerLabelsBeforeScanning() {
+        // "Send the report Friday." only matches the imperative-start pattern
+        // when it's at the very start of the sentence — the "Other: " speaker
+        // label handed to the LLM would defeat that unless it's stripped first.
+        String transcript = "You: We caught up on the project status.\n"
+                + "Other: Send the report Friday.";
+        String llmSummaryMissingIt = "Overview: a status update was discussed.";
+
+        String result = service.appendMissedActionItems(llmSummaryMissingIt, transcript);
+
+        assertThat(result).containsIgnoringCase("Send the report Friday");
+    }
+
+    @Test
     void everyStyleProducesOutput() {
         for (StyleRewriteService.Style style : StyleRewriteService.Style.values()) {
             assertThat(service.draft(TEXT, style))

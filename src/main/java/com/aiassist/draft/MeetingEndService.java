@@ -50,8 +50,15 @@ public class MeetingEndService {
      * forever: the abandoned call (not forcibly cancelled — a blocking native
      * call can't be interrupted safely) simply keeps running in the
      * background and its result is discarded.
+     *
+     * <p>WhisperTranscriber runs with its temperature-fallback loop enabled
+     * (accuracy over speed for the saved notes), which can multiply
+     * transcription time several-fold over a single greedy pass on audio
+     * with a lot of pauses/cross-talk — 30 minutes gives a long meeting
+     * enough room to actually finish that way rather than being bumped to
+     * the rougher live-caption fallback.
      */
-    private static final Duration TRANSCRIPTION_TIMEOUT = Duration.ofMinutes(10);
+    private static final Duration TRANSCRIPTION_TIMEOUT = Duration.ofMinutes(30);
     private static final Duration SUMMARY_TIMEOUT = Duration.ofMinutes(5);
 
     private static final ExecutorService FINISH_NOTES_EXECUTOR = Executors.newCachedThreadPool(runnable -> {
@@ -154,12 +161,23 @@ public class MeetingEndService {
                         "Meeting " + pending.sessionId()
                         + " ended but nothing was captured, so there is nothing to save");
             }
+            // A separate, speaker-labeled copy just for the LLM: the plain
+            // transcript above (used for the offline/rule-based fallback and
+            // the blank check) has no speaker attribution at all, so the LLM
+            // had no way to say who said or committed to what. This one
+            // prefixes each line with You/Other, matching the saved raw
+            // transcript's own labels, so the summary can attribute action
+            // items and points to a speaker when the transcript makes it clear.
+            String attributedTranscript = utterances.stream()
+                    .filter(u -> u.text() != null && !u.text().isBlank())
+                    .map(u -> AttributedTranscript.speakerLabel(u.speaker()) + ": " + u.text())
+                    .collect(Collectors.joining("\n"));
             // Summary + action points: the same path as the Meeting tab's Apply,
             // so a dropped-in LLM writes them (falling back to the offline drafter).
             String summaryText = stripMarkdownHeadings(concurrentWithAnother
                     ? styleRewrite.offlineSummary(transcript)
                     : runWithTimeout("Meeting summary generation", SUMMARY_TIMEOUT,
-                            () -> styleRewrite.summarizeMeeting(transcript, null),
+                            () -> styleRewrite.summarizeMeeting(attributedTranscript, null),
                             () -> styleRewrite.offlineSummary(transcript)));
             Draft notes = new Draft(session.topic(), "MEETING_NOTES", "PROFESSIONAL", "",
                     List.of(new Draft.Section("Summary", summaryText)),

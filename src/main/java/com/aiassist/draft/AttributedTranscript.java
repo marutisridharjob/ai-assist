@@ -26,7 +26,7 @@ public final class AttributedTranscript {
                     .withZone(java.time.ZoneId.systemDefault());
 
     /** Friendly speaker label for the saved document: You / Other. */
-    private static String speakerLabel(String speaker) {
+    public static String speakerLabel(String speaker) {
         if ("you".equalsIgnoreCase(speaker)) {
             return "You";
         }
