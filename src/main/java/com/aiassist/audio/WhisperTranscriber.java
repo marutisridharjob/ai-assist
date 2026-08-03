@@ -145,7 +145,8 @@ public class WhisperTranscriber {
                 String text = whisper.fullGetSegmentText(context, i).strip();
                 // whisper timestamps are in centiseconds.
                 double start = whisper.fullGetSegmentTimestamp0(context, i) / 100.0;
-                if (!text.isBlank()) {
+                double end = whisper.fullGetSegmentTimestamp1(context, i) / 100.0;
+                if (!text.isBlank() && !isLikelyHallucinatedFiller(text, end - start)) {
                     segments.add(new Segment(start, text));
                 }
             }
@@ -156,6 +157,23 @@ public class WhisperTranscriber {
             libraryFailed = true;
             return List.of();
         }
+    }
+
+    /** A quiet stretch this short still gets a segment; a real spoken word doesn't take this long. */
+    private static final double HALLUCINATION_DURATION_SECONDS = 4.0;
+
+    /**
+     * whisper.cpp's own no-speech detection ({@code noSpeechThold}) works on
+     * whole ~30-second windows, so a window with a little real speech and a
+     * long quiet tail can still get a short generic word ("the", "you",
+     * "thank you") hallucinated out of the silent part — a real spoken word
+     * or two takes at most a second or so, so a segment whose reported
+     * duration is much longer than that for so little text is almost
+     * certainly this, not genuine speech, and is dropped.
+     */
+    static boolean isLikelyHallucinatedFiller(String text, double durationSeconds) {
+        int words = text.split("\\s+").length;
+        return words <= 3 && durationSeconds > HALLUCINATION_DURATION_SECONDS;
     }
 
     /** Reads 16-bit little-endian mono PCM into normalized float samples. */
