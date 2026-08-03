@@ -96,6 +96,25 @@ public final class AppSettings {
     }
 
     /**
+     * Which engine drives the live, on-screen captions while the meeting is
+     * running: {@code "vosk"} (the default — instant, streaming) or {@code
+     * "whisper"} (a small/fast ggml model — noticeably more accurate, but
+     * captions arrive a few seconds behind speech in short chunks rather
+     * than growing word by word, since whisper.cpp decodes a finished chunk
+     * rather than streaming partial results the way Vosk does).
+     */
+    public static String liveCaptionEngine(String defaultValue) {
+        String value = load().getProperty("liveCaptionEngine");
+        return value != null ? value : defaultValue;
+    }
+
+    public static void setLiveCaptionEngine(String engine) {
+        Properties props = load();
+        props.setProperty("liveCaptionEngine", engine);
+        save(props);
+    }
+
+    /**
      * A one-time read of a value from the JDK Preferences store this setting
      * used before it moved into {@code settings.properties} — so upgrading
      * to a settings file never silently resets a choice the user already

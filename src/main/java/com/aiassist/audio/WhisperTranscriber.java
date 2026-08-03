@@ -41,15 +41,33 @@ public class WhisperTranscriber {
 
     /** The ggml-*.bin whisper model found next to the app, if any. */
     public synchronized Optional<Path> findModel() {
+        return findModel(n -> n.startsWith("ggml-") && n.endsWith(".bin"));
+    }
+
+    /**
+     * A small, fast ggml model (tiny/base) suitable for live captioning —
+     * unlike the full accurate pass on Stop, this one has to keep up with
+     * the conversation in near-real-time, and a medium/large model simply
+     * can't decode fast enough for that. {@code null} (via the caller
+     * checking {@link Optional#isEmpty()}) means live Whisper captions have
+     * nothing to run on even if an accurate (medium/large) model is present
+     * for the final transcript.
+     */
+    public synchronized Optional<Path> findFastModel() {
+        return findModel(n -> n.startsWith("ggml-")
+                && (n.contains("tiny") || n.contains("base"))
+                && n.endsWith(".bin"));
+    }
+
+    private Optional<Path> findModel(java.util.function.Predicate<String> nameMatches) {
         for (Path root : VoskModelManager.modelSearchRoots()) {
             if (!Files.isDirectory(root)) {
                 continue;
             }
             try (var files = Files.list(root)) {
-                var match = files.filter(p -> {
-                    String n = p.getFileName().toString().toLowerCase(Locale.ROOT);
-                    return n.startsWith("ggml-") && n.endsWith(".bin");
-                }).sorted().findFirst();
+                var match = files.filter(p -> nameMatches.test(p.getFileName().toString().toLowerCase(Locale.ROOT)))
+                        .sorted()
+                        .findFirst();
                 if (match.isPresent()) {
                     return match;
                 }
@@ -62,6 +80,11 @@ public class WhisperTranscriber {
 
     public boolean isAvailable() {
         return !libraryFailed && findModel().isPresent();
+    }
+
+    /** True when a small/fast model is available for live-caption use. */
+    public boolean isFastModelAvailable() {
+        return !libraryFailed && findFastModel().isPresent();
     }
 
     /**
@@ -106,11 +129,38 @@ public class WhisperTranscriber {
             return List.of();
         }
         try {
-            ensureLoaded(modelPath.get());
             float[] samples = readPcmAsFloat(pcmFile);
-            if (samples.length == 0) {
-                return List.of();
-            }
+            return decode(modelPath.get(), samples, pcmFile.getFileName().toString());
+        } catch (IOException e) {
+            log.warn("Could not read recording {} ({})", pcmFile, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * Transcribes one short in-memory chunk of live-captured 16 kHz mono
+     * audio (no temp file, for lower latency) with the small/fast model —
+     * see {@link #findFastModel()} — joining any recognized segments into a
+     * single line. Empty when no fast model is installed, the chunk decoded
+     * to nothing (silence), or Whisper is unavailable.
+     */
+    public synchronized String transcribeChunk(float[] samples) {
+        Optional<Path> modelPath = findFastModel();
+        if (libraryFailed || modelPath.isEmpty()) {
+            return "";
+        }
+        List<Segment> segments = decode(modelPath.get(), samples, "live chunk");
+        return segments.stream().map(Segment::text)
+                .collect(java.util.stream.Collectors.joining(" ")).strip();
+    }
+
+    /** Loads {@code modelPath} if needed and runs whisper.cpp's full decode over {@code samples}. */
+    private List<Segment> decode(Path modelPath, float[] samples, String logLabel) {
+        if (samples.length == 0) {
+            return List.of();
+        }
+        try {
+            ensureLoaded(modelPath);
             WhisperFullParams params = new WhisperFullParams(WhisperSamplingStrategy.GREEDY);
             params.nThreads = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
             params.printProgress = false;
@@ -131,7 +181,7 @@ public class WhisperTranscriber {
             long t0 = System.currentTimeMillis();
             int rc = whisper.full(context, params, samples, samples.length);
             double audioSeconds = samples.length / 16000.0;
-            log.info("Whisper transcribed {} ({}s of audio) in {} ms", pcmFile.getFileName(),
+            log.info("Whisper transcribed {} ({}s of audio) in {} ms", logLabel,
                     (long) audioSeconds, System.currentTimeMillis() - t0);
             if (rc != 0) {
                 log.warn("Whisper transcription returned code {}", rc);

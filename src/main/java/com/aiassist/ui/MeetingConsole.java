@@ -75,6 +75,7 @@ public class MeetingConsole {
     private javax.swing.JCheckBox darkModeToggle;
     private javax.swing.JComboBox<String> modelCombo;
     private javax.swing.JComboBox<String> engineCombo;
+    private javax.swing.JComboBox<String> liveEngineCombo;
     private boolean updatingModels;
     private JPanel controlsPanel;
     private JPanel topPanel;
@@ -1144,10 +1145,11 @@ public class MeetingConsole {
         JLabel appearanceHeading = sectionHeading("Appearance:");
         JLabel speechModelHeading = sectionHeading("Speech model:");
         JLabel engineHeading = sectionHeading("Notes engine:");
+        JLabel liveEngineHeading = sectionHeading("Live captions:");
         JLabel instructionsHeading = sectionHeading("Instructions:");
         JLabel feedbackHeading = sectionHeading("Feedback:");
         alignHeadingColumn(aboutHeading, appearanceHeading, speechModelHeading, engineHeading,
-                instructionsHeading, feedbackHeading);
+                liveEngineHeading, instructionsHeading, feedbackHeading);
 
         // Section 1 — About.
         panel.add(leftRow(aboutHeading, themedLabel("Architecture & Design by Maruti, version 0.1")));
@@ -1182,6 +1184,30 @@ public class MeetingConsole {
         engineCombo.addActionListener(e -> com.aiassist.setup.AppSettings.setTranscriptionEngine(
                 engineCombo.getSelectedIndex() == 1 ? "vosk" : "whisper"));
         panel.add(leftRow(engineHeading, engineCombo));
+        panel.add(javax.swing.Box.createVerticalStrut(4));
+
+        // Section — which engine drives the live, on-screen captions: Vosk
+        // (instant, streaming, the default) or a small/fast Whisper model
+        // (noticeably more accurate, but arrives in a few-second chunk
+        // rather than growing word by word — whisper.cpp decodes a finished
+        // buffer rather than streaming partials the way Vosk does). Requires
+        // a ggml-tiny*/ggml-base*.bin model; without one this always falls
+        // back to Vosk regardless of the setting.
+        liveEngineCombo = new javax.swing.JComboBox<>(new String[] {
+                "Vosk (instant, streaming)", "Whisper (a few seconds behind, more accurate)"});
+        liveEngineCombo.setFont(uiFont(Font.PLAIN, 13));
+        roundComboBox(liveEngineCombo);
+        liveEngineCombo.setToolTipText("<html><b>Which engine writes the live, on-screen captions.</b><br>"
+                + "Vosk streams partial captions instantly as you speak.<br>"
+                + "Whisper (a small/fast ggml-tiny or ggml-base model) is noticeably more accurate, "
+                + "but captions appear in short chunks a few seconds behind speech instead of growing "
+                + "word by word. Needs a ggml-tiny*.bin or ggml-base*.bin model in the models folder — "
+                + "without one, this stays on Vosk no matter what's selected here.</html>");
+        liveEngineCombo.setSelectedIndex(
+                "whisper".equals(com.aiassist.setup.AppSettings.liveCaptionEngine("vosk")) ? 1 : 0);
+        liveEngineCombo.addActionListener(e -> com.aiassist.setup.AppSettings.setLiveCaptionEngine(
+                liveEngineCombo.getSelectedIndex() == 1 ? "whisper" : "vosk"));
+        panel.add(leftRow(liveEngineHeading, liveEngineCombo));
         panel.add(javax.swing.Box.createVerticalStrut(4));
 
         // Section 3 — Instructions (a link that opens the instructions window),
@@ -2481,6 +2507,8 @@ public class MeetingConsole {
         modelCombo.setForeground(comboFg);
         engineCombo.setBackground(comboBg);
         engineCombo.setForeground(comboFg);
+        liveEngineCombo.setBackground(comboBg);
+        liveEngineCombo.setForeground(comboFg);
         tabs.setBackground(panelBg);
         tabs.setForeground(textFg);
         updateTabColors();

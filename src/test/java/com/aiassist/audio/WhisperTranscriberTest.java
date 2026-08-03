@@ -62,4 +62,30 @@ class WhisperTranscriberTest {
             System.setProperty("user.home", originalHome);
         }
     }
+
+    @Test
+    void findFastModelOnlyMatchesTinyOrBaseGgmlFiles(@TempDir Path isolatedHome) throws Exception {
+        String originalHome = System.getProperty("user.home");
+        System.setProperty("user.home", isolatedHome.toString());
+        try {
+            Path modelsDir = isolatedHome.resolve("ai-assist").resolve("models");
+            Files.createDirectories(modelsDir);
+            // A big, accurate model for the saved-notes pass — must NOT be
+            // picked for live captions, it's far too slow to keep up live.
+            Files.createFile(modelsDir.resolve("ggml-medium.bin"));
+
+            WhisperTranscriber transcriber = new WhisperTranscriber();
+            assertThat(transcriber.findFastModel()).isEmpty();
+            assertThat(transcriber.isFastModelAvailable()).isFalse();
+            // findModel() (the accurate/final pass) still finds the medium model.
+            assertThat(transcriber.findModel()).isPresent();
+
+            Files.createFile(modelsDir.resolve("ggml-tiny.en.bin"));
+            assertThat(transcriber.findFastModel())
+                    .contains(modelsDir.resolve("ggml-tiny.en.bin"));
+            assertThat(transcriber.isFastModelAvailable()).isTrue();
+        } finally {
+            System.setProperty("user.home", originalHome);
+        }
+    }
 }

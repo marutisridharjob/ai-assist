@@ -43,6 +43,7 @@ public class LiveTranscriptionService {
     private final VoskModelManager modelManager;
     private final SessionStore sessions;
     private final TranscriptionProperties properties;
+    private final WhisperTranscriber whisperTranscriber;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final AtomicReference<Status> status =
@@ -57,11 +58,13 @@ public class LiveTranscriptionService {
     private volatile String recorderSessionId;
 
     public LiveTranscriptionService(AudioDeviceService audioDevices, VoskModelManager modelManager,
-                                    SessionStore sessions, TranscriptionProperties properties) {
+                                    SessionStore sessions, TranscriptionProperties properties,
+                                    WhisperTranscriber whisperTranscriber) {
         this.audioDevices = audioDevices;
         this.modelManager = modelManager;
         this.sessions = sessions;
         this.properties = properties;
+        this.whisperTranscriber = whisperTranscriber;
     }
 
     /**
@@ -861,9 +864,93 @@ public class LiveTranscriptionService {
         }
 
         private void startRecognition() {
-            recognitionThread = new Thread(this::recognitionLoop, "recognize-" + selection.label());
+            boolean useWhisperLive = "whisper".equals(com.aiassist.setup.AppSettings.liveCaptionEngine("vosk"))
+                    && whisperTranscriber.isFastModelAvailable();
+            Runnable loop = useWhisperLive ? this::whisperChunkRecognitionLoop : this::recognitionLoop;
+            recognitionThread = new Thread(loop, "recognize-" + selection.label());
             recognitionThread.setDaemon(true);
             recognitionThread.start();
+        }
+
+        // How long a chunk can grow before it's transcribed anyway, even
+        // without a pause — bounds live-caption latency and keeps each
+        // Whisper call a manageable size.
+        private static final double WHISPER_CHUNK_MAX_SECONDS = 8.0;
+        // A pause this long (after some real speech) marks a natural phrase
+        // boundary — the same idea as Vosk's own end-of-phrase detection,
+        // just driven by raw audio level since there's no recognizer here to
+        // ask.
+        private static final double WHISPER_CHUNK_PAUSE_SECONDS = 0.7;
+
+        /**
+         * Live-caption path using a small/fast Whisper model instead of Vosk:
+         * buffers raw 16 kHz audio until either a natural pause or a max
+         * duration is reached, then transcribes that whole chunk at once.
+         * Noticeably more accurate than Vosk in practice, at the cost of
+         * captions arriving in a few-second chunks rather than growing word
+         * by word live — whisper.cpp decodes a finished buffer, it doesn't
+         * stream partial results the way Vosk does.
+         */
+        private void whisperChunkRecognitionLoop() {
+            java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+            double quietSeconds = 0;
+            boolean hadLoudAudio = false;
+            try {
+                while (running || !recognitionQueue.isEmpty()) {
+                    byte[] chunk;
+                    try {
+                        chunk = recognitionQueue.poll(100, java.util.concurrent.TimeUnit.MILLISECONDS);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                    if (chunk == null) {
+                        continue;
+                    }
+                    buffer.write(chunk, 0, chunk.length);
+                    double chunkSeconds = chunk.length / 2.0 / 16000.0;
+                    if (peakPercent(chunk, chunk.length) >= speechThreshold()) {
+                        hadLoudAudio = true;
+                        quietSeconds = 0;
+                    } else {
+                        quietSeconds += chunkSeconds;
+                    }
+                    double bufferedSeconds = buffer.size() / 2.0 / 16000.0;
+                    boolean sustainedPause = hadLoudAudio && quietSeconds >= WHISPER_CHUNK_PAUSE_SECONDS;
+                    if (buffer.size() > 0 && (sustainedPause || bufferedSeconds >= WHISPER_CHUNK_MAX_SECONDS)) {
+                        flushWhisperChunk(buffer.toByteArray(), hadLoudAudio);
+                        buffer.reset();
+                        quietSeconds = 0;
+                        hadLoudAudio = false;
+                    }
+                }
+                if (buffer.size() > 0) {
+                    flushWhisperChunk(buffer.toByteArray(), hadLoudAudio);
+                }
+            } catch (Throwable t) {
+                log.warn("Whisper live-caption recognition on '{}' failed: {}",
+                        selection.displayName(), t.getMessage());
+            }
+        }
+
+        /** Transcribes one buffered chunk and commits it, unless it was pure silence. */
+        private void flushWhisperChunk(byte[] pcm, boolean hadLoudAudio) {
+            // Matches Vosk's own silence check: nothing in this chunk ever
+            // crossed the speech threshold, so there's nothing to transcribe —
+            // and skipping the Whisper call entirely means a quiet stretch
+            // never gets a chance to be misheard as a word in the first place.
+            if (!hadLoudAudio) {
+                return;
+            }
+            float[] samples = new float[pcm.length / 2];
+            for (int i = 0; i < samples.length; i++) {
+                short s = (short) ((pcm[2 * i + 1] << 8) | (pcm[2 * i] & 0xFF));
+                samples[i] = s / 32768f;
+            }
+            String text = whisperTranscriber.transcribeChunk(samples);
+            if (!text.isBlank() && !session.isEnded()) {
+                session.addUtterance(text, selection.label());
+            }
         }
 
         /** Drains the queue into the recognizer; ends after capture stops and the queue empties. */
