@@ -97,11 +97,14 @@ public final class AppSettings {
 
     /**
      * Which engine drives the live, on-screen captions while the meeting is
-     * running: {@code "vosk"} (the default — instant, streaming) or {@code
-     * "whisper"} (a small/fast ggml model — noticeably more accurate, but
-     * captions arrive a few seconds behind speech in short chunks rather
-     * than growing word by word, since whisper.cpp decodes a finished chunk
-     * rather than streaming partial results the way Vosk does).
+     * running: {@code "off"} (the default — no live recognition at all,
+     * audio is still recorded and the accurate Whisper pass on Stop is the
+     * only source of the saved notes), {@code "vosk"} (instant, streaming),
+     * or {@code "whisper"} (a small/fast ggml model — noticeably more
+     * accurate than Vosk, but captions arrive a few seconds behind speech in
+     * short chunks rather than growing word by word, since whisper.cpp
+     * decodes a finished chunk rather than streaming partial results the way
+     * Vosk does).
      */
     public static String liveCaptionEngine(String defaultValue) {
         String value = load().getProperty("liveCaptionEngine");

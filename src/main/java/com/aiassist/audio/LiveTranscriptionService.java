@@ -723,6 +723,9 @@ public class LiveTranscriptionService {
         private final java.util.concurrent.BlockingQueue<byte[]> recognitionQueue =
                 new java.util.concurrent.ArrayBlockingQueue<>(16);
         private volatile long droppedChunks;
+        // Cached once per capture start (see startRecognition()) rather than
+        // re-reading the settings file on every ~40ms audio chunk.
+        private volatile boolean recognitionEnabled;
 
         private CaptureWorker(ListeningSession session, AudioDeviceService.DeviceSelection selection,
                               List<String> deviceLabels) {
@@ -840,14 +843,20 @@ public class LiveTranscriptionService {
 
         /**
          * Capture-thread step: save the audio for the offline transcript, then
-         * hand a copy to the recognition thread. Never blocks — if recognition
-         * is behind, the oldest queued chunk is dropped so the capture line
-         * can't overflow (which would corrupt the live captions).
+         * — only when live captions are actually on — hand a copy to the
+         * recognition thread too. Never blocks — if recognition is behind,
+         * the oldest queued chunk is dropped so the capture line can't
+         * overflow (which would corrupt the live captions). Recording itself
+         * always happens regardless of the live-caption setting: it's the
+         * only source of the saved notes now.
          */
         private void recordAndQueue(byte[] pcm16k) {
             MeetingRecorder rec = recorder;
             if (rec != null) {
                 rec.record(selection.label(), pcm16k, pcm16k.length);
+            }
+            if (!recognitionEnabled) {
+                return;
             }
             // A copy, because the capture buffer is reused on the next read.
             byte[] chunk = java.util.Arrays.copyOf(pcm16k, pcm16k.length);
@@ -864,8 +873,17 @@ public class LiveTranscriptionService {
         }
 
         private void startRecognition() {
-            boolean useWhisperLive = "whisper".equals(com.aiassist.setup.AppSettings.liveCaptionEngine("vosk"))
-                    && whisperTranscriber.isFastModelAvailable();
+            String engine = com.aiassist.setup.AppSettings.liveCaptionEngine("off");
+            if ("off".equals(engine)) {
+                // No live recognition at all — the recording captureFromDevice()/
+                // captureFromSystemTap() already write on every chunk (see
+                // recordAndQueue) is now the sole, more-accurate source of the
+                // saved notes; nothing here needs the audio in real time.
+                recognitionEnabled = false;
+                return;
+            }
+            recognitionEnabled = true;
+            boolean useWhisperLive = "whisper".equals(engine) && whisperTranscriber.isFastModelAvailable();
             Runnable loop = useWhisperLive ? this::whisperChunkRecognitionLoop : this::recognitionLoop;
             recognitionThread = new Thread(loop, "recognize-" + selection.label());
             recognitionThread.setDaemon(true);

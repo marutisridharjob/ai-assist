@@ -1186,27 +1186,41 @@ public class MeetingConsole {
         panel.add(leftRow(engineHeading, engineCombo));
         panel.add(javax.swing.Box.createVerticalStrut(4));
 
-        // Section — which engine drives the live, on-screen captions: Vosk
-        // (instant, streaming, the default) or a small/fast Whisper model
-        // (noticeably more accurate, but arrives in a few-second chunk
-        // rather than growing word by word — whisper.cpp decodes a finished
-        // buffer rather than streaming partials the way Vosk does). Requires
-        // a ggml-tiny*/ggml-base*.bin model; without one this always falls
-        // back to Vosk regardless of the setting.
+        // Section — which engine drives the live, on-screen captions: Off
+        // (the default — no real-time recognition at all; audio is still
+        // recorded, and the accurate Whisper pass on Stop is the only source
+        // of the saved notes, since live streams miss too much context to
+        // trust), Vosk (instant, streaming), or a small/fast Whisper model
+        // (more accurate than Vosk, but arrives in a few-second chunk rather
+        // than growing word by word — whisper.cpp decodes a finished buffer
+        // rather than streaming partials the way Vosk does). The Whisper
+        // choice needs a ggml-tiny*/ggml-base*.bin model; without one it
+        // falls back to Vosk regardless of the setting.
         liveEngineCombo = new javax.swing.JComboBox<>(new String[] {
-                "Vosk (instant, streaming)", "Whisper (a few seconds behind, more accurate)"});
+                "Off (recording only, most accurate)", "Vosk (instant, streaming)",
+                "Whisper (a few seconds behind, more accurate)"});
         liveEngineCombo.setFont(uiFont(Font.PLAIN, 13));
         roundComboBox(liveEngineCombo);
         liveEngineCombo.setToolTipText("<html><b>Which engine writes the live, on-screen captions.</b><br>"
-                + "Vosk streams partial captions instantly as you speak.<br>"
-                + "Whisper (a small/fast ggml-tiny or ggml-base model) is noticeably more accurate, "
-                + "but captions appear in short chunks a few seconds behind speech instead of growing "
-                + "word by word. Needs a ggml-tiny*.bin or ggml-base*.bin model in the models folder — "
-                + "without one, this stays on Vosk no matter what's selected here.</html>");
-        liveEngineCombo.setSelectedIndex(
-                "whisper".equals(com.aiassist.setup.AppSettings.liveCaptionEngine("vosk")) ? 1 : 0);
+                + "Off (recommended): no live captions at all — audio is still recorded, and the "
+                + "accurate Whisper pass on Stop is the only source of the saved notes.<br>"
+                + "Vosk streams partial captions instantly as you speak, but is less accurate.<br>"
+                + "Whisper (a small/fast ggml-tiny or ggml-base model) is noticeably more accurate "
+                + "than Vosk, but captions appear in short chunks a few seconds behind speech instead "
+                + "of growing word by word. Needs a ggml-tiny*.bin or ggml-base*.bin model in the "
+                + "models folder — without one, this stays on Vosk no matter what's selected here."
+                + "</html>");
+        liveEngineCombo.setSelectedIndex(switch (com.aiassist.setup.AppSettings.liveCaptionEngine("off")) {
+            case "vosk" -> 1;
+            case "whisper" -> 2;
+            default -> 0;
+        });
         liveEngineCombo.addActionListener(e -> com.aiassist.setup.AppSettings.setLiveCaptionEngine(
-                liveEngineCombo.getSelectedIndex() == 1 ? "whisper" : "vosk"));
+                switch (liveEngineCombo.getSelectedIndex()) {
+                    case 1 -> "vosk";
+                    case 2 -> "whisper";
+                    default -> "off";
+                }));
         panel.add(leftRow(liveEngineHeading, liveEngineCombo));
         panel.add(javax.swing.Box.createVerticalStrut(4));
 
@@ -2003,10 +2017,15 @@ public class MeetingConsole {
             stopButton.setEnabled(capturing || paused);
             startButton.setText(paused ? "Resume" : "Start");
         }
-        boolean startableState = meetingCompleted
-                || status.state() == LiveTranscriptionService.State.IDLE
-                || status.state() == LiveTranscriptionService.State.ERROR
-                || status.state() == LiveTranscriptionService.State.PAUSED;
+        // Resuming a paused meeting never clears anything, so it's always
+        // available regardless of savingNotes; starting a genuinely new one
+        // does (see startMeeting()), and must wait until the previous
+        // meeting's notes have actually finished saving in the background —
+        // otherwise its progress could be wiped before it's safely on disk.
+        boolean startableState = status.state() == LiveTranscriptionService.State.PAUSED
+                || (!savingNotes && (meetingCompleted
+                        || status.state() == LiveTranscriptionService.State.IDLE
+                        || status.state() == LiveTranscriptionService.State.ERROR));
         startButton.setEnabled(startableState
                 && (modelsAvailable || status.state() == LiveTranscriptionService.State.PAUSED));
         String sessionId = status.sessionId();
@@ -2538,6 +2557,18 @@ public class MeetingConsole {
 
     /** Begins a fresh meeting (a new session), e.g. after Stop or a startup error. */
     private void startMeeting() {
+        // Defense in depth: the Start button and the auto-start prompt are
+        // both already gated on this (see updateAutoStart()'s "idle" check
+        // and startButton's enablement), but starting a genuinely new
+        // meeting clears the previous one's transcript/notes-link below —
+        // that must never happen while the previous meeting's notes are
+        // still being saved in the background, or that progress could be
+        // wiped before it's confirmed on disk. Resuming a paused meeting
+        // clears nothing, so it's exempt.
+        if (savingNotes && liveTranscription.status().state() != LiveTranscriptionService.State.PAUSED) {
+            setStatus("Still saving the previous meeting's notes — please wait a moment.", true);
+            return;
+        }
         // Synchronous: guarantees the monitor's mic/system-audio line is
         // actually closed before the meeting's own capture tries to open the
         // same device below. setMonitorWanted(false) alone (as this used to

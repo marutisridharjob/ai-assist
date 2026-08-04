@@ -138,19 +138,32 @@ public class MeetingEndService {
         try {
             ListeningSession session = sessions.get(pending.sessionId());
             boolean useWhisper = !"vosk".equals(com.aiassist.setup.AppSettings.transcriptionEngine("whisper"));
+            // Live captions default to off now (audio recording + the Whisper
+            // pass below is the only reliable source of the notes), so
+            // session.utterances() is very often empty — the "skip Whisper"
+            // shortcuts below only make sense when there's actually
+            // something in it to fall back to; otherwise they'd silently
+            // trade a slower save for an empty one.
+            boolean liveHasContent = !session.utterances().isEmpty();
             List<Utterance> utterances;
-            if (concurrentWithAnother) {
+            if (concurrentWithAnother && liveHasContent) {
                 log.info("Meeting {} is ending while another meeting's notes are still being processed; "
                         + "using the live captions instead of Whisper to avoid queueing behind it",
                         pending.sessionId());
                 pending.recordings().values().forEach(this::deleteQuietly);
                 utterances = session.utterances();
-            } else if (!useWhisper) {
+            } else if (!useWhisper && liveHasContent) {
                 log.info("Transcription engine is set to Vosk; using the live captions for meeting {} "
                         + "instead of re-transcribing with Whisper", pending.sessionId());
                 pending.recordings().values().forEach(this::deleteQuietly);
                 utterances = session.utterances();
             } else {
+                if (concurrentWithAnother) {
+                    log.info("Meeting {} is ending while another meeting's notes are still being "
+                            + "processed, and there are no live captions to fall back to — "
+                            + "transcribing the recording anyway, even though it may have to queue "
+                            + "behind the other meeting", pending.sessionId());
+                }
                 utterances = runWithTimeout("Whisper transcription", TRANSCRIPTION_TIMEOUT,
                         () -> transcribeRecordingOrLive(session, pending.recordings()), session::utterances);
             }
