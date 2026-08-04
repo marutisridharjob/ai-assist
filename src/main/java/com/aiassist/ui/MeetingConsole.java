@@ -882,9 +882,40 @@ public class MeetingConsole {
         scroll.setBorder(new RoundedBorder(12));
     }
 
-    /** Gives a dropdown a curved outline, matching the text fields/areas. */
+    /**
+     * Gives a dropdown a curved outline, matching the text fields/areas.
+     * Metal's own ComboBoxUI paints a second, square, blue-bevelled border
+     * around the arrow button (with a divider line) inside whatever border
+     * the component is given, so simply calling {@code setBorder} left a
+     * "box within a box" look — a rounded outline wrapped around Metal's own
+     * square chrome. Installing the flatter {@link RoundedComboBoxUI} first
+     * removes that inner chrome so only the single rounded outline shows,
+     * same as the text fields.
+     */
     private static void roundComboBox(javax.swing.JComboBox<?> combo) {
+        combo.setUI(new RoundedComboBoxUI());
         combo.setBorder(new RoundedBorder(10));
+    }
+
+    /** A flat combo-box UI with no inner bevel/divider, for a single clean rounded outline. */
+    private static final class RoundedComboBoxUI extends javax.swing.plaf.basic.BasicComboBoxUI {
+        @Override
+        protected javax.swing.JButton createArrowButton() {
+            javax.swing.JButton button = new javax.swing.JButton("▼");
+            button.setFont(button.getFont().deriveFont(9f));
+            button.setBorder(javax.swing.BorderFactory.createEmptyBorder(0, 6, 0, 6));
+            button.setContentAreaFilled(false);
+            button.setFocusPainted(false);
+            button.setOpaque(false);
+            return button;
+        }
+
+        @Override
+        public void paintCurrentValueBackground(java.awt.Graphics g, java.awt.Rectangle bounds, boolean hasFocus) {
+            // No-op: skip Metal's own inner bevel fill so the component's plain
+            // background (matching the rounded outline drawn by RoundedBorder)
+            // shows through instead.
+        }
     }
 
     /** Native file dialog: Finder sheet on macOS, Explorer dialog on Windows. */
@@ -1576,6 +1607,7 @@ public class MeetingConsole {
                 submittedArea.setCaretPosition(0);
                 submittedPanel.setVisible(true);
                 helpPanel.revalidate();
+                helpPanel.repaint();
             });
         }, "feedback-submit").start();
     }
@@ -1784,6 +1816,7 @@ public class MeetingConsole {
         notesLink.setVisible(true);
         if (statusStackPanel != null) {
             statusStackPanel.revalidate();
+            statusStackPanel.repaint();
         }
     }
 
@@ -1791,6 +1824,10 @@ public class MeetingConsole {
         lastSavedNotes = null;
         if (notesLink != null) {
             notesLink.setVisible(false);
+            if (statusStackPanel != null) {
+                statusStackPanel.revalidate();
+                statusStackPanel.repaint();
+            }
         }
     }
 
@@ -1981,6 +2018,7 @@ public class MeetingConsole {
         if (extractionPanel.isVisible() != extracting) {
             extractionPanel.setVisible(extracting);
             frame.revalidate();
+            frame.repaint();
         }
         if (extracting) {
             extractionLabel.setText("  Extracting model(s): " + String.join(", ", unpackingNow) + " ");
@@ -2151,6 +2189,7 @@ public class MeetingConsole {
         if (indicatorPanel.isVisible() != show) {
             indicatorPanel.setVisible(show);
             frame.revalidate();
+            frame.repaint();
         }
         if (!show) {
             return;
@@ -2799,6 +2838,7 @@ public class MeetingConsole {
                     + (AUTO_START_COUNTDOWN_MS / 1000) + "s");
             autoStartPanel.setVisible(true);
             frame.revalidate();
+            frame.repaint();
             return;
         }
 
@@ -2822,6 +2862,7 @@ public class MeetingConsole {
             autoStartLabel.setText("Audio detected (" + level + "%) — start recording?");
             autoStartPanel.setVisible(true);
             frame.revalidate();
+            frame.repaint();
             return;
         }
 
@@ -2837,6 +2878,7 @@ public class MeetingConsole {
         if (!autoStartPanel.isVisible()) {
             autoStartPanel.setVisible(true);
             frame.revalidate();
+            frame.repaint();
         }
     }
 
@@ -2898,6 +2940,7 @@ public class MeetingConsole {
         if (autoStartPanel != null && autoStartPanel.isVisible()) {
             autoStartPanel.setVisible(false);
             frame.revalidate();
+            frame.repaint();
         }
     }
 
