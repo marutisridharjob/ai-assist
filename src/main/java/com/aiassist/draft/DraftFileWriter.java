@@ -15,18 +15,25 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * Persists drafts as Rich Text Format files named with a 12-hour timestamp,
- * e.g. {@code Minutes-07-23-2026_02-45-10-PM.rtf} — opens formatted in Word,
- * TextEdit, WordPad, Pages. Saving is best-effort: a disk problem is logged
- * but never fails the draft request.
+ * Persists drafts as Rich Text Format files named with a 12-hour timestamp
+ * down to the millisecond, e.g. {@code Minutes-07-23-2026_02-45-10-137-PM.rtf}
+ * — opens formatted in Word, TextEdit, WordPad, Pages. Saving is best-effort:
+ * a disk problem is logged but never fails the draft request.
  */
 @Service
 public class DraftFileWriter {
 
     private static final Logger log = LoggerFactory.getLogger(DraftFileWriter.class);
     // No colons (illegal in Windows file names) — hyphens throughout instead.
+    // Milliseconds (SSS), not just whole seconds: two meetings ending close
+    // together previously got the identical second-precision filename, and
+    // since writing opens with CREATE+TRUNCATE_EXISTING by default, the
+    // second save silently overwrote the first meeting's notes — this is
+    // what "meeting notes overlap" actually was. uniqueFile() below is a
+    // second, unconditional guarantee on top of this, in case even the
+    // millisecond timestamp somehow still collides.
     private static final DateTimeFormatter TIMESTAMP =
-            DateTimeFormatter.ofPattern("MM-dd-yyyy_hh-mm-ss-a", Locale.ROOT);
+            DateTimeFormatter.ofPattern("MM-dd-yyyy_hh-mm-ss-SSS-a", Locale.ROOT);
 
     private final OutputProperties properties;
 
@@ -47,13 +54,35 @@ public class DraftFileWriter {
         try {
             Path dir = resolveDir();
             Files.createDirectories(dir);
-            Path file = dir.resolve(fileName);
+            Path file = uniqueFile(dir, fileName);
             Files.writeString(file, toRtf(draft));
             log.info("Draft saved to {}", file.toAbsolutePath());
             return file.toAbsolutePath();
         } catch (IOException e) {
             log.warn("Could not save draft to disk: {}", e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * {@code fileName} under {@code dir}, or — on the vanishingly rare chance
+     * that exact name already exists — the same name with {@code -2}, {@code
+     * -3}, etc. appended until a free one is found. Guarantees two distinct
+     * meetings' notes can never collide and one silently overwrite the
+     * other's, regardless of how close together they were saved.
+     */
+    static Path uniqueFile(Path dir, String fileName) {
+        Path file = dir.resolve(fileName);
+        if (!Files.exists(file)) {
+            return file;
+        }
+        String base = fileName.endsWith(".rtf")
+                ? fileName.substring(0, fileName.length() - 4) : fileName;
+        for (int n = 2; ; n++) {
+            Path candidate = dir.resolve(base + "-" + n + ".rtf");
+            if (!Files.exists(candidate)) {
+                return candidate;
+            }
         }
     }
 

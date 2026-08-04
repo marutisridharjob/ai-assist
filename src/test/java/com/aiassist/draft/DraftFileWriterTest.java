@@ -30,8 +30,26 @@ class DraftFileWriterTest {
 
         assertThat(saved).exists();
         assertThat(saved.getFileName().toString())
-                .matches("Minutes-\\d{2}-\\d{2}-\\d{4}_\\d{2}-\\d{2}-\\d{2}-(AM|PM)\\.rtf");
+                .matches("Minutes-\\d{2}-\\d{2}-\\d{4}_\\d{2}-\\d{2}-\\d{2}-\\d{3}-(AM|PM)\\.rtf");
         assertThat(saved).content().contains("Weekly Status: Meeting #7!");
+    }
+
+    @Test
+    void neverOverwritesAnotherMeetingsFileEvenOnAnExactNameCollision() throws Exception {
+        // Two meetings ending close together previously could get the
+        // identical (second-precision) timestamp filename, and the second
+        // save silently overwrote the first meeting's notes — this is what
+        // "meeting notes overlap" actually was. Simulate that exact
+        // collision directly against the resolver, since the real timestamp
+        // can't be forced to collide from a test.
+        java.nio.file.Files.writeString(tempDir.resolve("Minutes-01-01-2026_01-00-00-000-AM.rtf"), "meeting A");
+
+        Path resolved = DraftFileWriter.uniqueFile(tempDir, "Minutes-01-01-2026_01-00-00-000-AM.rtf");
+
+        assertThat(resolved.getFileName().toString()).isEqualTo("Minutes-01-01-2026_01-00-00-000-AM-2.rtf");
+        java.nio.file.Files.writeString(resolved, "meeting B");
+        assertThat(tempDir.resolve("Minutes-01-01-2026_01-00-00-000-AM.rtf")).content().isEqualTo("meeting A");
+        assertThat(resolved).content().isEqualTo("meeting B");
     }
 
     @Test
