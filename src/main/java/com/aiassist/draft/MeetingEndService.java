@@ -251,9 +251,6 @@ public class MeetingEndService {
                 .collect(Collectors.joining("\n"));
     }
 
-    record Timed(double at, String speaker, String text) {
-    }
-
     /**
      * Whisper transcription of the recorded audio (accurate, complete),
      * ordered chronologically across sources; falls back to the live captions
@@ -263,6 +260,8 @@ public class MeetingEndService {
         if (files.isEmpty() || !whisper.isAvailable()) {
             files.values().forEach(this::deleteQuietly);
             return session.utterances();
+        }
+        record Timed(double at, String speaker, String text) {
         }
         List<Timed> collected = new ArrayList<>();
         try {
@@ -278,78 +277,14 @@ public class MeetingEndService {
             return session.utterances();
         }
         collected.sort(java.util.Comparator.comparingDouble(Timed::at));
-        List<Timed> deduped = dropMicBleedThrough(collected);
         List<Utterance> result = new ArrayList<>();
         int seq = 1;
-        for (Timed t : deduped) {
+        for (Timed t : collected) {
             result.add(new Utterance(seq++, t.text(), t.speaker(),
                     session.startedAt().plusMillis((long) (t.at() * 1000))));
         }
-        int dropped = collected.size() - deduped.size();
-        log.info("Whisper transcribed meeting {} into {} segments ({} dropped as mic bleed-through)",
-                session.id(), result.size(), dropped);
+        log.info("Whisper transcribed meeting {} into {} segments", session.id(), result.size());
         return result;
-    }
-
-    // How close two segments' start times need to be to even be considered
-    // the same moment — generous, since the mic and system-audio tap are two
-    // independently-decoded Whisper passes over two separate files, so their
-    // segment boundaries for the same real-world moment won't line up exactly.
-    private static final double BLEED_THROUGH_WINDOW_SECONDS = 4.0;
-
-    /**
-     * Drops "you" (mic) segments that are almost certainly the acoustic
-     * bleed-through of what "other" was saying at nearly the same moment —
-     * a laptop's own speaker output can leak straight into its own
-     * microphone regardless of the meeting app's own mute button, which
-     * this app's mic capture opens independently of and has no visibility
-     * into at all. "other" is a clean digital tap of that exact same audio,
-     * so when a "you" segment's words closely match an "other" segment that
-     * started around the same time, the "you" one is the echo rather than
-     * genuine speech from the user — dropping it keeps the saved notes from
-     * duplicating (and wrongly attributing to the user) what the other
-     * person actually said. A text-similarity check, not full acoustic echo
-     * cancellation: it can occasionally miss a real echo transcribed too
-     * differently to match, or — rarely — drop a genuine short reply that
-     * happens to closely paraphrase what was just said.
-     */
-    static List<Timed> dropMicBleedThrough(List<Timed> segments) {
-        List<Timed> others = segments.stream().filter(t -> "other".equals(t.speaker())).toList();
-        if (others.isEmpty()) {
-            return segments;
-        }
-        List<Timed> kept = new ArrayList<>();
-        for (Timed t : segments) {
-            boolean isEcho = "you".equals(t.speaker()) && others.stream().anyMatch(o ->
-                    Math.abs(o.at() - t.at()) <= BLEED_THROUGH_WINDOW_SECONDS && sameSpeech(t.text(), o.text()));
-            if (!isEcho) {
-                kept.add(t);
-            }
-        }
-        return kept;
-    }
-
-    /** Loose match: most of the words in the shorter text also appear in the longer one. */
-    private static boolean sameSpeech(String a, String b) {
-        java.util.Set<String> wordsA = normalizedWords(a);
-        java.util.Set<String> wordsB = normalizedWords(b);
-        if (wordsA.isEmpty() || wordsB.isEmpty()) {
-            return false;
-        }
-        java.util.Set<String> shared = new java.util.HashSet<>(wordsA);
-        shared.retainAll(wordsB);
-        int smaller = Math.min(wordsA.size(), wordsB.size());
-        return shared.size() >= Math.max(2, (int) Math.ceil(smaller * 0.6));
-    }
-
-    private static java.util.Set<String> normalizedWords(String text) {
-        java.util.Set<String> words = new java.util.HashSet<>();
-        for (String w : text.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9 ]", " ").split("\\s+")) {
-            if (!w.isBlank()) {
-                words.add(w);
-            }
-        }
-        return words;
     }
 
     private void deleteQuietly(Path file) {
