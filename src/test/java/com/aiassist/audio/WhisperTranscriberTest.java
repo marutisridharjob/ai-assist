@@ -2,6 +2,7 @@ package com.aiassist.audio;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -43,6 +44,47 @@ class WhisperTranscriberTest {
         // A long segment with substantial text is genuine speech, not a filler hallucination.
         assertThat(WhisperTranscriber.isLikelyHallucinatedFiller(
                 "Let's push the release to next Friday and follow up with QA.", 6.0)).isFalse();
+    }
+
+    @Test
+    void collapsesAStuckDecoderLoopOfThreeOrMoreIdenticalSegmentsToOne() {
+        List<WhisperTranscriber.Segment> looped = List.of(
+                new WhisperTranscriber.Segment(0.0, "I don't know."),
+                new WhisperTranscriber.Segment(1.0, "I don't know."),
+                new WhisperTranscriber.Segment(2.0, "I don't know."),
+                new WhisperTranscriber.Segment(3.0, "I don't know."));
+
+        List<WhisperTranscriber.Segment> result = WhisperTranscriber.dropRepeatedFillerLoops(looped);
+
+        assertThat(result).containsExactly(looped.get(0));
+    }
+
+    @Test
+    void keepsARealDoubleRepeatUntouched() {
+        // A genuine double ("no, no") is common in real speech; only 3+ in a
+        // row is treated as a stuck-decoder artifact.
+        List<WhisperTranscriber.Segment> segments = List.of(
+                new WhisperTranscriber.Segment(0.0, "No, no."),
+                new WhisperTranscriber.Segment(1.0, "No, no."));
+
+        List<WhisperTranscriber.Segment> result = WhisperTranscriber.dropRepeatedFillerLoops(segments);
+
+        assertThat(result).containsExactlyElementsOf(segments);
+    }
+
+    @Test
+    void keepsDistinctSegmentsAroundACollapsedLoop() {
+        List<WhisperTranscriber.Segment> segments = List.of(
+                new WhisperTranscriber.Segment(0.0, "Let's ship on Friday."),
+                new WhisperTranscriber.Segment(1.0, "Yeah."),
+                new WhisperTranscriber.Segment(2.0, "Yeah."),
+                new WhisperTranscriber.Segment(3.0, "Yeah."),
+                new WhisperTranscriber.Segment(4.0, "Sounds good."));
+
+        List<WhisperTranscriber.Segment> result = WhisperTranscriber.dropRepeatedFillerLoops(segments);
+
+        assertThat(result).extracting(WhisperTranscriber.Segment::text)
+                .containsExactly("Let's ship on Friday.", "Yeah.", "Sounds good.");
     }
 
     @Test

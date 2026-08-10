@@ -198,7 +198,7 @@ public class WhisperTranscriber {
                     segments.add(new Segment(start, text));
                 }
             }
-            return segments;
+            return dropRepeatedFillerLoops(segments);
         } catch (Throwable e) {
             log.warn("Whisper transcription unavailable ({}); using the live captions instead",
                     e.getMessage());
@@ -222,6 +222,46 @@ public class WhisperTranscriber {
     static boolean isLikelyHallucinatedFiller(String text, double durationSeconds) {
         int words = text.split("\\s+").length;
         return words <= 3 && durationSeconds > HALLUCINATION_DURATION_SECONDS;
+    }
+
+    /** A run of at least this many identical consecutive segments is a stuck-decoder loop, not real speech. */
+    private static final int REPEAT_LOOP_MIN_RUN = 3;
+
+    /**
+     * Collapses a run of 3+ back-to-back segments with the same text down to
+     * a single occurrence. Whisper.cpp is well known to occasionally get
+     * "stuck" on a noisy or ambiguous stretch of audio and emit the same
+     * phrase over and over ("I don't know. I don't know. I don't know.")
+     * instead of actually transcribing anything new. This is a safe signal
+     * specifically because it only fires on an exact, repeated, 3-or-more
+     * run: real conversation essentially never repeats an identical phrase
+     * that many times consecutively, so unlike a duration- or
+     * similarity-based filter, this can't mistake a genuine short reply
+     * (including a real double "no, no") for a hallucination.
+     */
+    static List<Segment> dropRepeatedFillerLoops(List<Segment> segments) {
+        List<Segment> result = new ArrayList<>();
+        int i = 0;
+        while (i < segments.size()) {
+            int runEnd = i + 1;
+            String normalized = normalizeForRepeatCheck(segments.get(i).text());
+            while (runEnd < segments.size()
+                    && normalizeForRepeatCheck(segments.get(runEnd).text()).equals(normalized)) {
+                runEnd++;
+            }
+            int runLength = runEnd - i;
+            if (runLength >= REPEAT_LOOP_MIN_RUN) {
+                result.add(segments.get(i)); // collapse the whole loop to its first occurrence
+            } else {
+                result.addAll(segments.subList(i, runEnd)); // a short repeat (e.g. a real "no, no") stays untouched
+            }
+            i = runEnd;
+        }
+        return result;
+    }
+
+    private static String normalizeForRepeatCheck(String text) {
+        return text.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9 ]", "").strip();
     }
 
     /** Reads 16-bit little-endian mono PCM into normalized float samples. */
