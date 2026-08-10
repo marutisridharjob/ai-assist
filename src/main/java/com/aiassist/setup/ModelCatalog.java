@@ -78,9 +78,14 @@ public final class ModelCatalog {
                     dir -> hasVoskModel(dir)),
             new ModelSpec("whisper", "Whisper transcription model", Tier.RECOMMENDED,
                     "an accurate, complete transcript when you press Stop",
-                    "ggml-base.bin",
-                    "https://github.com/NoMercy-Entertainment/nomercy-whisper-models/releases/latest/download/ggml-base.bin",
-                    "Download from the GitHub mirror and put the .bin file in the models folder.",
+                    "ggml-medium.bin",
+                    "https://github.com/NoMercy-Entertainment/nomercy-whisper-models/releases/latest/download/ggml-medium.bin",
+                    "Download from the GitHub mirror and put the .bin file in the models folder. This pass "
+                            + "runs in the background after Stop, not live, so it isn't time-constrained the "
+                            + "way live captions are — a bigger model means meaningfully more accurate saved "
+                            + "notes. For the most accurate notes possible, use ggml-large-v3.bin (~3 GB) "
+                            + "instead; if more than one is present, the app automatically uses the most "
+                            + "accurate one installed.",
                     dir -> hasFile(dir, "ggml-", ".bin")),
             new ModelSpec("llm", "Instruct LLM model (GGUF)", Tier.RECOMMENDED,
                     "richer AI summaries and rewrites",

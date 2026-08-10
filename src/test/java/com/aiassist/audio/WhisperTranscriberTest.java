@@ -88,6 +88,48 @@ class WhisperTranscriberTest {
     }
 
     @Test
+    void findModelPrefersTheMostAccurateModelEvenWhenAWorseOneSortsFirstAlphabetically(
+            @TempDir Path isolatedHome) throws Exception {
+        // "ggml-base.bin" sorts before "ggml-large-v3.bin" alphabetically
+        // (b < l), so a plain alphabetical pick would keep using the small,
+        // less accurate model even after a better one was added alongside
+        // it — this is exactly what findModel() must not do, since it backs
+        // the accuracy-critical saved-notes pass.
+        String originalHome = System.getProperty("user.home");
+        System.setProperty("user.home", isolatedHome.toString());
+        try {
+            Path modelsDir = isolatedHome.resolve("ai-assist").resolve("models");
+            Files.createDirectories(modelsDir);
+            Files.createFile(modelsDir.resolve("ggml-base.bin"));
+            Files.createFile(modelsDir.resolve("ggml-large-v3.bin"));
+
+            WhisperTranscriber transcriber = new WhisperTranscriber();
+
+            assertThat(transcriber.findModel()).contains(modelsDir.resolve("ggml-large-v3.bin"));
+        } finally {
+            System.setProperty("user.home", originalHome);
+        }
+    }
+
+    @Test
+    void findFastModelStillPrefersBaseOverTinyWhenBothArePresent(@TempDir Path isolatedHome) throws Exception {
+        String originalHome = System.getProperty("user.home");
+        System.setProperty("user.home", isolatedHome.toString());
+        try {
+            Path modelsDir = isolatedHome.resolve("ai-assist").resolve("models");
+            Files.createDirectories(modelsDir);
+            Files.createFile(modelsDir.resolve("ggml-tiny.bin"));
+            Files.createFile(modelsDir.resolve("ggml-base.bin"));
+
+            WhisperTranscriber transcriber = new WhisperTranscriber();
+
+            assertThat(transcriber.findFastModel()).contains(modelsDir.resolve("ggml-base.bin"));
+        } finally {
+            System.setProperty("user.home", originalHome);
+        }
+    }
+
+    @Test
     void unavailableWithoutAModel(@TempDir Path isolatedHome) {
         // findModel() searches the real ~/Documents/ai-assist/models among other
         // places, so on a machine that has actually set up ai-assist for real

@@ -66,8 +66,8 @@ public class WhisperTranscriber {
             }
             try (var files = Files.list(root)) {
                 var match = files.filter(p -> nameMatches.test(p.getFileName().toString().toLowerCase(Locale.ROOT)))
-                        .sorted()
-                        .findFirst();
+                        .max(java.util.Comparator.comparingInt(WhisperTranscriber::accuracyRank)
+                                .thenComparing(p -> p.getFileName().toString()));
                 if (match.isPresent()) {
                     return match;
                 }
@@ -76,6 +76,25 @@ public class WhisperTranscriber {
             }
         }
         return Optional.empty();
+    }
+
+    // Worst to best: a plain alphabetical pick would put "ggml-base.bin"
+    // ahead of "ggml-large-v3.bin" (b < l) and silently keep using the
+    // smaller, less accurate model even after a better one was added
+    // alongside it. Rank by the size name in the file instead so the most
+    // accurate installed model always wins; unrecognized names (or a tie,
+    // e.g. two "large" variants) fall back to the file name itself so the
+    // choice is still deterministic rather than filesystem-order-dependent.
+    private static final List<String> ACCURACY_RANK = List.of("tiny", "base", "small", "medium", "large");
+
+    private static int accuracyRank(Path p) {
+        String name = p.getFileName().toString().toLowerCase(Locale.ROOT);
+        for (int i = ACCURACY_RANK.size() - 1; i >= 0; i--) {
+            if (name.contains(ACCURACY_RANK.get(i))) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     public boolean isAvailable() {
