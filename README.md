@@ -388,6 +388,10 @@ universal binary; no Rosetta needed).
 
 ## How it works
 
+For the full recording reference (sources, file format and location, lifecycle,
+Whisper transcription, REST API, limitations and troubleshooting) see
+[`docs/RECORDING.md`](docs/RECORDING.md).
+
 ```
 Teams/Webex audio (OS loopback device) ─┐
 Microphone ─────────────────────────────┼─► per-source recording ─► Whisper (on Stop) ─► drafting engine ─► timestamped notes file

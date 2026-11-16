@@ -1680,13 +1680,13 @@ public class MeetingConsole {
                 + "<ol>"
                 + "<li>When the app opens, read the <b>Set up your models</b> notice.</li>"
                 + "<li>Click <b>Open</b> to see where model files go.</li>"
-                + "<li>In the notice, click the <b>Download</b> link next to the <b>required</b> speech "
-                + "model. Your browser downloads a <code>.zip</code> file.</li>"
-                + "<li>Move that <code>.zip</code> into the models folder from step 2.</li>"
-                + "<li>Come back to the app and press <b>Recheck</b>. The app unpacks the model and moves "
-                + "the <code>.zip</code> into <code>Documents/minutes-of-meeting/model-backups</code>.</li>"
-                + "<li>(Optional) Repeat steps 3–5 for the <b>recommended</b> models to get a more accurate "
-                + "transcript and richer summaries.</li>"
+                + "<li>In the notice, click the <b>Download</b> link next to the <b>required</b> Whisper "
+                + "model (<code>ggml-medium.bin</code>). Your browser downloads the <code>.bin</code> file.</li>"
+                + "<li>Move that <code>.bin</code> file into the models folder from step 2.</li>"
+                + "<li>Come back to the app and press <b>Recheck</b>. The app finds the model and the "
+                + "notice closes once all required models are present.</li>"
+                + "<li>(Optional) Add the <b>recommended</b> models for richer summaries and a more "
+                + "accurate transcript (for example <code>ggml-large-v3.bin</code>).</li>"
                 + "<li>When the notice says the models are ready, close it. You are set up.</li>"
                 + "</ol>"
 
@@ -2869,7 +2869,7 @@ public class MeetingConsole {
      * saved meeting notes: the models folder, the model-backup .zips inside
      * minutes-of-meeting, and the app's settings folder (.ai-assist, next to
      * the jar — API token, first-run marker, and settings.properties with
-     * dark mode, auto-start, and the chosen speech model), plus the Desktop
+     * dark mode and auto-start), plus the Desktop
      * shortcuts. Never touches the running jar or the minutes-of-meeting
      * folder itself (only its model-backups subfolder). Releases any loaded
      * native models first — llama.cpp/whisper.cpp can mmap model files,
