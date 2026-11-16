@@ -30,8 +30,7 @@ download-models.bat all       :: also fetch medium
 ```
 
 Then keep the `models/` folder next to the jar. On **Stop**, the app finds the
-model automatically. (If no model is present, it falls back to the live Vosk
-captions.)
+model automatically. (Without a model, no transcript is produced.)
 
 ## Which model?
 

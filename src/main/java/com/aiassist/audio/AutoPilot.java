@@ -19,11 +19,11 @@ public class AutoPilot {
     private static final Logger log = LoggerFactory.getLogger(AutoPilot.class);
 
     private final AutoPilotProperties properties;
-    private final LiveTranscriptionService liveTranscription;
+    private final MeetingCaptureService capture;
 
-    public AutoPilot(AutoPilotProperties properties, LiveTranscriptionService liveTranscription) {
+    public AutoPilot(AutoPilotProperties properties, MeetingCaptureService capture) {
         this.properties = properties;
-        this.liveTranscription = liveTranscription;
+        this.capture = capture;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -32,7 +32,7 @@ public class AutoPilot {
             return;
         }
         try {
-            LiveTranscriptionService.Status status = liveTranscription.start(null, null);
+            MeetingCaptureService.Status status = capture.start(null, null);
             log.info("Auto-started meeting capture on {} (session {})",
                     status.devices(), status.sessionId());
         } catch (Exception e) {

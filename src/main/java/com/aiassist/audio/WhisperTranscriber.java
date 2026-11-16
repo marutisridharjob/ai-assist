@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
+import com.aiassist.setup.ModelFolders;
+
 import io.github.givimad.whisperjni.WhisperContext;
 import io.github.givimad.whisperjni.WhisperFullParams;
 import io.github.givimad.whisperjni.WhisperJNI;
@@ -22,8 +24,8 @@ import org.springframework.stereotype.Service;
  * Accurate, fully-offline speech-to-text with OpenAI's Whisper (whisper.cpp,
  * MIT) via whisper-jni. The native libraries are bundled in the jar; the
  * model is a local {@code ggml-*.bin} file the user drops in the app folder.
- * Used to transcribe the whole recorded meeting on Stop (Vosk still drives
- * the real-time live captions). Nothing leaves the machine.
+ * Used to transcribe the whole recorded meeting on Stop. Nothing leaves the
+ * machine.
  */
 @Service
 public class WhisperTranscriber {
@@ -44,23 +46,8 @@ public class WhisperTranscriber {
         return findModel(n -> n.startsWith("ggml-") && n.endsWith(".bin"));
     }
 
-    /**
-     * A small, fast ggml model (tiny/base) suitable for live captioning —
-     * unlike the full accurate pass on Stop, this one has to keep up with
-     * the conversation in near-real-time, and a medium/large model simply
-     * can't decode fast enough for that. {@code null} (via the caller
-     * checking {@link Optional#isEmpty()}) means live Whisper captions have
-     * nothing to run on even if an accurate (medium/large) model is present
-     * for the final transcript.
-     */
-    public synchronized Optional<Path> findFastModel() {
-        return findModel(n -> n.startsWith("ggml-")
-                && (n.contains("tiny") || n.contains("base"))
-                && n.endsWith(".bin"));
-    }
-
     private Optional<Path> findModel(java.util.function.Predicate<String> nameMatches) {
-        for (Path root : VoskModelManager.modelSearchRoots()) {
+        for (Path root : ModelFolders.modelSearchRoots()) {
             if (!Files.isDirectory(root)) {
                 continue;
             }
@@ -99,11 +86,6 @@ public class WhisperTranscriber {
 
     public boolean isAvailable() {
         return !libraryFailed && findModel().isPresent();
-    }
-
-    /** True when a small/fast model is available for live-caption use. */
-    public boolean isFastModelAvailable() {
-        return !libraryFailed && findFastModel().isPresent();
     }
 
     /**
@@ -156,23 +138,6 @@ public class WhisperTranscriber {
         }
     }
 
-    /**
-     * Transcribes one short in-memory chunk of live-captured 16 kHz mono
-     * audio (no temp file, for lower latency) with the small/fast model —
-     * see {@link #findFastModel()} — joining any recognized segments into a
-     * single line. Empty when no fast model is installed, the chunk decoded
-     * to nothing (silence), or Whisper is unavailable.
-     */
-    public synchronized String transcribeChunk(float[] samples) {
-        Optional<Path> modelPath = findFastModel();
-        if (libraryFailed || modelPath.isEmpty()) {
-            return "";
-        }
-        List<Segment> segments = decode(modelPath.get(), samples, "live chunk");
-        return segments.stream().map(Segment::text)
-                .collect(java.util.stream.Collectors.joining(" ")).strip();
-    }
-
     /** Loads {@code modelPath} if needed and runs whisper.cpp's full decode over {@code samples}. */
     private List<Segment> decode(Path modelPath, float[] samples, String logLabel) {
         if (samples.length == 0) {
@@ -189,7 +154,7 @@ public class WhisperTranscriber {
             // cross-talk). This costs real time — several-fold on a long
             // recording — but accuracy is the priority for the saved notes,
             // and MeetingEndService's TRANSCRIPTION_TIMEOUT is sized with
-            // that trade in mind, falling back to the live captions rather
+            // that trade in mind, falling back to a notes-only result rather
             // than blocking forever if it's still not done.
             // Don't transcribe non-speech audio as if it were words: whisper.cpp
             // can otherwise emit tokens for music, applause, ringtones, hold
@@ -219,7 +184,7 @@ public class WhisperTranscriber {
             }
             return dropRepeatedFillerLoops(segments);
         } catch (Throwable e) {
-            log.warn("Whisper transcription unavailable ({}); using the live captions instead",
+            log.warn("Whisper transcription unavailable ({})",
                     e.getMessage());
             libraryFailed = true;
             return List.of();

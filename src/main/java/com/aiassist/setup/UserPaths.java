@@ -144,24 +144,24 @@ public final class UserPaths {
      */
     public static Path meetingNotesDir() {
         return ensureWithFallback(documents().resolve("minutes-of-meeting"),
-                () -> com.aiassist.audio.VoskModelManager.appHome().resolve("minutes-of-meeting"));
+                () -> com.aiassist.setup.ModelFolders.appHome().resolve("minutes-of-meeting"));
     }
 
     /** {@code ~/Documents/minutes-of-meeting/model-backups} — created if missing, with the same fallback. */
     public static Path modelBackupDir() {
         return ensureWithFallback(documents().resolve("minutes-of-meeting").resolve("model-backups"),
-                () -> com.aiassist.audio.VoskModelManager.appHome()
+                () -> com.aiassist.setup.ModelFolders.appHome()
                         .resolve("minutes-of-meeting").resolve("model-backups"));
     }
 
     /**
      * {@code ~/Documents/ai-assist/models} — created if missing, falling back
      * to {@code models} next to the jar (already one of the folders
-     * {@code VoskModelManager} searches) if that can't be done.
+     * {@code ModelFolders} searches) if that can't be done.
      */
     public static Path modelsDir() {
         return ensureWithFallback(documents().resolve("ai-assist").resolve("models"),
-                () -> com.aiassist.audio.VoskModelManager.appHome().resolve("models"));
+                () -> com.aiassist.setup.ModelFolders.appHome().resolve("models"));
     }
 
     /**
@@ -173,7 +173,7 @@ public final class UserPaths {
      * OneDrive-redirected home directory).
      */
     public static Path configDir() {
-        return ensure(com.aiassist.audio.VoskModelManager.appHome().resolve(".ai-assist"));
+        return ensure(com.aiassist.setup.ModelFolders.appHome().resolve(".ai-assist"));
     }
 
     private static Path ensure(Path dir) {

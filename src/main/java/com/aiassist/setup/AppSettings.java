@@ -59,64 +59,6 @@ public final class AppSettings {
         save(props);
     }
 
-    /** The last chosen speech model, or null when none has been chosen yet. */
-    public static String modelName() {
-        String value = load().getProperty("modelName");
-        if (value != null) {
-            return value;
-        }
-        String legacy = legacyString("com/aiassist/audio", "model");
-        if (legacy != null) {
-            setModelName(legacy);
-        }
-        return legacy;
-    }
-
-    public static void setModelName(String name) {
-        Properties props = load();
-        props.setProperty("modelName", name);
-        save(props);
-    }
-
-    /**
-     * Which engine produces the saved meeting notes' transcript: {@code
-     * "whisper"} (accurate, the default — re-transcribes the recording with
-     * Whisper) or {@code "vosk"} (use the live captions as-is, skipping
-     * Whisper entirely, for speed).
-     */
-    public static String transcriptionEngine(String defaultValue) {
-        String value = load().getProperty("transcriptionEngine");
-        return value != null ? value : defaultValue;
-    }
-
-    public static void setTranscriptionEngine(String engine) {
-        Properties props = load();
-        props.setProperty("transcriptionEngine", engine);
-        save(props);
-    }
-
-    /**
-     * Which engine drives the live, on-screen captions while the meeting is
-     * running: {@code "off"} (the default — no live recognition at all,
-     * audio is still recorded and the accurate Whisper pass on Stop is the
-     * only source of the saved notes), {@code "vosk"} (instant, streaming),
-     * or {@code "whisper"} (a small/fast ggml model — noticeably more
-     * accurate than Vosk, but captions arrive a few seconds behind speech in
-     * short chunks rather than growing word by word, since whisper.cpp
-     * decodes a finished chunk rather than streaming partial results the way
-     * Vosk does).
-     */
-    public static String liveCaptionEngine(String defaultValue) {
-        String value = load().getProperty("liveCaptionEngine");
-        return value != null ? value : defaultValue;
-    }
-
-    public static void setLiveCaptionEngine(String engine) {
-        Properties props = load();
-        props.setProperty("liveCaptionEngine", engine);
-        save(props);
-    }
-
     /**
      * A one-time read of a value from the JDK Preferences store this setting
      * used before it moved into {@code settings.properties} — so upgrading

@@ -4,8 +4,8 @@ import java.util.Arrays;
 
 /**
  * Linear resampling of 16-bit little-endian mono PCM to 16 kHz — the rate
- * Vosk models run at. Feeding a recognizer 44.1/48 kHz audio noticeably
- * drops words, so every capture source is resampled to 16 kHz first.
+ * Whisper expects. Every capture source is resampled to 16 kHz before it is
+ * recorded.
  */
 final class AudioResampler {
 

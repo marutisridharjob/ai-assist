@@ -39,7 +39,7 @@ which strips debug information from the compiled classes.
 
 ### Smaller installers
 
-The fat jar bundles the Vosk / llama.cpp / whisper native libraries for **every**
+The fat jar bundles the llama.cpp / whisper native libraries for **every**
 OS and CPU. Each build script runs [`slim-jar.sh`](slim-jar.sh) before
 `jpackage` to remove the native libraries the target OS will never use (plus
 obsolete Android / 32-bit targets), which cuts the jar by roughly 40% (e.g.
@@ -58,8 +58,6 @@ itself, identically on every OS, so it always works and stays user-writable:
   `~/Documents/ai-assist/models` (where you place model files);
 - shows a **model-setup notice** with clickable download links for the models
   that are still missing, and where to put them;
-- when you drop a Vosk model `.zip` into the models folder, it **unpacks it**
-  and moves the original `.zip` to `~/Documents/minutes-of-meeting/model-backups`.
 
 ## Notes on signing (avoiding OS security prompts)
 

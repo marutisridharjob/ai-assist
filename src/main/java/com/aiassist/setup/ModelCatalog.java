@@ -11,9 +11,8 @@ import java.util.function.Predicate;
 /**
  * The models ai-assist can use and how to recognise them on disk. The app
  * ships with no models; the user downloads and drops them into the models
- * folder. Exactly one model is <em>required</em> for the app to do anything
- * useful (a Vosk English speech model for live captions); the rest are
- * <em>recommended</em> upgrades.
+ * folder. The Whisper model is <em>required</em> for a transcript; the rest
+ * are <em>recommended</em> upgrades.
  */
 public final class ModelCatalog {
 
@@ -32,19 +31,6 @@ public final class ModelCatalog {
     }
 
     /** Present-in-folder tests, kept next to the catalogue so they stay in sync. */
-    private static boolean hasVoskModel(Path dir) {
-        // A Vosk model is a folder with an "am" subfolder or a "final.mdl" file,
-        // sitting either directly at dir or one level below it.
-        if (isVoskDir(dir)) {
-            return true;
-        }
-        return anyChild(dir, ModelCatalog::isVoskDir);
-    }
-
-    private static boolean isVoskDir(Path p) {
-        return Files.isDirectory(p.resolve("am")) || Files.isRegularFile(p.resolve("final.mdl"));
-    }
-
     private static boolean hasFile(Path dir, String prefix, String suffix) {
         return anyChild(dir, p -> {
             if (!Files.isRegularFile(p)) {
@@ -68,22 +54,13 @@ public final class ModelCatalog {
 
     /** The catalogue, most important first. */
     public static final List<ModelSpec> MODELS = List.of(
-            new ModelSpec("vosk", "Vosk English speech model", Tier.REQUIRED,
-                    "live captions while the meeting runs",
-                    "vosk-model-small-en-us-0.15.zip",
-                    "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip",
-                    "Download the file and drop the .zip straight into the models folder — the app "
-                            + "unpacks it for you. Bigger, more accurate models are at "
-                            + "https://alphacephei.com/vosk/models",
-                    dir -> hasVoskModel(dir)),
-            new ModelSpec("whisper", "Whisper transcription model", Tier.RECOMMENDED,
-                    "an accurate, complete transcript when you press Stop",
+            new ModelSpec("whisper", "Whisper transcription model", Tier.REQUIRED,
+                    "the meeting transcript, produced when you press Stop",
                     "ggml-medium.bin",
                     "https://github.com/NoMercy-Entertainment/nomercy-whisper-models/releases/latest/download/ggml-medium.bin",
-                    "Download from the GitHub mirror and put the .bin file in the models folder. This pass "
-                            + "runs in the background after Stop, not live, so it isn't time-constrained the "
-                            + "way live captions are — a bigger model means meaningfully more accurate saved "
-                            + "notes. For the most accurate notes possible, use ggml-large-v3.bin (~3 GB) "
+                    "Download from the GitHub mirror and put the .bin file in the models folder. The whole "
+                            + "recording is transcribed after Stop, so a bigger model means meaningfully more "
+                            + "accurate saved notes. For the most accurate notes possible, use ggml-large-v3.bin (~3 GB) "
                             + "instead; if more than one is present, the app automatically uses the most "
                             + "accurate one installed.",
                     dir -> hasFile(dir, "ggml-", ".bin")),

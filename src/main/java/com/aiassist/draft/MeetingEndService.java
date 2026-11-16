@@ -15,7 +15,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
-import com.aiassist.audio.LiveTranscriptionService;
+import com.aiassist.audio.MeetingCaptureService;
 import com.aiassist.audio.WhisperTranscriber;
 import com.aiassist.listen.ListeningSession;
 import com.aiassist.listen.SessionStore;
@@ -28,10 +28,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Ends a meeting: stops live capture, locks the session, converts the
- * recorded voice into text with Whisper (the accurate complete-conversation
- * transcription; falls back to the live captions when Whisper or a recording
- * is unavailable), drafts the summary (the local LLM when installed, else the
+ * Ends a meeting: stops recording, locks the session, converts the recorded
+ * voice into text with Whisper (the complete-conversation transcription),
+ * drafts the summary (the local LLM when installed, else the
  * offline rules — same path as the Meeting/Editor tabs' Apply), and saves the
  * notes file. Both the transcription and the summary are bounded-time: ending
  * a meeting must always finish and save something, even if a native call
@@ -44,7 +43,7 @@ public class MeetingEndService {
 
     /**
      * How long to wait for Whisper/the LLM before giving up and using the
-     * fallback (live captions / offline drafter) instead. Generous — a real
+     * fallback (offline drafter) instead. Generous — a real
      * meeting recording can legitimately take minutes to transcribe/summarize
      * on a modest CPU — but bounded, so "saving the notes" can never block
      * forever: the abandoned call (not forcibly cancelled — a blocking native
@@ -55,8 +54,7 @@ public class MeetingEndService {
      * (accuracy over speed for the saved notes), which can multiply
      * transcription time several-fold over a single greedy pass on audio
      * with a lot of pauses/cross-talk — 30 minutes gives a long meeting
-     * enough room to actually finish that way rather than being bumped to
-     * the rougher live-caption fallback.
+     * enough room to actually finish that way.
      */
     private static final Duration TRANSCRIPTION_TIMEOUT = Duration.ofMinutes(30);
     private static final Duration SUMMARY_TIMEOUT = Duration.ofMinutes(5);
@@ -83,16 +81,16 @@ public class MeetingEndService {
             new java.util.concurrent.atomic.AtomicInteger();
 
     private final SessionStore sessions;
-    private final LiveTranscriptionService liveTranscription;
+    private final MeetingCaptureService capture;
     private final WhisperTranscriber whisper;
     private final StyleRewriteService styleRewrite;
     private final DraftFileWriter fileWriter;
 
-    public MeetingEndService(SessionStore sessions, LiveTranscriptionService liveTranscription,
+    public MeetingEndService(SessionStore sessions, MeetingCaptureService capture,
                              WhisperTranscriber whisper, StyleRewriteService styleRewrite,
                              DraftFileWriter fileWriter) {
         this.sessions = sessions;
-        this.liveTranscription = liveTranscription;
+        this.capture = capture;
         this.whisper = whisper;
         this.styleRewrite = styleRewrite;
         this.fileWriter = fileWriter;
@@ -103,26 +101,26 @@ public class MeetingEndService {
     }
 
     /**
-     * Fast, synchronous part of Stop: stops live capture, locks the session,
+     * Fast, synchronous part of Stop: stops recording, locks the session,
      * and grabs the recorded audio files. Returns immediately so the UI can be
      * ready for a new meeting while {@link #finishNotes} runs in the background.
      */
     public PendingNotes stopCapture(String sessionId) {
         ListeningSession session = sessions.get(sessionId);
-        if (sessionId.equals(liveTranscription.status().sessionId())) {
-            liveTranscription.stop();
+        if (sessionId.equals(capture.status().sessionId())) {
+            capture.stop();
         }
         session.end();
         // Detach the recording now so a new meeting's recorder can't clobber it.
-        Map<String, Path> recordings = liveTranscription.finishRecording(sessionId);
+        Map<String, Path> recordings = capture.finishRecording(sessionId);
         return new PendingNotes(sessionId, recordings);
     }
 
-    /** Stops whichever meeting the live capture is currently feeding. */
+    /** Stops whichever meeting is currently being recorded. */
     public PendingNotes stopCurrentCapture() {
-        String sessionId = liveTranscription.status().sessionId();
+        String sessionId = capture.status().sessionId();
         if (sessionId == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No live meeting is in progress");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No meeting is in progress");
         }
         return stopCapture(sessionId);
     }
@@ -137,42 +135,20 @@ public class MeetingEndService {
         boolean concurrentWithAnother = notesInFlight.incrementAndGet() > 1;
         try {
             ListeningSession session = sessions.get(pending.sessionId());
-            boolean useWhisper = !"vosk".equals(com.aiassist.setup.AppSettings.transcriptionEngine("whisper"));
-            // Live captions default to off now (audio recording + the Whisper
-            // pass below is the only reliable source of the notes), so
-            // session.utterances() is very often empty — the "skip Whisper"
-            // shortcuts below only make sense when there's actually
-            // something in it to fall back to; otherwise they'd silently
-            // trade a slower save for an empty one.
-            boolean liveHasContent = !session.utterances().isEmpty();
-            List<Utterance> utterances;
-            if (concurrentWithAnother && liveHasContent) {
+            if (concurrentWithAnother) {
                 log.info("Meeting {} is ending while another meeting's notes are still being processed; "
-                        + "using the live captions instead of Whisper to avoid queueing behind it",
-                        pending.sessionId());
-                pending.recordings().values().forEach(this::deleteQuietly);
-                utterances = session.utterances();
-            } else if (!useWhisper && liveHasContent) {
-                log.info("Transcription engine is set to Vosk; using the live captions for meeting {} "
-                        + "instead of re-transcribing with Whisper", pending.sessionId());
-                pending.recordings().values().forEach(this::deleteQuietly);
-                utterances = session.utterances();
-            } else {
-                if (concurrentWithAnother) {
-                    log.info("Meeting {} is ending while another meeting's notes are still being "
-                            + "processed, and there are no live captions to fall back to — "
-                            + "transcribing the recording anyway, even though it may have to queue "
-                            + "behind the other meeting", pending.sessionId());
-                }
-                utterances = runWithTimeout("Whisper transcription", TRANSCRIPTION_TIMEOUT,
-                        () -> transcribeRecordingOrLive(session, pending.recordings()), session::utterances);
+                        + "transcribing the recording anyway, even though it may have to queue "
+                        + "behind the other meeting", pending.sessionId());
             }
+            List<Utterance> utterances = runWithTimeout("Whisper transcription", TRANSCRIPTION_TIMEOUT,
+                    () -> transcribeRecording(session, pending.recordings()), session::utterances);
             String transcript = utterances.stream().map(Utterance::text)
                     .reduce((a, b) -> a + "\n" + b).orElse("");
             if (transcript.isBlank()) {
                 throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                         "Meeting " + pending.sessionId()
-                        + " ended but nothing was captured, so there is nothing to save");
+                        + " ended but no speech was transcribed, so there is nothing to save. "
+                        + "Check that a Whisper model is in the models folder and that audio was captured");
             }
             // A separate, speaker-labeled copy just for the LLM: the plain
             // transcript above (used for the offline/rule-based fallback and
@@ -252,11 +228,12 @@ public class MeetingEndService {
     }
 
     /**
-     * Whisper transcription of the recorded audio (accurate, complete),
-     * ordered chronologically across sources; falls back to the live captions
-     * when Whisper or the recording is unavailable. Deletes the recording.
+     * Whisper transcription of the recorded audio, ordered chronologically
+     * across sources. Falls back to the utterances already in the session
+     * (added through the API) when there is no recording or Whisper is
+     * unavailable. Deletes the recording.
      */
-    private List<Utterance> transcribeRecordingOrLive(ListeningSession session, Map<String, Path> files) {
+    private List<Utterance> transcribeRecording(ListeningSession session, Map<String, Path> files) {
         if (files.isEmpty() || !whisper.isAvailable()) {
             files.values().forEach(this::deleteQuietly);
             return session.utterances();
@@ -295,11 +272,11 @@ public class MeetingEndService {
         }
     }
 
-    /** Ends whichever meeting the live capture is currently feeding. */
+    /** Ends whichever meeting is currently being recorded. */
     public Draft endCurrentLiveMeeting(DraftOptions options) {
-        String sessionId = liveTranscription.status().sessionId();
+        String sessionId = capture.status().sessionId();
         if (sessionId == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No live meeting is in progress");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No meeting is in progress");
         }
         return endMeeting(sessionId, options);
     }

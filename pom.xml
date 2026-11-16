@@ -31,22 +31,9 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
         <!--
-          Offline speech-to-text (Apache-2.0). Used ONLY for the native
-          libraries it bundles (libvosk for Linux/macOS/Windows on the
-          classpath); its Java classes are bypassed because their eager JNA
-          registration crashes on macOS where the bundled dylib lacks
-          symbols they declare. See VoskNative for our own lazy binding.
-        -->
-        <dependency>
-            <groupId>com.alphacephei</groupId>
-            <artifactId>vosk</artifactId>
-            <version>0.3.45</version>
-        </dependency>
-        <!--
           Whisper (OpenAI, MIT) via whisper.cpp — bundles native libs for
           macOS/Windows/Linux. Used for the accurate complete-conversation
-          transcription of the recorded meeting on Stop; Vosk stays for the
-          real-time live captions. Fully offline, CPU-only.
+          transcription of the recorded meeting on Stop. Fully offline, CPU-only.
         -->
         <dependency>
             <groupId>io.github.givimad</groupId>
@@ -66,13 +53,6 @@
             <artifactId>llama</artifactId>
             <version>4.1.0</version>
         </dependency>
-        <!-- Pinned to the version whose macOS resource lookup matches the vosk jar layout -->
-        <dependency>
-            <groupId>net.java.dev.jna</groupId>
-            <artifactId>jna</artifactId>
-            <version>5.7.0</version>
-        </dependency>
-
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
@@ -133,40 +113,6 @@
                                 <arg>-g:none</arg>
                             </compilerArgs>
                         </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-        <!--
-          Optional convenience for developers: fetch the small English model
-          into ./models next to the build so you can run the app immediately.
-          The shipped app bundles NO model — users drop their own model .zip
-          in the app folder and it is extracted on first start.
-              mvn package -Pfetch-model
-        -->
-        <profile>
-            <id>fetch-model</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>com.googlecode.maven-download-plugin</groupId>
-                        <artifactId>download-maven-plugin</artifactId>
-                        <version>1.9.0</version>
-                        <executions>
-                            <execution>
-                                <id>fetch-vosk-model</id>
-                                <phase>generate-resources</phase>
-                                <goals>
-                                    <goal>wget</goal>
-                                </goals>
-                                <configuration>
-                                    <url>https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip</url>
-                                    <unpack>true</unpack>
-                                    <outputDirectory>${project.basedir}/models</outputDirectory>
-                                    <skipCache>false</skipCache>
-                                </configuration>
-                            </execution>
-                        </executions>
                     </plugin>
                 </plugins>
             </build>

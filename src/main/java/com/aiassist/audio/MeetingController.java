@@ -21,14 +21,14 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api")
-public class LiveController {
+public class MeetingController {
 
     private final AudioDeviceService audioDevices;
-    private final LiveTranscriptionService liveTranscription;
+    private final MeetingCaptureService capture;
 
-    public LiveController(AudioDeviceService audioDevices, LiveTranscriptionService liveTranscription) {
+    public MeetingController(AudioDeviceService audioDevices, MeetingCaptureService capture) {
         this.audioDevices = audioDevices;
-        this.liveTranscription = liveTranscription;
+        this.capture = capture;
     }
 
     @GetMapping("/audio/devices")
@@ -41,29 +41,29 @@ public class LiveController {
     }
 
     @PostMapping("/live/start")
-    public LiveTranscriptionService.Status start(@Valid @RequestBody(required = false) StartLiveRequest request) {
+    public MeetingCaptureService.Status start(@Valid @RequestBody(required = false) StartLiveRequest request) {
         List<String> devices = request == null ? null : request.devices();
         String sessionId = request == null ? null : request.sessionId();
-        return liveTranscription.start(devices, sessionId);
+        return capture.start(devices, sessionId);
     }
 
     @PostMapping("/live/pause")
-    public LiveTranscriptionService.Status pause() {
-        return liveTranscription.pause();
+    public MeetingCaptureService.Status pause() {
+        return capture.pause();
     }
 
     @PostMapping("/live/resume")
-    public LiveTranscriptionService.Status resume() {
-        return liveTranscription.resume();
+    public MeetingCaptureService.Status resume() {
+        return capture.resume();
     }
 
     @PostMapping("/live/stop")
-    public LiveTranscriptionService.Status stop() {
-        return liveTranscription.stop();
+    public MeetingCaptureService.Status stop() {
+        return capture.stop();
     }
 
     @GetMapping("/live/status")
-    public LiveTranscriptionService.Status status() {
-        return liveTranscription.status();
+    public MeetingCaptureService.Status status() {
+        return capture.status();
     }
 }

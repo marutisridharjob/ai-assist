@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
-import com.aiassist.audio.VoskModelManager;
+import com.aiassist.setup.ModelFolders;
 
 import de.kherud.llama.InferenceParameters;
 import de.kherud.llama.LlamaModel;
@@ -21,7 +21,7 @@ import org.springframework.stereotype.Service;
 /**
  * Optional, fully-offline in-process LLM (llama.cpp, MIT) via de.kherud:llama.
  * The native libraries are bundled in the jar; the model is a single GGUF
- * instruct file the user drops next to the jar (same place as the Vosk and
+ * instruct file the user drops next to the jar (same place as the
  * Whisper models). When a model is present it powers the meeting summary and
  * the Editor/Compose rewrites; otherwise the app falls back to its offline
  * rule-based drafter. No server, no Ollama, nothing leaves the machine.
@@ -54,7 +54,7 @@ public class LocalLlmService {
 
     /** The first *.gguf model found next to the app, if any. */
     public synchronized Optional<Path> findModel() {
-        for (Path root : VoskModelManager.modelSearchRoots()) {
+        for (Path root : ModelFolders.modelSearchRoots()) {
             if (!Files.isDirectory(root)) {
                 continue;
             }
@@ -113,7 +113,7 @@ public class LocalLlmService {
 
     private String searchedPaths() {
         StringBuilder sb = new StringBuilder();
-        for (Path root : VoskModelManager.modelSearchRoots()) {
+        for (Path root : ModelFolders.modelSearchRoots()) {
             sb.append(sb.isEmpty() ? "" : "; ").append(root.toAbsolutePath());
         }
         return sb.toString();

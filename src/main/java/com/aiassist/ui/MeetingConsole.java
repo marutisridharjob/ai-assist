@@ -23,7 +23,7 @@ import javax.swing.SwingWorker;
 import javax.swing.Timer;
 import javax.swing.WindowConstants;
 
-import com.aiassist.audio.LiveTranscriptionService;
+import com.aiassist.audio.MeetingCaptureService;
 import com.aiassist.draft.AttributedTranscript;
 import com.aiassist.draft.Draft;
 import com.aiassist.draft.MeetingEndService;
@@ -50,7 +50,7 @@ public class MeetingConsole {
 
     private static final Logger log = LoggerFactory.getLogger(MeetingConsole.class);
 
-    private final LiveTranscriptionService liveTranscription;
+    private final MeetingCaptureService capture;
     private final MeetingEndService meetingEndService;
     private final SessionStore sessions;
     private final com.aiassist.draft.TextRewriteService rewriteService;
@@ -69,22 +69,14 @@ public class MeetingConsole {
     private javax.swing.JSplitPane meetingSplit;
     private JPanel meetingSummaryPane;
     private JLabel statusLabel;
-    private JLabel captionLabel;
     private JLabel titleLabel;
     private javax.swing.JTextField titleField;
     private javax.swing.JCheckBox darkModeToggle;
-    private javax.swing.JComboBox<String> modelCombo;
-    private javax.swing.JComboBox<String> engineCombo;
-    private javax.swing.JComboBox<String> liveEngineCombo;
-    private boolean updatingModels;
     private JPanel controlsPanel;
     private JPanel topPanel;
     private JPanel topStackPanel;
     private JPanel meetingTabPanel;
     private JPanel meetingTopRow;
-    private JPanel extractionPanel;
-    private javax.swing.JProgressBar extractionBar;
-    private JLabel extractionLabel;
     private boolean modelsAvailable = true;
     private javax.swing.JTabbedPane tabs;
     private javax.swing.JTextField filePathField;
@@ -212,14 +204,14 @@ public class MeetingConsole {
     private String lastStatusMessage = " ";
     private boolean lastStatusWasError;
 
-    public MeetingConsole(LiveTranscriptionService liveTranscription,
+    public MeetingConsole(MeetingCaptureService capture,
                           MeetingEndService meetingEndService, SessionStore sessions,
                           com.aiassist.draft.TextRewriteService rewriteService,
                           com.aiassist.draft.StyleRewriteService styleRewriteService,
                           com.aiassist.feedback.FeedbackMailSender feedbackMailSender,
                           com.aiassist.audio.WhisperTranscriber whisperTranscriber,
                           com.aiassist.draft.LocalLlmService localLlmService) {
-        this.liveTranscription = liveTranscription;
+        this.capture = capture;
         this.meetingEndService = meetingEndService;
         this.sessions = sessions;
         this.rewriteService = rewriteService;
@@ -394,57 +386,6 @@ public class MeetingConsole {
             com.aiassist.setup.AppSettings.setDarkMode(darkModeToggle.isSelected());
         });
 
-        // Model picker: built-in default plus any Vosk model unpacked into
-        // the ./models folder next to the app. Reloaded each time it opens.
-        modelCombo = new javax.swing.JComboBox<>();
-        modelCombo.setFont(uiFont(Font.PLAIN, 13));
-        roundComboBox(modelCombo);
-        modelCombo.setToolTipText("<html><b>Live-caption speech model — pick one built for real time.</b><br>"
-                + "Live captions must decode faster than you speak (two streams at once), so use a "
-                + "streaming model:<br>"
-                + "· <b>vosk-model-small-en-us-0.15</b> (40 MB) — fastest, great on most machines<br>"
-                + "· <b>vosk-model-en-us-0.22-lgraph</b> (128 MB) — real-time and more accurate "
-                + "(recommended)<br>"
-                + "· vosk-model-en-us-0.22 (1.8 GB) — most accurate but <b>too heavy for real-time</b> "
-                + "on most CPUs; it drops most live captions. The accurate saved transcript uses "
-                + "Whisper regardless, so a lighter live model here does not reduce your notes' quality."
-                + "</html>");
-        populateModels();
-        modelCombo.addPopupMenuListener(new javax.swing.event.PopupMenuListener() {
-            @Override
-            public void popupMenuWillBecomeVisible(javax.swing.event.PopupMenuEvent e) {
-                liveTranscription.rescanModelZips(); // zips dropped after launch
-                populateModels();
-            }
-
-            @Override
-            public void popupMenuWillBecomeInvisible(javax.swing.event.PopupMenuEvent e) {
-            }
-
-            @Override
-            public void popupMenuCanceled(javax.swing.event.PopupMenuEvent e) {
-            }
-        });
-        modelCombo.addActionListener(e -> {
-            if (updatingModels) {
-                return;
-            }
-            String selected = (String) modelCombo.getSelectedItem();
-            if (selected == null) {
-                return;
-            }
-            if (selected.endsWith(UNPACKING_SUFFIX)) {
-                populateModels(); // not usable yet; snap back to the active model
-                return;
-            }
-            if (!selected.equals(liveTranscription.activeModelName())) {
-                // selectModel persists the choice in the service (survives restarts).
-                new Thread(() -> liveTranscription.selectModel(selected), "model-switch").start();
-            }
-        });
-        // The dropdown reflects activeModelName(), which the service restores
-        // from the saved preference — so the previous choice shows on launch.
-
         titleLabel = new JLabel("Title:");
         titleLabel.setFont(uiFont(Font.PLAIN, 13));
         autoStartToggle = new javax.swing.JCheckBox("Auto-start");
@@ -474,19 +415,9 @@ public class MeetingConsole {
         top.add(titleLabel, BorderLayout.WEST);
         top.add(titleField, BorderLayout.CENTER);
         top.add(controls, BorderLayout.EAST);
-        // Shown while dropped model zips are being extracted on first start.
-        extractionBar = new javax.swing.JProgressBar();
-        extractionBar.setIndeterminate(true);
-        extractionLabel = themedLabel(" ");
-        extractionLabel.setFont(uiFont(Font.PLAIN, UiStyle.SMALL_SIZE));
-        extractionPanel = new JPanel(new BorderLayout(6, 0));
-        extractionPanel.add(extractionLabel, BorderLayout.WEST);
-        extractionPanel.add(extractionBar, BorderLayout.CENTER);
-        extractionPanel.setVisible(false);
         JPanel topStack = new JPanel();
         topStack.setLayout(new javax.swing.BoxLayout(topStack, javax.swing.BoxLayout.Y_AXIS));
         topStack.add(top);
-        topStack.add(extractionPanel);
         topStackPanel = topStack;
         top.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 8, 4, 8));
         topPanel = topStack;
@@ -496,10 +427,6 @@ public class MeetingConsole {
         statusLabel = new JLabel(" ");
         // Small and muted — status sits quietly in the lower-left corner.
         statusLabel.setFont(uiFont(Font.PLAIN, UiStyle.SMALL_SIZE));
-        // Live caption: in-progress words before the recognizer finalizes them.
-        captionLabel = new JLabel(" ");
-        captionLabel.setForeground(java.awt.Color.GRAY);
-        captionLabel.setFont(uiFont(Font.PLAIN, UiStyle.SMALL_SIZE));
         startButton = new IndicatorButton("Start");
         startButton.setToolTipText("Begin a new meeting");
         startButton.addActionListener(e -> startMeeting());
@@ -539,8 +466,7 @@ public class MeetingConsole {
         buttons.add(buttonsBottom);
         buttonsPanel = buttons;
         meetingButtonRows = java.util.List.of(buttonsTop, buttonsBottom);
-        // Caption, then status/errors, each on their own full-width line ABOVE
-        // the buttons, wrapping instead of crowding into the button row.
+        // Status and the saved-notes link sit under the buttons.
         // Clickable link to the last saved notes file (shown after Stop→Save,
         // until the next meeting starts or the app closes).
         notesLink = linkLabel("Open saved notes");
@@ -564,7 +490,6 @@ public class MeetingConsole {
         // Buttons ride on the right just above the status; the status stays
         // quietly in the lower-left corner of the tab.
         JPanel bottom = new JPanel(new BorderLayout());
-        bottom.add(captionLabel, BorderLayout.NORTH);
         bottom.add(buttons, BorderLayout.CENTER);
         bottom.add(statusStack, BorderLayout.SOUTH);
         bottom.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 8, 4, 8));
@@ -658,8 +583,7 @@ public class MeetingConsole {
         // just tell the user which models still need downloading.
         maybeShowModelNotice(false);
 
-        // 250 ms so the live caption line keeps up with Vosk's partial results;
-        // a 1 s poll missed most partials (they reset the moment a phrase is final).
+        // 250 ms keeps the level meters and status line responsive.
         refreshTimer = new Timer(250, e -> refresh());
         refreshTimer.start();
     }
@@ -1174,13 +1098,9 @@ public class MeetingConsole {
         // that section's own heading text is.
         JLabel aboutHeading = sectionHeading("About:");
         JLabel appearanceHeading = sectionHeading("Appearance:");
-        JLabel speechModelHeading = sectionHeading("Speech model:");
-        JLabel engineHeading = sectionHeading("Notes engine:");
-        JLabel liveEngineHeading = sectionHeading("Live captions:");
         JLabel instructionsHeading = sectionHeading("Instructions:");
         JLabel feedbackHeading = sectionHeading("Feedback:");
-        alignHeadingColumn(aboutHeading, appearanceHeading, speechModelHeading, engineHeading,
-                liveEngineHeading, instructionsHeading, feedbackHeading);
+        alignHeadingColumn(aboutHeading, appearanceHeading, instructionsHeading, feedbackHeading);
 
         // Section 1 — About.
         panel.add(leftRow(aboutHeading, themedLabel("Architecture & Design by Maruti, version 0.1")));
@@ -1189,70 +1109,6 @@ public class MeetingConsole {
         // Section 2 — Appearance (the Dark-mode toggle, on the same row as the heading).
         darkModeToggle.setText("Dark mode");
         panel.add(leftRow(appearanceHeading, darkModeToggle));
-        panel.add(javax.swing.Box.createVerticalStrut(4));
-
-        // Section — Speech model (moved off the Meeting tab so every tab's
-        // chrome stays consistent; the Meeting tab keeps only Title/Auto-start).
-        // The heading already says "Speech model", so the dropdown needs no
-        // separate "Model:" label.
-        panel.add(leftRow(speechModelHeading, modelCombo));
-        panel.add(javax.swing.Box.createVerticalStrut(4));
-
-        // Section — which engine writes the saved notes' transcript: Whisper
-        // (re-transcribes the recording, accurate, the default) or Vosk (the
-        // live captions as-is, instant, less accurate).
-        engineCombo = new javax.swing.JComboBox<>(new String[] {
-                "Whisper (accurate, recommended)", "Vosk live captions (fast)"});
-        engineCombo.setFont(uiFont(Font.PLAIN, 13));
-        roundComboBox(engineCombo);
-        engineCombo.setToolTipText("<html><b>Which engine writes the saved meeting notes' transcript.</b><br>"
-                + "Whisper re-transcribes the full recording after Stop — slower, but the most "
-                + "accurate.<br>"
-                + "Vosk live captions save instantly using what was already shown live during the "
-                + "meeting, skipping the Whisper pass entirely — faster, less accurate.</html>");
-        engineCombo.setSelectedIndex(
-                "vosk".equals(com.aiassist.setup.AppSettings.transcriptionEngine("whisper")) ? 1 : 0);
-        engineCombo.addActionListener(e -> com.aiassist.setup.AppSettings.setTranscriptionEngine(
-                engineCombo.getSelectedIndex() == 1 ? "vosk" : "whisper"));
-        panel.add(leftRow(engineHeading, engineCombo));
-        panel.add(javax.swing.Box.createVerticalStrut(4));
-
-        // Section — which engine drives the live, on-screen captions: Off
-        // (the default — no real-time recognition at all; audio is still
-        // recorded, and the accurate Whisper pass on Stop is the only source
-        // of the saved notes, since live streams miss too much context to
-        // trust), Vosk (instant, streaming), or a small/fast Whisper model
-        // (more accurate than Vosk, but arrives in a few-second chunk rather
-        // than growing word by word — whisper.cpp decodes a finished buffer
-        // rather than streaming partials the way Vosk does). The Whisper
-        // choice needs a ggml-tiny*/ggml-base*.bin model; without one it
-        // falls back to Vosk regardless of the setting.
-        liveEngineCombo = new javax.swing.JComboBox<>(new String[] {
-                "Off (recording only, most accurate)", "Vosk (instant, streaming)",
-                "Whisper (a few seconds behind, more accurate)"});
-        liveEngineCombo.setFont(uiFont(Font.PLAIN, 13));
-        roundComboBox(liveEngineCombo);
-        liveEngineCombo.setToolTipText("<html><b>Which engine writes the live, on-screen captions.</b><br>"
-                + "Off (recommended): no live captions at all — audio is still recorded, and the "
-                + "accurate Whisper pass on Stop is the only source of the saved notes.<br>"
-                + "Vosk streams partial captions instantly as you speak, but is less accurate.<br>"
-                + "Whisper (a small/fast ggml-tiny or ggml-base model) is noticeably more accurate "
-                + "than Vosk, but captions appear in short chunks a few seconds behind speech instead "
-                + "of growing word by word. Needs a ggml-tiny*.bin or ggml-base*.bin model in the "
-                + "models folder — without one, this stays on Vosk no matter what's selected here."
-                + "</html>");
-        liveEngineCombo.setSelectedIndex(switch (com.aiassist.setup.AppSettings.liveCaptionEngine("off")) {
-            case "vosk" -> 1;
-            case "whisper" -> 2;
-            default -> 0;
-        });
-        liveEngineCombo.addActionListener(e -> com.aiassist.setup.AppSettings.setLiveCaptionEngine(
-                switch (liveEngineCombo.getSelectedIndex()) {
-                    case 1 -> "vosk";
-                    case 2 -> "whisper";
-                    default -> "off";
-                }));
-        panel.add(leftRow(liveEngineHeading, liveEngineCombo));
         panel.add(javax.swing.Box.createVerticalStrut(4));
 
         // Section 3 — Instructions (a link that opens the instructions window),
@@ -1665,7 +1521,7 @@ public class MeetingConsole {
      */
     private void maybeShowModelNotice(boolean force) {
         com.aiassist.setup.ModelCatalog.Status status =
-                com.aiassist.setup.ModelCatalog.scan(com.aiassist.audio.VoskModelManager.modelSearchRoots());
+                com.aiassist.setup.ModelCatalog.scan(com.aiassist.setup.ModelFolders.modelSearchRoots());
         if (!force && status.allRequiredPresent() && status.missingRecommended().isEmpty()) {
             return;
         }
@@ -1682,24 +1538,6 @@ public class MeetingConsole {
      * thread), then re-scan and refresh the notice. Gives visible feedback so
      * the button clearly does something even when a large model is unpacking.
      */
-    private void runRecheck(JButton recheck) {
-        recheck.setEnabled(false);
-        modelNoticePane.setText("<html><body style='font-family:sans-serif;font-size:12px;'>"
-                + "<p>Checking… unpacking any model archives you added. This can take a minute "
-                + "for a large model.</p></body></html>");
-        new Thread(() -> {
-            try {
-                liveTranscription.unpackDroppedModelsNow();
-            } catch (Exception ex) {
-                log.warn("Recheck could not unpack dropped models: {}", ex.getMessage());
-            }
-            SwingUtilities.invokeLater(() -> {
-                recheck.setEnabled(true);
-                maybeShowModelNotice(true);
-            });
-        }, "model-recheck").start();
-    }
-
     private void buildModelNoticeDialog(com.aiassist.setup.ModelCatalog.Status status) {
         modelNoticeDialog = new javax.swing.JDialog(frame, "ai-assist — set up your models", false);
         modelNoticePane = new JEditorPane("text/html", modelNoticeHtml(status));
@@ -1717,8 +1555,8 @@ public class MeetingConsole {
         openFolder.setToolTipText("Open the models folder");
         openFolder.addActionListener(e -> openFolder(com.aiassist.setup.UserPaths.modelsDir()));
         JButton recheck = dialogButton("Recheck", darkMode);
-        recheck.setToolTipText("Unpack any dropped .zip models and check again");
-        recheck.addActionListener(e -> runRecheck(recheck));
+        recheck.setToolTipText("Check the models folder again");
+        recheck.addActionListener(e -> maybeShowModelNotice(true));
         JButton close = dialogButton("Close", darkMode);
         close.addActionListener(e -> modelNoticeDialog.dispose());
         JPanel buttons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT));
@@ -1743,7 +1581,7 @@ public class MeetingConsole {
         } else {
             b.append("<h2>Set up your models</h2>")
                     .append("<p>ai-assist ships with no models. It needs at least the required model ")
-                    .append("below to produce live captions and notes.</p>");
+                    .append("below to produce meeting notes.</p>");
         }
         b.append("<p>Put model files in this folder:<br><b>").append(escapeHtml(modelsDir)).append("</b></p>");
         appendModelList(b, "Required — still needed", status.missingRequired());
@@ -1755,10 +1593,7 @@ public class MeetingConsole {
             }
             b.append("</ul>");
         }
-        b.append("<p style='color:#666;'>Tip: drop a Vosk <code>.zip</code> straight into the models folder — ")
-                .append("the app unpacks it and moves the <code>.zip</code> to ")
-                .append("Documents/minutes-of-meeting/model-backups for safekeeping. ")
-                .append("Press Recheck after adding files.</p>");
+        b.append("<p style='color:#666;'>Press Recheck after adding files.</p>");
         return b.append("</body></html>").toString();
     }
 
@@ -1894,15 +1729,12 @@ public class MeetingConsole {
 
                 + "<h3 style='color:" + heading + ";'>Models — what to download and where</h3>"
                 + "<p>Place these in your models folder (click Open in the setup notice). The app "
-                + "picks them up automatically; a Vosk <code>.zip</code> is unpacked for you.</p>"
+                + "picks them up automatically.</p>"
                 + "<ul>"
-                + "<li><b>Speech (required)</b> — file <code>vosk-model-small-en-us-0.15.zip</code>, from "
-                + "<a href='https://alphacephei.com/vosk/models'>alphacephei.com/vosk/models</a>.</li>"
-                + "<li><b>Transcript (recommended)</b> — file <code>ggml-medium.bin</code> (~1.5 GB), from the "
+                + "<li><b>Transcript (required)</b> — file <code>ggml-medium.bin</code> (~1.5 GB), from the "
                 + "<a href='https://github.com/NoMercy-Entertainment/nomercy-whisper-models/releases'>GitHub "
-                + "mirror</a>. This pass runs in the background after Stop, not live, so it isn't time-"
-                + "constrained the way live captions are — a bigger model here means meaningfully more "
-                + "accurate saved notes. For the most accurate notes possible on a machine with the RAM/CPU "
+                + "mirror</a>. The whole recording is transcribed after Stop — a bigger model here means "
+                + "meaningfully more accurate saved notes. For the most accurate notes possible on a machine with the RAM/CPU "
                 + "to spare, use <code>ggml-large-v3.bin</code> (~3 GB) instead; <code>ggml-base.bin</code> "
                 + "(~150 MB) is the fastest option but noticeably less accurate — only worth it on very "
                 + "limited hardware. If more than one is present, the app automatically uses the most "
@@ -1929,14 +1761,10 @@ public class MeetingConsole {
                 + "<h3 style='color:" + heading + ";'>Open-source licenses</h3>"
                 + "<p>ai-assist and everything it bundles is open source. Licenses (click for the full text):</p>"
                 + "<ul>"
-                + "<li>Vosk speech engine &amp; models — "
-                + "<a href='https://www.apache.org/licenses/LICENSE-2.0'>Apache-2.0</a></li>"
                 + "<li>Whisper / whisper.cpp &amp; whisper-jni — "
                 + "<a href='https://opensource.org/license/mit'>MIT</a></li>"
                 + "<li>llama.cpp &amp; de.kherud:llama — "
                 + "<a href='https://opensource.org/license/mit'>MIT</a></li>"
-                + "<li>JNA — <a href='https://www.apache.org/licenses/LICENSE-2.0'>Apache-2.0</a> / "
-                + "<a href='https://opensource.org/license/lgpl-2-1'>LGPL-2.1</a></li>"
                 + "<li>Spring Boot &amp; Jackson — "
                 + "<a href='https://www.apache.org/licenses/LICENSE-2.0'>Apache-2.0</a></li>"
                 + "<li>Java runtime (OpenJDK) — "
@@ -1970,34 +1798,9 @@ public class MeetingConsole {
         }, "compose-apply").start();
     }
 
-    private static final String UNPACKING_SUFFIX = " (unpacking — wait)";
-
-    /** Fills the model dropdown from the built-in default plus ./models. */
-    private void populateModels() {
-        updatingModels = true;
-        try {
-            modelCombo.removeAllItems();
-            var available = liveTranscription.availableModels();
-            for (String name : available) {
-                modelCombo.addItem(name);
-            }
-            for (String name : liveTranscription.unpackingModels()) {
-                modelCombo.addItem(name + UNPACKING_SUFFIX);
-            }
-            // With nothing actually installed, activeModelName() falls back to
-            // the configured default's name (needed elsewhere, to tell the user
-            // what to name a model they add) — but selecting that here would
-            // show a model that plainly does not exist as if it were chosen.
-            // Leave the (empty) dropdown with nothing selected instead.
-            modelCombo.setSelectedItem(available.isEmpty() ? null : liveTranscription.activeModelName());
-        } finally {
-            updatingModels = false;
-        }
-    }
-
     /** Applies the title field to the current meeting (drives the file name). */
     private void applyTitle() {
-        String sessionId = liveTranscription.status().sessionId();
+        String sessionId = capture.status().sessionId();
         String title = titleField.getText();
         if (sessionId == null || title == null || title.isBlank()) {
             return;
@@ -2016,47 +1819,31 @@ public class MeetingConsole {
         if (detectorCountdown-- <= 0) {
             detectorCountdown = 20;
             detectedMeetingApp = MeetingAppDetector.detectRunningMeetingApp().orElse(null);
-            modelsAvailable = !liveTranscription.availableModels().isEmpty();
+            modelsAvailable = com.aiassist.setup.ModelCatalog.scan(
+                    com.aiassist.setup.ModelFolders.modelSearchRoots()).allRequiredPresent();
         }
-        // First-start extraction: progress bar until the dropped zips are ready.
-        var unpackingNow = liveTranscription.unpackingModels();
-        boolean extracting = !unpackingNow.isEmpty();
-        if (extractionPanel.isVisible() != extracting) {
-            extractionPanel.setVisible(extracting);
-            frame.revalidate();
-            frame.repaint();
-        }
-        if (extracting) {
-            extractionLabel.setText("  Extracting model(s): " + String.join(", ", unpackingNow) + " ");
-        }
-        var partials = liveTranscription.partials();
-        captionLabel.setText(partials.isEmpty() ? " "
-                : "hearing…  " + partials.entrySet().stream()
-                        .map(e -> sourceName(e.getKey()) + ": " + e.getValue())
-                        .reduce((a, b) -> a + "    " + b)
-                        .orElse(" "));
-        LiveTranscriptionService.Status status = liveTranscription.status();
+        MeetingCaptureService.Status status = capture.status();
         updateMeetingIndicator(status);
         updateAutoStart(status);
         if (!meetingCompleted) {
             setStatus(switch (status.state()) {
-                case PREPARING -> status.detail() != null ? status.detail() : "Preparing speech model…";
+                case PREPARING -> status.detail() != null ? status.detail() : "Preparing audio capture…";
                 case LISTENING -> listeningMessage(status);
                 case PAUSED -> "Paused — press Start to continue";
                 case ERROR -> "Audio problem: " + status.detail();
                 case IDLE -> modelsAvailable
                         ? "Click Start to begin"
-                        : "No speech model yet — see the Settings tab → Instructions to get one, then"
-                          + " drop the model zip in the models folder (it extracts automatically)";
-            }, status.state() == LiveTranscriptionService.State.ERROR
-                    || (status.state() == LiveTranscriptionService.State.IDLE && !modelsAvailable));
+                        : "No Whisper model yet — see the Settings tab → Instructions to get one, then"
+                          + " drop the model file in the models folder";
+            }, status.state() == MeetingCaptureService.State.ERROR
+                    || (status.state() == MeetingCaptureService.State.IDLE && !modelsAvailable));
             // Green text = press me now, red = not applicable:
             //   idle/finished → only Start green;
             //   listening     → Pause and Stop green, Start red;
             //   paused        → Resume (Start) and Stop green, Pause red.
-            boolean capturing = status.state() == LiveTranscriptionService.State.LISTENING
-                    || status.state() == LiveTranscriptionService.State.PREPARING;
-            boolean paused = status.state() == LiveTranscriptionService.State.PAUSED;
+            boolean capturing = status.state() == MeetingCaptureService.State.LISTENING
+                    || status.state() == MeetingCaptureService.State.PREPARING;
+            boolean paused = status.state() == MeetingCaptureService.State.PAUSED;
             pauseButton.setEnabled(capturing);
             stopButton.setEnabled(capturing || paused);
             startButton.setText(paused ? "Resume" : "Start");
@@ -2066,12 +1853,12 @@ public class MeetingConsole {
         // does (see startMeeting()), and must wait until the previous
         // meeting's notes have actually finished saving in the background —
         // otherwise its progress could be wiped before it's safely on disk.
-        boolean startableState = status.state() == LiveTranscriptionService.State.PAUSED
+        boolean startableState = status.state() == MeetingCaptureService.State.PAUSED
                 || (!savingNotes && (meetingCompleted
-                        || status.state() == LiveTranscriptionService.State.IDLE
-                        || status.state() == LiveTranscriptionService.State.ERROR));
+                        || status.state() == MeetingCaptureService.State.IDLE
+                        || status.state() == MeetingCaptureService.State.ERROR));
         startButton.setEnabled(startableState
-                && (modelsAvailable || status.state() == LiveTranscriptionService.State.PAUSED));
+                && (modelsAvailable || status.state() == MeetingCaptureService.State.PAUSED));
         String sessionId = status.sessionId();
         if (sessionId == null) {
             return;
@@ -2182,13 +1969,13 @@ public class MeetingConsole {
      * while the notes file is being written in the background), or the
      * meeting-in-progress / paused banner on the non-meeting tabs.
      */
-    private void updateMeetingIndicator(LiveTranscriptionService.Status status) {
+    private void updateMeetingIndicator(MeetingCaptureService.Status status) {
         boolean onMeetingTab = tabs.getSelectedIndex() == 0;
         boolean active = !meetingCompleted
-                && (status.state() == LiveTranscriptionService.State.LISTENING
-                    || status.state() == LiveTranscriptionService.State.PREPARING);
+                && (status.state() == MeetingCaptureService.State.LISTENING
+                    || status.state() == MeetingCaptureService.State.PREPARING);
         boolean paused = !meetingCompleted
-                && status.state() == LiveTranscriptionService.State.PAUSED;
+                && status.state() == MeetingCaptureService.State.PAUSED;
         boolean saving = savingNotes;
         boolean meetingBanner = !onMeetingTab && (active || paused);
         boolean show = saving || meetingBanner;
@@ -2227,8 +2014,8 @@ public class MeetingConsole {
      * meeting audio out of the microphone signal.
      */
     /** Compact: connected source per label with its live level, nothing more. */
-    private String listeningMessage(LiveTranscriptionService.Status status) {
-        var levels = liveTranscription.levels();
+    private String listeningMessage(MeetingCaptureService.Status status) {
+        var levels = capture.levels();
         int loudest = levels.values().stream().mapToInt(Integer::intValue).max().orElse(0);
         silentCycles = loudest < 3 ? silentCycles + 1 : 0;
         StringBuilder message = new StringBuilder("Listening — ");
@@ -2258,9 +2045,6 @@ public class MeetingConsole {
         if (micSilentCycles >= 20) {
             message.append("  ·  \"you\" mic reads 0% — check the OS microphone permission for "
                     + "ai-assist and the default recording device");
-        }
-        if (liveTranscription.modelNote() != null) {
-            message.append("  ·  ").append(liveTranscription.modelNote());
         }
         return message.toString();
     }
@@ -2526,7 +2310,7 @@ public class MeetingConsole {
                 composePanel, composeTopPanel, composeBottomPanel, composeSouthPanel,
                 composeChecks.panel, composeInstrRow, composeButtonsRow,
                 composeControlsPanel, indicatorPanel, southWrapPanel,
-                meetingTabPanel, meetingTopRow, extractionPanel)) {
+                meetingTabPanel, meetingTopRow)) {
             // Aqua only honors panel backgrounds when the panel is opaque.
             panel.setOpaque(true);
             panel.setBackground(panelBg);
@@ -2567,12 +2351,6 @@ public class MeetingConsole {
         }
         composeSplit.setBackground(panelBg);
         composeStatus.setForeground(muted);
-        modelCombo.setBackground(comboBg);
-        modelCombo.setForeground(comboFg);
-        engineCombo.setBackground(comboBg);
-        engineCombo.setForeground(comboFg);
-        liveEngineCombo.setBackground(comboBg);
-        liveEngineCombo.setForeground(comboFg);
         tabs.setBackground(panelBg);
         tabs.setForeground(textFg);
         updateTabColors();
@@ -2581,7 +2359,6 @@ public class MeetingConsole {
         filePathField.setCaretColor(textFg);
         frame.getContentPane().setBackground(panelBg);
         titleLabel.setForeground(textFg);
-        captionLabel.setForeground(muted);
         darkModeToggle.setBackground(panelBg);
         darkModeToggle.setForeground(textFg);
         autoStartToggle.setBackground(panelBg);
@@ -2610,7 +2387,7 @@ public class MeetingConsole {
         // still being saved in the background, or that progress could be
         // wiped before it's confirmed on disk. Resuming a paused meeting
         // clears nothing, so it's exempt.
-        if (savingNotes && liveTranscription.status().state() != LiveTranscriptionService.State.PAUSED) {
+        if (savingNotes && capture.status().state() != MeetingCaptureService.State.PAUSED) {
             setStatus("Still saving the previous meeting's notes — please wait a moment.", true);
             return;
         }
@@ -2628,13 +2405,13 @@ public class MeetingConsole {
         stopMonitorNow();
         clearSavedNotesLink();   // the previous meeting's link goes away now
         try {
-            if (liveTranscription.status().state() == LiveTranscriptionService.State.PAUSED
+            if (capture.status().state() == MeetingCaptureService.State.PAUSED
                     && !meetingCompleted) {
-                liveTranscription.resume(); // Start continues a paused meeting
+                capture.resume(); // Start continues a paused meeting
                 setStatus("Resumed.", false);
                 return;
             }
-            liveTranscription.start(null, null);
+            capture.start(null, null);
             meetingCompleted = false;
             transcript.setText("");
             renderedUtterances = 0;
@@ -2646,9 +2423,9 @@ public class MeetingConsole {
     }
 
     private void togglePause() {
-        if (liveTranscription.status().state() == LiveTranscriptionService.State.LISTENING
-                || liveTranscription.status().state() == LiveTranscriptionService.State.PREPARING) {
-            liveTranscription.pause(); // resuming is Start's job
+        if (capture.status().state() == MeetingCaptureService.State.LISTENING
+                || capture.status().state() == MeetingCaptureService.State.PREPARING) {
+            capture.pause(); // resuming is Start's job
         }
     }
 
@@ -2715,7 +2492,7 @@ public class MeetingConsole {
                 SwingUtilities.invokeLater(() -> {
                     savingNotes = false;
                     showSavedNotesLink(draft.savedTo());
-                    boolean anotherMeetingLive = liveTranscription.status().sessionId() != null;
+                    boolean anotherMeetingLive = capture.status().sessionId() != null;
                     String savedMsg = draft.savedTo() != null
                             ? "Notes saved to " + draft.savedTo()
                             : "Meeting ended (file saving is disabled in configuration)";
@@ -2734,7 +2511,7 @@ public class MeetingConsole {
                 String message = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
                 SwingUtilities.invokeLater(() -> {
                     savingNotes = false;
-                    if (liveTranscription.status().sessionId() == null) {
+                    if (capture.status().sessionId() == null) {
                         setStatus("Could not save the notes: " + message, true);
                     } else {
                         // Never let a failed save vanish silently just because a
@@ -2773,7 +2550,7 @@ public class MeetingConsole {
      * the current audio level is always visible — so it's never silently
      * doing nothing with no feedback.
      */
-    private void updateAutoStart(LiveTranscriptionService.Status status) {
+    private void updateAutoStart(MeetingCaptureService.Status status) {
         if (autoStartToggle == null || !autoStartToggle.isSelected()) {
             if (autoStartDeadline > 0 || genericPromptActive || autoStartPanel.isVisible()) {
                 cancelAutoStartPrompt();
@@ -2793,7 +2570,7 @@ public class MeetingConsole {
         // for every meeting after the first until the user pressed Start by
         // hand. status.state() alone already excludes LISTENING/PREPARING/PAUSED.
         boolean idle = !savingNotes
-                && status.state() == LiveTranscriptionService.State.IDLE
+                && status.state() == MeetingCaptureService.State.IDLE
                 && modelsAvailable;
 
         if (!idle) {
@@ -2828,12 +2605,12 @@ public class MeetingConsole {
         // meeting tool (including a browser tab) and an in-person conversation
         // all get the same live "listening" feedback.
         setMonitorWanted(true);
-        int level = liveTranscription.monitorLevel();
+        int level = capture.monitorLevel();
 
         boolean appReady = app != null
                 && System.currentTimeMillis() >= autoStartCooldownUntil
                 && !app.equals(autoStartHandledApp);
-        if (appReady && liveTranscription.systemAudioActiveWithin(3000)) {
+        if (appReady && capture.systemAudioActiveWithin(3000)) {
             genericPromptActive = false;
             autoStartHandledApp = app;
             autoStartDeadline = System.currentTimeMillis() + AUTO_START_COUNTDOWN_MS;
@@ -2852,7 +2629,7 @@ public class MeetingConsole {
         // generic, audio-only prompt. Unlike the countdown above, this never
         // starts on its own; it only ever waits for "Start now".
         if (genericPromptActive) {
-            if (!liveTranscription.anyAudioActiveWithin(GENERIC_PROMPT_QUIET_MS)) {
+            if (!capture.anyAudioActiveWithin(GENERIC_PROMPT_QUIET_MS)) {
                 cancelAutoStartPrompt();
                 return;
             }
@@ -2861,7 +2638,7 @@ public class MeetingConsole {
             return;
         }
         if (System.currentTimeMillis() >= autoStartCooldownUntil
-                && liveTranscription.anyAudioActiveWithin(GENERIC_PROMPT_SUSTAIN_MS)) {
+                && capture.anyAudioActiveWithin(GENERIC_PROMPT_SUSTAIN_MS)) {
             genericPromptActive = true;
             autoStartButtonsRow.setVisible(true);
             setAutoStartBlinking(true);
@@ -2909,9 +2686,9 @@ public class MeetingConsole {
         monitorControl.submit(() -> {
             try {
                 if (wanted) {
-                    liveTranscription.startActivityMonitor();
+                    capture.startActivityMonitor();
                 } else {
-                    liveTranscription.stopActivityMonitor();
+                    capture.stopActivityMonitor();
                 }
             } catch (Exception e) {
                 log.warn("System-audio monitor control failed: {}", e.getMessage());
@@ -2931,7 +2708,7 @@ public class MeetingConsole {
     private void stopMonitorNow() {
         monitorWanted = false;
         try {
-            liveTranscription.stopActivityMonitor();
+            capture.stopActivityMonitor();
         } catch (Exception e) {
             log.warn("System-audio monitor stop failed: {}", e.getMessage());
         }
@@ -2983,7 +2760,7 @@ public class MeetingConsole {
      * keeps showing the last real summary until a new one replaces it.
      */
     private void applyMeetingSummary() {
-        String sessionId = liveTranscription.status().sessionId();
+        String sessionId = capture.status().sessionId();
         if (sessionId == null && renderedSessionId == null) {
             setStatus("No meeting to summarize yet — press Start.", true);
             return;
@@ -3039,11 +2816,11 @@ public class MeetingConsole {
     }
 
     private void onClose() {
-        LiveTranscriptionService.Status status = liveTranscription.status();
+        MeetingCaptureService.Status status = capture.status();
         boolean meetingActive = !meetingCompleted && status.sessionId() != null
-                && (status.state() == LiveTranscriptionService.State.LISTENING
-                    || status.state() == LiveTranscriptionService.State.PAUSED
-                    || status.state() == LiveTranscriptionService.State.PREPARING);
+                && (status.state() == MeetingCaptureService.State.LISTENING
+                    || status.state() == MeetingCaptureService.State.PAUSED
+                    || status.state() == MeetingCaptureService.State.PREPARING);
         if (meetingActive && hasCapturedContent(status.sessionId())) {
             int choice = showStyledConfirm(
                     "A meeting is still running.\nSave the notes before closing?",
@@ -3070,7 +2847,7 @@ public class MeetingConsole {
             refreshTimer.stop();
         }
         try {
-            liveTranscription.stopActivityMonitor();
+            capture.stopActivityMonitor();
         } catch (Exception ignored) {
             // shutting down anyway
         }
@@ -3100,11 +2877,11 @@ public class MeetingConsole {
      * way on Windows and macOS. Closes the app after.
      */
     private void uninstall() {
-        LiveTranscriptionService.Status status = liveTranscription.status();
+        MeetingCaptureService.Status status = capture.status();
         boolean meetingActive = status.sessionId() != null
-                && (status.state() == LiveTranscriptionService.State.LISTENING
-                    || status.state() == LiveTranscriptionService.State.PAUSED
-                    || status.state() == LiveTranscriptionService.State.PREPARING);
+                && (status.state() == MeetingCaptureService.State.LISTENING
+                    || status.state() == MeetingCaptureService.State.PAUSED
+                    || status.state() == MeetingCaptureService.State.PREPARING);
         if (meetingActive || savingNotes) {
             showStyledMessage("Finish or stop the current meeting before uninstalling.",
                     "Uninstall ai-assist", JOptionPane.WARNING_MESSAGE);
@@ -3112,11 +2889,6 @@ public class MeetingConsole {
         }
 
         // Release any loaded native models before touching their files.
-        try {
-            liveTranscription.releaseModel();
-        } catch (Exception ignored) {
-            // best-effort
-        }
         try {
             whisperTranscriber.releaseModel();
         } catch (Exception ignored) {
@@ -3192,7 +2964,7 @@ public class MeetingConsole {
             refreshTimer.stop();
         }
         try {
-            liveTranscription.stopActivityMonitor();
+            capture.stopActivityMonitor();
         } catch (Exception ignored) {
             // shutting down anyway
         }

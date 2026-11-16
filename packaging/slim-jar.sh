@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Removes native libraries the target OS will never use from the fat jar, to
-# shrink the installer. The app bundles Vosk / llama.cpp / whisper native
-# binaries for every OS and CPU; a macOS installer only needs the macOS ones,
+# shrink the installer. The app bundles llama.cpp / whisper native binaries for every OS and CPU; a macOS installer only needs the macOS ones,
 # a Windows installer only the Windows ones, etc. Also drops clearly obsolete
 # targets (Android, 32-bit Windows) everywhere.
 #
@@ -20,8 +19,7 @@ WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 cd "$WORK"
 
 # Pull out just the native-carrying nested jars.
-unzip -qo "$JAR" 'BOOT-INF/lib/vosk-*.jar' 'BOOT-INF/lib/llama-*.jar' 'BOOT-INF/lib/whisper-jni-*.jar'
-VOSK="$(ls BOOT-INF/lib/vosk-*.jar)"
+unzip -qo "$JAR" 'BOOT-INF/lib/llama-*.jar' 'BOOT-INF/lib/whisper-jni-*.jar'
 LLAMA="$(ls BOOT-INF/lib/llama-*.jar)"
 WHISPER="$(ls BOOT-INF/lib/whisper-jni-*.jar)"
 
@@ -32,17 +30,14 @@ del "$LLAMA" 'de/kherud/llama/Linux-Android/*' 'de/kherud/llama/Windows/x86/*'
 
 case "$OS" in
   mac)
-    del "$VOSK"    'linux-x86-64/*' 'win32-x86-64/*'
     del "$LLAMA"   'de/kherud/llama/Linux/*' 'de/kherud/llama/Windows/*'
     del "$WHISPER" 'debian-*' 'win-*'
     ;;
   windows)
-    del "$VOSK"    'darwin/*' 'linux-x86-64/*'
     del "$LLAMA"   'de/kherud/llama/Mac/*' 'de/kherud/llama/Linux/*'
     del "$WHISPER" 'debian-*' 'macos-*'
     ;;
   linux)
-    del "$VOSK"    'darwin/*' 'win32-x86-64/*'
     del "$LLAMA"   'de/kherud/llama/Mac/*' 'de/kherud/llama/Windows/*'
     del "$WHISPER" 'macos-*' 'win-*'
     ;;
@@ -52,7 +47,7 @@ esac
 
 # Write the slimmed nested jars back, STORED (Spring Boot cannot read a
 # compressed nested jar).
-zip -q -0 "$JAR" "$VOSK" "$LLAMA" "$WHISPER"
+zip -q -0 "$JAR" "$LLAMA" "$WHISPER"
 
 AFTER="$(du -m "$JAR" | cut -f1)"
 echo "Slimmed for ${OS}: ${BEFORE} MB -> ${AFTER} MB  ($JAR)"

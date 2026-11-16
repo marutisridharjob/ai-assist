@@ -8,10 +8,9 @@ timestamped file.
 
 **No internet. No browser. No other apps. No third-party drivers.** The app
 uses only the operating system's own resources (audio devices, a window,
-files). Speech recognition runs inside the app with the proven, lightweight
-[Vosk](https://alphacephei.com/vosk/) English models you place in the app
-folder — on first start any model `.zip` you dropped there is extracted
-(a progress bar shows) and offered in the dropdown.
+files). The meeting is recorded locally and transcribed inside the app with
+[Whisper](https://github.com/ggerganov/whisper.cpp): place the `ggml-*.bin`
+model in the app folder.
 
 ## 100 % open source
 
@@ -22,10 +21,8 @@ proprietary libraries, models, or cloud services anywhere:
 |---|---|
 | ai-assist code and its native helper sources | this repository |
 | Spring Boot, Jackson | Apache-2.0 |
-| Vosk speech engine (live captions) | Apache-2.0 |
 | Whisper / whisper.cpp + whisper-jni (final transcript) | MIT |
 | llama.cpp + de.kherud:llama (optional in-process LLM) | MIT |
-| JNA (native access) | Apache-2.0 / LGPL-2.1 dual |
 | Java runtime (use e.g. Eclipse Temurin) | GPLv2 + Classpath Exception |
 | BlackHole (optional macOS fallback) | GPL-3.0 |
 | Ollama + models (optional, alternative drafting) | MIT / open-weight |
@@ -42,18 +39,6 @@ JDK — not a browser):
 - an editable **meeting title** at the top — it becomes the notes file name;
   when a meeting app (Teams, Webex, Zoom, Slack) is detected running, the
   title is pre-filled and the status line notes the detection,
-- a **model dropdown** (top-right): the built-in small English model by
-  default, plus any Vosk model you unzip into a `models/` folder next to the
-  jar; the model you pick is remembered as your default across launches — switching mid-meeting pauses briefly and resumes with the new model.
-  For live captions pick a **real-time (streaming) model** — the recognizer
-  must decode faster than you speak, on two audio streams at once. Good choices
-  (from [alphacephei.com/vosk/models](https://alphacephei.com/vosk/models)):
-  `vosk-model-small-en-us-0.15` (40 MB, fastest) or
-  `vosk-model-en-us-0.22-lgraph` (128 MB, real-time and more accurate).
-  The full `vosk-model-en-us-0.22` (1.8 GB) is the most accurate but is **too
-  heavy for real-time** on most CPUs and will drop most live captions; the saved
-  transcript is produced by Whisper regardless, so a lighter live model does not
-  reduce your notes' quality,
 - an **Auto-start** toggle (on by default): while armed, a small line at the
   bottom of the window always shows it's actually listening, with the live
   audio level (e.g. *"Listening for a meeting… (audio 6%)"*) — never silently
@@ -74,8 +59,6 @@ JDK — not a browser):
   same on Windows and macOS,
 - a **scrolling text box** where the running transcript appears live, each
   line time-stamped and tagged `[you]` (your microphone) or `[other]` (the system audio),
-- a **live caption line** showing words as they are being recognized,
-  before the phrase is final — like the captions in commercial apps,
 - **Start / Pause / Stop** buttons show their label in **green** when that
   action applies right now and **red** when it does not: at launch only
   Start is green (listening does NOT begin automatically); while listening,
@@ -158,7 +141,7 @@ A fourth tab with three sections:
 - **About** — *Architecture & Design by Maruti, version 0.1*.
 - **Help** — a link, **Instructions to use ai-assist**, that opens a window
   with a **Search** box and a read-only information panel covering the
-  Meeting, Editor, and Compose tabs, how Vosk and the ggml/whisper.cpp models
+  Meeting, Editor, and Compose tabs, how the ggml/whisper.cpp models
   work (with links to their sites), and the open-source licenses and
   technology stack. Type a word and press **Search** to highlight every match;
   **Close** (bottom-right) dismisses the window.
@@ -176,18 +159,16 @@ A fourth tab with three sections:
   Gmail's spam filtering typically accepts the message and then silently
   drops or spam-folders it — a failure the app has no way to detect.
 
-### How a meeting is processed — two engines, both offline
+### How a meeting is processed — fully offline
 
-- **Live captions (Vosk):** while you talk, the meeting box shows real-time
-  speech-to-text, verbatim, no AI. The audio is recorded locally at the same
-  time (temp files, one per source).
-- **Complete transcript (Whisper):** on **Stop**, the whole recorded meeting
-  is transcribed with **OpenAI Whisper** (whisper.cpp, MIT) for an accurate,
+- **Recording:** while you talk, the audio is recorded locally (temp files,
+  one per source). No live transcription runs.
+- **Transcript (Whisper):** on **Stop**, the whole recorded meeting is
+  transcribed with **OpenAI Whisper** (whisper.cpp, MIT) for an accurate,
   complete-conversation transcript, ordered across sources; the recording is
-  then deleted. If no Whisper model is present, the notes fall back to the
-  live captions.
-- **No AI while the meeting is in progress** — the live box shows only the
-  raw verbatim captions. AI drafting happens only when you ask for it: press
+  then deleted. Without a Whisper model no transcript is produced, so no
+  notes are saved.
+- **No AI while the meeting is in progress** — the meeting is only recorded. AI drafting happens only when you ask for it: press
   **Apply** on the Meeting tab for a live summary, or **Stop** to save the
   summary together with the full verbatim transcript. Grammar and style
   rewriting stay on the Editor and Compose tabs.
@@ -343,12 +324,10 @@ shows a notice with **download links for the models** you still need. See
 
 **Runnable jar**: build it yourself with `mvn package` — the result is
 `target/ai-assist-<version>.jar` (no model bundled). Put it in a folder, then
-download one or more Vosk English models from
-[alphacephei.com/vosk/models](https://alphacephei.com/vosk/models) and drop the
-`.zip` files into the **same folder**. On first start each zip is extracted
-(a progress bar shows) and appears in the model dropdown. Recommended:
-`vosk-model-en-us-0.22-lgraph` (128 MB) or, for the smallest,
-`vosk-model-small-en-us-0.15` (40 MB).
+download a Whisper model (for example `ggml-medium.bin`, from the
+[whisper.cpp models](https://github.com/ggerganov/whisper.cpp/tree/master/models)
+page) and put the `.bin` file in the **same folder**. The app uses the most
+accurate Whisper model it finds.
 
 The built jar is **not committed** to the repo (it is large and rebuildable);
 distributables are published as release assets by the packaging workflow
@@ -397,7 +376,6 @@ universal binary; no Rosetta needed).
 | Symptom | Cause & fix |
 |---|---|
 | Status stuck on *"Opening audio devices…"* | macOS is waiting for microphone approval. Look for the permission prompt (it can hide behind windows). If it never appears: System Settings → Privacy & Security → **Microphone** → enable **Terminal** (or **Java**), then restart the app. To force a fresh prompt: `tccutil reset Microphone` in Terminal. |
-| `Audio problem: UnsatisfiedLinkError … vosk_recognizer_set_grm` | You are running a build older than 2026-07-06. The vosk-java wrapper eagerly binds symbols its own macOS library doesn't export; current builds bypass it with a lazy binding. `git pull && mvn package` and use the new jar. |
 | `Audio problem: … accepted none of the candidate formats` | The capture device refused every format (16/48/44.1 kHz, mono/stereo). Usually means microphone permission is denied (see above) or the selected input device is unavailable — check System Settings → Sound → **Input**. |
 | "ai-assist-…jar cannot be opened because it is from an unidentified developer" | Gatekeeper quarantines browser-downloaded files. Right-click the jar → **Open**, or clear the flag: `xattr -d com.apple.quarantine ai-assist-<version>.jar`. Jars pulled via `git` are not quarantined. |
 | Double-click does nothing / opens Archive Utility | Your Java install didn't claim the `.jar` association. Right-click → Open With → select the Java launcher, or just run `java -jar ai-assist-<version>.jar` from Terminal. |
@@ -411,14 +389,14 @@ universal binary; no Rosetta needed).
 ## How it works
 
 ```
-Teams/Webex audio (OS loopback device) ─► Vosk recognizer ─┐
-Microphone ────────────────────────────► Vosk recognizer ─┼─► listening session ─► drafting engine ─► window + timestamped .md on Stop
-                                                           │      (transcript)       (summary, sections,
-                                          [mic]/[meeting] ─┘                          key points, action items)
+Teams/Webex audio (OS loopback device) ─┐
+Microphone ─────────────────────────────┼─► per-source recording ─► Whisper (on Stop) ─► drafting engine ─► timestamped notes file
+                                        │   (temp files)           (transcript)          (summary, sections,
+                                        └─ [mic]/[other] labels                          key points, action items)
 ```
 
-- Every recognized phrase lands in one **listening session**, labelled with
-  its source and sequence. No AI runs while the meeting is in progress.
+- The audio of each source is recorded into one **listening session**. No AI
+  runs while the meeting is in progress.
 - **Apply** (Meeting tab) drafts a summary of everything captured so far and
   shows it in memory — never on disk.
 - **Stop** locks the session, drafts the summary — title, summary,
@@ -476,8 +454,6 @@ ai-assist:
     content-type: MEETING_NOTES
     tone: PROFESSIONAL
   transcription:
-    model-name: vosk-model-small-en-us-0.15  # English; user-supplied, dropped next to the jar
-    allow-download: false      # keep false: no runtime network access
     preferred-device: ""       # optional explicit meeting-audio device
   feedback:
     from: noreply@ai-assist.com   # set to your Gmail address — must match the relay account below
@@ -528,4 +504,4 @@ mvn package                 # self-contained jar (model ships in resources)
 ## Stack
 
 Java 21 · Spring Boot 3.5 · Swing (JDK-built-in window) · Java Sound API ·
-[Vosk](https://alphacephei.com/vosk/) English speech models (Apache-2.0).
+[Whisper](https://github.com/ggerganov/whisper.cpp) (whisper.cpp, MIT) for transcription.
