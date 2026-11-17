@@ -64,5 +64,5 @@ jpackage `
   --dest $Out
 if ($LASTEXITCODE -ne 0) { throw "jpackage failed" }
 
-Write-Host "==> Done. Installer in .\$Out:"
+Write-Host "==> Done. Installer in .\${Out}:"
 Get-ChildItem $Out | Select-Object Name
