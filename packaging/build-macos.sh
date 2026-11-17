@@ -15,7 +15,11 @@ mvn -B -Pharden -DskipTests clean package
 
 JAR="$(ls target/${APP_NAME}-*.jar | grep -v original | head -1)"
 VERSION="$(basename "$JAR" | sed -E "s/^${APP_NAME}-(.*)\.jar/\1/; s/-SNAPSHOT//")"
-echo "==> Packaging ${APP_NAME} ${VERSION} as ${TYPE}"
+# macOS requires the first number of --app-version to be above zero, so a
+# 0.x.y project version is shipped as 1.x.y in the installer metadata.
+MAC_VERSION="$VERSION"
+if [[ "$MAC_VERSION" == 0.* ]]; then MAC_VERSION="1.${MAC_VERSION#0.}"; fi
+echo "==> Packaging ${APP_NAME} ${VERSION} (installer version ${MAC_VERSION}) as ${TYPE}"
 
 INPUT="$(mktemp -d)"; cp "$JAR" "$INPUT/"
 # Drop the other platforms' native libraries to shrink the installer.
@@ -37,7 +41,7 @@ fi
 jpackage \
   --type "$TYPE" \
   --name "$APP_NAME" \
-  --app-version "$VERSION" \
+  --app-version "$MAC_VERSION" \
   --vendor "$VENDOR" \
   --description "$DESC" \
   --input "$INPUT" \
