@@ -54,6 +54,31 @@ jobs:
         if: runner.os == 'macOS'
         run: bash packaging/build-macos.sh dmg
 
+      - name: Push DMG to the macos-dmg branch
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          URL="https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          WT="$RUNNER_TEMP/dmg-branch"
+          rm -rf "$WT"
+          if git ls-remote --exit-code --heads "$URL" macos-dmg >/dev/null 2>&1; then
+            git clone --depth 1 --branch macos-dmg "$URL" "$WT"
+          else
+            git init -q "$WT"
+            git -C "$WT" checkout -q --orphan macos-dmg
+          fi
+          cp dist/*.dmg "$WT/"
+          cd "$WT"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "macOS DMG from run ${GITHUB_RUN_ID} (${GITHUB_SHA:0:7})"
+          git push -q "$URL" HEAD:macos-dmg
+          echo "Pushed $(ls "$WT"/*.dmg) to branch macos-dmg"
+
       - name: Build installer (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
